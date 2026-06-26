@@ -1,6 +1,22 @@
-import NextAuth from "next-auth";
+import NextAuth, { DefaultSession, User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { supabase } from "@/integrations/supabase/client";
+
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      roles: string[];
+      accessToken?: string;
+    } & DefaultSession["user"];
+  }
+
+  interface User {
+    id?: string;
+    roles?: string[];
+    accessToken?: string;
+  }
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -40,8 +56,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             accessToken: data.session.access_token,
             roles: roles,
           };
-        } catch (err: any) {
-          throw new Error(err.message || "Failed to authorize");
+        } catch (err: unknown) {
+          if (err instanceof Error) {
+            throw new Error(err.message || "Failed to authorize");
+          }
+          throw new Error("Failed to authorize");
         }
       }
     })
@@ -50,16 +69,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.roles = (user as any).roles || [];
-        token.accessToken = (user as any).accessToken;
+        token.roles = user.roles || [];
+        token.accessToken = user.accessToken;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = token.id;
-        (session.user as any).roles = token.roles || [];
-        (session.user as any).accessToken = token.accessToken;
+        session.user.id = token.id as string;
+        session.user.roles = (token.roles as string[]) || [];
+        session.user.accessToken = token.accessToken as string | undefined;
       }
       return session;
     }
@@ -72,3 +91,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   secret: process.env.NEXTAUTH_SECRET,
 });
+
