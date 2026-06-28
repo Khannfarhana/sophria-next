@@ -2,6 +2,10 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
+const SUPABASE_FALLBACK_URL = 'http://127.0.0.1:54321';
+const SUPABASE_FALLBACK_PUBLISHABLE_KEY = 'public-anon-key';
+let warnedMissingEnv = false;
+
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
   // Fall back to process.env for SSR (server-side rendering)
@@ -13,18 +17,24 @@ function createSupabaseClient() {
       ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
       ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY'] : []),
     ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
-    console.error(`[Supabase] ${message}`);
-    throw new Error(message);
+    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Set them in .env.local before using auth or data features.`;
+    if (!warnedMissingEnv) {
+      console.warn(`[Supabase] ${message}`);
+      warnedMissingEnv = true;
+    }
   }
 
-  return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  return createClient<Database>(
+    SUPABASE_URL || SUPABASE_FALLBACK_URL,
+    SUPABASE_PUBLISHABLE_KEY || SUPABASE_FALLBACK_PUBLISHABLE_KEY,
+    {
     auth: {
       storage: typeof window !== 'undefined' ? localStorage : undefined,
       persistSession: true,
       autoRefreshToken: true,
     }
-  });
+    }
+  );
 }
 
 let _supabase: ReturnType<typeof createSupabaseClient> | undefined;

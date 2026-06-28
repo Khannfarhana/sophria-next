@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteLayout } from "@/components/site/SiteLayout";
-import { Plane, Briefcase, Heart, Compass, Clock } from "lucide-react";
+import { Plane, Briefcase, Heart, Compass, Clock, ArrowRight } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Chauffeur Services",
@@ -23,32 +23,65 @@ const SERVICES = [
 export default function ServicesPage() {
   return (
     <SiteLayout>
-      <section className="px-6 pb-16 pt-32">
-        <div className="mx-auto max-w-5xl">
-          <div className="eyebrow mb-6">Services</div>
-          <h1 className="text-5xl md:text-6xl font-light">For every kind of arrival.</h1>
+      {/* Dark page header */}
+      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">Services</div>
+          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
+            For every kind of <span className="text-[#e7d3a8]">arrival.</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-base text-white/70">
+            From airport runs to weddings — one standard of service, every time.
+          </p>
         </div>
       </section>
 
-      <section className="px-6 pb-32">
+      {/* Service cards */}
+      <section className="bg-background px-6 py-20">
         <div className="mx-auto max-w-7xl">
-          <div className="grid gap-px bg-border md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {SERVICES.map(({ Icon, title, body, from }) => (
-              <div key={title} className="flex flex-col bg-background p-10 border border-border">
-                <Icon className="h-6 w-6 text-foreground" />
-                <h3 className="mt-8 text-2xl font-light">{title}</h3>
-                <p className="mt-3 flex-1 text-sm text-ink-muted leading-relaxed">{body}</p>
-                <div className="mt-8 flex items-end justify-between border-t border-border pt-4">
+              <div
+                key={title}
+                className="group flex flex-col rounded-2xl border border-border bg-card p-8 shadow-sm transition-shadow hover:shadow-md"
+              >
+                <div className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface transition-colors group-hover:border-foreground">
+                  <Icon className="h-5 w-5 text-foreground" />
+                </div>
+                <h3 className="mt-6 text-xl font-light text-foreground">{title}</h3>
+                <p className="mt-2 flex-1 text-sm leading-relaxed text-ink-muted">{body}</p>
+                <div className="mt-6 flex items-end justify-between border-t border-border pt-5">
                   <div>
-                    <div className="text-xs text-ink-soft">from</div>
-                    <div className="text-lg">${from} <span className="text-xs text-ink-soft">CAD</span></div>
+                    <div className="text-[10px] text-ink-soft">from</div>
+                    <div className="text-lg text-foreground">${from} <span className="text-xs text-ink-soft">CAD</span></div>
                   </div>
-                  <Link href="/book" className="text-sm text-foreground hover:text-ink-muted font-medium cursor-pointer">
-                    Reserve →
+                  <Link
+                    href="/book"
+                    className="flex items-center gap-1.5 rounded-sm bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition hover:bg-[#2A2A2A]"
+                  >
+                    Reserve <ArrowRight className="h-3 w-3" />
                   </Link>
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA strip */}
+      <section className="bg-surface px-6 py-16">
+        <div className="mx-auto flex max-w-7xl flex-col items-center gap-6 text-center md:flex-row md:justify-between md:text-left">
+          <div>
+            <p className="text-xl font-light text-foreground">Not sure which service fits?</p>
+            <p className="mt-1 text-sm text-ink-muted">Our team is available 24/7 to help you choose.</p>
+          </div>
+          <div className="flex gap-3">
+            <Link href="/contact" className="rounded-sm border border-border px-6 py-2.5 text-sm font-medium text-foreground transition hover:bg-background">
+              Get in Touch
+            </Link>
+            <Link href="/book" className="rounded-sm bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]">
+              Book Now
+            </Link>
           </div>
         </div>
       </section>

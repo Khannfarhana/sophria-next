@@ -2,6 +2,18 @@ import NextAuth, { DefaultSession, User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { supabase } from "@/integrations/supabase/client";
 
+const authSecret =
+  process.env.NEXTAUTH_SECRET ||
+  (process.env.NODE_ENV === "development"
+    ? "dev-only-nextauth-secret-change-me"
+    : undefined);
+
+if (!process.env.NEXTAUTH_SECRET && process.env.NODE_ENV === "development") {
+  console.warn(
+    "[Auth] NEXTAUTH_SECRET is not set. Using a development fallback. Set NEXTAUTH_SECRET in .env.local for stable sessions."
+  );
+}
+
 declare module "next-auth" {
   interface Session {
     user: {
@@ -89,6 +101,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: {
     strategy: "jwt",
   },
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: authSecret,
 });
 
