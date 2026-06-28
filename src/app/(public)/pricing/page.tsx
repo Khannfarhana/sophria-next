@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteLayout } from "@/components/site/SiteLayout";
+import { ArrowRight } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -22,52 +23,73 @@ const FLEET_RATES = [
 export default function PricingPage() {
   return (
     <SiteLayout>
-      <section className="px-6 pb-16 pt-32">
-        <div className="mx-auto max-w-5xl">
-          <div className="eyebrow mb-6">Pricing</div>
-          <h1 className="text-5xl md:text-6xl font-light">No surge. No surprises.</h1>
-          <p className="mt-6 max-w-2xl text-lg text-ink-muted">All rates in Canadian Dollars (CAD). Gratuity not included. Tolls, parking and waiting time billed at cost.</p>
+      {/* Dark page header */}
+      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">Pricing</div>
+          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
+            No surge. <span className="text-[#e7d3a8]">No surprises.</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-base text-white/70">
+            All rates in Canadian Dollars. Gratuity not included. Tolls, parking and waiting time billed at cost.
+          </p>
         </div>
       </section>
 
-      <section className="px-6 pb-24">
-        <div className="mx-auto max-w-5xl overflow-hidden rounded-sm border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-background text-left text-xs uppercase tracking-wider text-ink-muted">
-              <tr>
-                <th className="p-5">Vehicle</th>
-                <th className="p-5">Hourly</th>
-                <th className="p-5">YYZ / YTZ Flat</th>
-              </tr>
-            </thead>
-            <tbody>
-              {FLEET_RATES.map((r, i) => (
-                <tr key={r.name} className={i < FLEET_RATES.length - 1 ? "border-b border-border" : ""}>
-                  <td className="p-5">{r.name}</td>
-                  <td className="p-5">${r.hr} <span className="text-xs text-ink-soft">/hr</span></td>
-                  <td className="p-5">${r.airport}</td>
+      {/* Pricing table */}
+      <section className="bg-background px-6 py-20">
+        <div className="mx-auto max-w-4xl">
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="border-b border-border bg-surface text-left">
+                <tr>
+                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">Vehicle</th>
+                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">Hourly</th>
+                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">YYZ / YTZ Flat</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {FLEET_RATES.map((r, i) => (
+                  <tr
+                    key={r.name}
+                    className={`transition-colors hover:bg-surface ${i < FLEET_RATES.length - 1 ? "border-b border-border" : ""}`}
+                  >
+                    <td className="px-6 py-4 font-light text-foreground">{r.name}</td>
+                    <td className="px-6 py-4 text-foreground">${r.hr} <span className="text-xs text-ink-soft">/hr</span></td>
+                    <td className="px-6 py-4 text-foreground">${r.airport}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
-      <section className="bg-surface px-6 py-24">
-        <div className="mx-auto grid max-w-5xl gap-12 md:grid-cols-2">
-          <div>
-            <div className="eyebrow mb-3">Airport Flat Rates</div>
-            <p className="text-base leading-relaxed text-ink-muted">Pearson (YYZ) and Billy Bishop (YTZ) transfers from downtown Toronto are billed at the flat rate above. Other GTA pickups are zone-based — confirmed at booking.</p>
+      {/* Notes */}
+      <section className="bg-surface px-6 py-20">
+        <div className="mx-auto max-w-4xl">
+          <div className="grid gap-10 md:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-card p-8">
+              <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Airport Flat Rates</div>
+              <p className="text-sm leading-relaxed text-ink-muted">
+                Pearson (YYZ) and Billy Bishop (YTZ) transfers from downtown Toronto are billed at the flat rate above. Other GTA pickups are zone-based — confirmed at booking.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-card p-8">
+              <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Dynamic Adjustments</div>
+              <p className="text-sm leading-relaxed text-ink-muted">
+                During major events (TIFF, Caribana, NYE), evening rates may apply. We will always quote the final fare before confirming. We do not use surge pricing.
+              </p>
+            </div>
           </div>
-          <div>
-            <div className="eyebrow mb-3">Dynamic Adjustments</div>
-            <p className="text-base leading-relaxed text-ink-muted">During major events (TIFF, Caribana, NYE), evening rates may apply. We will always quote the final fare before confirming your reservation. We do not use surge pricing.</p>
+          <div className="mt-12 text-center">
+            <Link
+              href="/book"
+              className="inline-flex items-center gap-2 rounded-sm bg-primary px-8 py-3.5 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]"
+            >
+              Reserve a Vehicle <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
-        </div>
-        <div className="mx-auto mt-16 max-w-5xl text-center">
-          <Link href="/book" className="inline-flex rounded-sm bg-primary px-8 py-4 text-sm font-medium text-primary-foreground hover:bg-[#E5E5E5] cursor-pointer">
-            Reserve a vehicle
-          </Link>
         </div>
       </section>
     </SiteLayout>

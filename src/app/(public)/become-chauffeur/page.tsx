@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
+import { Check, Upload } from "lucide-react";
 
 const schema = z.object({
   fullName: z.string().trim().min(1).max(100),
@@ -16,6 +17,15 @@ const schema = z.object({
   experience: z.coerce.number().min(0).max(60),
 });
 
+const STEPS = ["Submitted", "Under Review", "Approved"];
+
+const DOCS = [
+  { k: "license_doc", l: "Driver's License" },
+  { k: "registration", l: "Vehicle Registration" },
+  { k: "insurance", l: "Insurance Certificate" },
+  { k: "background", l: "Background Check Consent" },
+];
+
 export default function BecomeChauffeurPage() {
   const { user, refreshRoles } = useAuth();
   const supabase = useSupabase();
@@ -23,6 +33,17 @@ export default function BecomeChauffeurPage() {
   const [files, setFiles] = useState<Record<string, File | null>>({ license_doc: null, registration: null, insurance: null, background: null });
   const [submitting, setSubmitting] = useState(false);
   const [stage, setStage] = useState<"submitted" | "review" | "approved" | null>(null);
+
+  const activeStep = stage === "approved" ? 2 : stage === "review" ? 1 : stage === "submitted" ? 0 : -1;
+
+  const field = (label: string, node: React.ReactNode) => (
+    <div>
+      <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-ink-muted">{label}</label>
+      {node}
+    </div>
+  );
+
+  const inputCls = "w-full rounded-xl border bg-input px-4 py-3 text-sm text-foreground transition focus:border-foreground focus:outline-none";
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +53,6 @@ export default function BecomeChauffeurPage() {
 
     setSubmitting(true);
     try {
-      // Upsert driver row
       const { data: driver, error: drvErr } = await supabase.from("drivers").upsert({
         user_id: user.id,
         license_number: parsed.data.license,
@@ -40,13 +60,9 @@ export default function BecomeChauffeurPage() {
       }, { onConflict: "user_id" }).select().single();
       if (drvErr) throw drvErr;
 
-      // Update profile
       await supabase.from("profiles").update({ full_name: parsed.data.fullName, phone: parsed.data.phone }).eq("id", user.id);
-
-      // Grant driver role (pending verification)
       await supabase.from("user_roles").upsert({ user_id: user.id, role: "driver" });
 
-      // Upload files
       for (const [docType, file] of Object.entries(files)) {
         if (!file) continue;
         const path = `${user.id}/${docType}-${Date.now()}-${file.name}`;
@@ -68,81 +84,117 @@ export default function BecomeChauffeurPage() {
 
   return (
     <SiteLayout>
-      <section className="px-6 pb-16 pt-32">
+      {/* Dark page header */}
+      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
         <div className="mx-auto max-w-3xl">
-          <div className="eyebrow mb-6">Drive with SophRia</div>
-          <h1 className="text-5xl md:text-6xl font-light">Become a chauffeur.</h1>
-          <p className="mt-6 text-lg text-ink-muted">Join Toronto's most discerning private fleet. Vetted professionals only.</p>
+          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">Drive with SophRia</div>
+          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
+            Become a <span className="text-[#e7d3a8]">chauffeur.</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-base text-white/70">
+            Join Toronto's most discerning private fleet. Vetted professionals only.
+          </p>
         </div>
       </section>
 
-      <section className="px-6 pb-32">
-        <div className="mx-auto max-w-3xl">
-          {/* Status tracker */}
-          <div className="mb-12 flex items-center justify-between rounded-sm border border-border bg-card p-6 text-xs">
-            {["Submitted", "Under Review", "Approved"].map((s, i) => {
-              const idx = stage === "approved" ? 2 : stage === "review" ? 1 : stage === "submitted" ? 0 : -1;
-              const active = i <= idx;
+      <section className="bg-background px-6 py-20">
+        <div className="mx-auto max-w-3xl space-y-8">
+
+          {/* Step tracker */}
+          <div className="flex items-center gap-0 rounded-2xl border border-border bg-card p-6 shadow-sm">
+            {STEPS.map((s, i) => {
+              const done = i < activeStep + 1;
+              const current = i === activeStep;
               return (
                 <div key={s} className="flex flex-1 items-center">
-                  <div className={`flex h-7 w-7 items-center justify-center rounded-full border ${active ? "border-foreground bg-foreground text-background" : "border-border text-ink-soft"}`}>{i + 1}</div>
-                  <div className={`ml-3 ${active ? "text-foreground font-medium" : "text-ink-soft"}`}>{s}</div>
-                  {i < 2 && <div className="mx-4 h-px flex-1 bg-border" />}
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-medium transition-colors ${
+                    done
+                      ? "border-foreground bg-foreground text-background"
+                      : current
+                      ? "border-foreground text-foreground"
+                      : "border-border text-ink-soft"
+                  }`}>
+                    {done && i < activeStep ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                  </div>
+                  <span className={`ml-2.5 text-xs font-medium ${done || current ? "text-foreground" : "text-ink-soft"}`}>{s}</span>
+                  {i < STEPS.length - 1 && (
+                    <div className={`mx-4 h-px flex-1 transition-colors ${i < activeStep ? "bg-foreground" : "bg-border"}`} />
+                  )}
                 </div>
               );
             })}
           </div>
 
+          {/* Not signed in */}
           {!user ? (
-            <div className="rounded-sm border border-border bg-card p-8 text-center">
-              <p className="text-ink-muted">Please <Link href="/auth" className="text-foreground underline">sign in</Link> to submit your application.</p>
+            <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-sm">
+              <p className="text-ink-muted">
+                Please{" "}
+                <Link href="/auth" className="font-medium text-foreground underline underline-offset-2">
+                  sign in
+                </Link>{" "}
+                to submit your application.
+              </p>
             </div>
           ) : (
-            <form onSubmit={onSubmit} className="space-y-6 rounded-sm border border-border bg-card p-8">
+            <form onSubmit={onSubmit} className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+              {/* Personal info */}
+              <div className="mb-6 text-xs uppercase tracking-[0.22em] text-ink-muted">Personal Info</div>
               <div className="grid gap-5 md:grid-cols-2">
-                <div>
-                  <label className="eyebrow mb-2 block">Full Name</label>
-                  <input className="w-full rounded-sm border bg-input p-3 text-sm text-foreground focus:border-foreground" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
-                </div>
-                <div>
-                  <label className="eyebrow mb-2 block">Email</label>
-                  <input type="email" className="w-full rounded-sm border bg-input p-3 text-sm text-foreground focus:border-foreground" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-                </div>
-                <div>
-                  <label className="eyebrow mb-2 block">Phone</label>
-                  <input className="w-full rounded-sm border bg-input p-3 text-sm text-foreground focus:border-foreground" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 (416) …" required />
-                </div>
-                <div>
-                  <label className="eyebrow mb-2 block">License Number</label>
-                  <input className="w-full rounded-sm border bg-input p-3 text-sm text-foreground focus:border-foreground" value={form.license} onChange={(e) => setForm({ ...form, license: e.target.value })} required />
-                </div>
+                {field("Full Name",
+                  <input className={inputCls} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
+                )}
+                {field("Email",
+                  <input type="email" className={inputCls} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                )}
+                {field("Phone",
+                  <input className={inputCls} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 (416) …" required />
+                )}
+                {field("License Number",
+                  <input className={inputCls} value={form.license} onChange={(e) => setForm({ ...form, license: e.target.value })} required />
+                )}
                 <div className="md:col-span-2">
-                  <label className="eyebrow mb-2 block">Years of Experience</label>
-                  <input type="number" min={0} max={60} className="w-full rounded-sm border bg-input p-3 text-sm text-foreground focus:border-foreground" value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} required />
+                  {field("Years of Experience",
+                    <input type="number" min={0} max={60} className={inputCls} value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} required />
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-4 border-t border-border pt-6">
-                <div className="eyebrow">Documents</div>
-                {[
-                  { k: "license_doc", l: "Driver's License" },
-                  { k: "registration", l: "Vehicle Registration" },
-                  { k: "insurance", l: "Insurance Certificate" },
-                  { k: "background", l: "Background Check Consent" },
-                ].map((d) => (
-                  <div key={d.k} className="grid gap-2 md:grid-cols-[200px_1fr] md:items-center">
-                    <div className="text-sm text-ink-muted">{d.l}</div>
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={(e) => setFiles({ ...files, [d.k]: e.target.files?.[0] ?? null })}
-                      className="text-sm file:mr-3 file:rounded-sm file:border-0 file:bg-foreground file:px-3 file:py-2 file:text-background file:cursor-pointer"
-                    />
-                  </div>
-                ))}
+              {/* Documents */}
+              <div className="mt-8 border-t border-border pt-7">
+                <div className="mb-5 text-xs uppercase tracking-[0.22em] text-ink-muted">Documents</div>
+                <div className="space-y-3">
+                  {DOCS.map((d) => (
+                    <label
+                      key={d.k}
+                      className="flex cursor-pointer items-center justify-between rounded-xl border border-border bg-surface px-5 py-4 transition-colors hover:border-foreground/30"
+                    >
+                      <div>
+                        <div className="text-sm font-medium text-foreground">{d.l}</div>
+                        <div className="mt-0.5 text-xs text-ink-soft">
+                          {files[d.k] ? files[d.k]!.name : "PDF or image — click to upload"}
+                        </div>
+                      </div>
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
+                        files[d.k] ? "border-foreground bg-foreground text-background" : "border-border text-ink-muted"
+                      }`}>
+                        {files[d.k] ? <Check className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        onChange={(e) => setFiles({ ...files, [d.k]: e.target.files?.[0] ?? null })}
+                      />
+                    </label>
+                  ))}
+                </div>
               </div>
 
-              <button disabled={submitting} className="w-full rounded-sm bg-primary py-3 text-sm font-medium text-primary-foreground hover:bg-[#E5E5E5] disabled:opacity-60 cursor-pointer">
+              <button
+                disabled={submitting}
+                className="mt-8 w-full cursor-pointer rounded-sm bg-primary py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A] disabled:opacity-60"
+              >
                 {submitting ? "Submitting…" : "Submit Application"}
               </button>
             </form>

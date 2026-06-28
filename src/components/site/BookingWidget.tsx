@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { MapPin, Calendar, Car } from "lucide-react";
+import { CustomSelect } from "@/components/ui/custom-select";
 
 export function BookingWidget() {
   const router = useRouter();
@@ -51,18 +52,19 @@ export function BookingWidget() {
         />
       </label>
       <label className="flex items-center gap-3 md:border-r md:pr-3">
-        <Car className="h-4 w-4 text-ink-muted" />
-        <select
+        <Car className="h-4 w-4 shrink-0 text-ink-muted" />
+        <CustomSelect
+          variant="ghost"
           value={vehicle}
           onChange={(e) => setVehicle(e.target.value)}
-          className="w-full bg-transparent text-sm focus:outline-none text-foreground"
+          wrapperClassName="w-full"
         >
           <option value="sedan">Luxury Sedan</option>
           <option value="business">Business Class</option>
           <option value="suv">SUV</option>
           <option value="limousine">Limousine</option>
           <option value="party_bus">Party Bus</option>
-        </select>
+        </CustomSelect>
       </label>
       <button className="rounded-sm bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#E5E5E5] cursor-pointer">
         Reserve
