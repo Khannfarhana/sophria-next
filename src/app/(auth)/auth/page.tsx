@@ -39,20 +39,7 @@ export default function AuthPage() {
     try {
       if (mode === "signup") {
         const v = signUpSchema.parse(form);
-        
-        // 1. Register user in Supabase
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: v.email,
-          password: v.password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`,
-            data: { full_name: v.fullName },
-          },
-        });
-        if (signUpError) throw signUpError;
-
-        // 2. Automatically log in using NextAuth
-        const result = await signIn("credentials", {
+        const { error } = await supabase.auth.signUp({
           email: v.email,
           password: v.password,
           redirect: false,
@@ -66,23 +53,20 @@ export default function AuthPage() {
         router.push("/dashboard");
       } else {
         const v = signInSchema.parse(form);
-        
-        // Log in using NextAuth
-        const result = await signIn("credentials", {
-          email: v.email,
-          password: v.password,
-          redirect: false,
-        });
-
-        if (result?.error) {
-          throw new Error(result.error || "Authentication failed");
-        }
-
-        toast.success("Successfully signed in.");
+        const result = await signIn("credentials", { email: v.email, password: v.password, redirect: false });
+        if (result?.error) throw new Error(result.error || "Authentication failed");
+        toast.success("Welcome back.");
         router.push("/dashboard");
       }
-    } catch (err: any) {
-      toast.error(err?.issues?.[0]?.message ?? err.message ?? "Authentication failed");
+    } catch (err: unknown) {
+      const { ZodError } = await import("zod");
+      if (err instanceof ZodError) {
+        toast.error(err.issues[0]?.message ?? "Authentication failed");
+      } else if (err instanceof Error) {
+        toast.error(err.message || "Authentication failed");
+      } else {
+        toast.error("Authentication failed");
+      }
     } finally {
       setBusy(false);
     }
@@ -91,15 +75,13 @@ export default function AuthPage() {
   const handleGoogle = async () => {
     setBusy(true);
     try {
-      // Direct sign in with NextAuth google provider (if configured)
-      // Since it requires client secret, we'll run OAuth redirect
-      const result = await signIn("google", { callbackUrl: "/dashboard", redirect: false });
-      if (result?.error) {
-        throw new Error(result.error);
+      await signIn("google", { callbackUrl: "/dashboard" });
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        toast.error(err.message || "Google auth failed.");
+      } else {
+        toast.error("Google auth failed.");
       }
-    } catch (err: any) {
-      toast.error(err.message || "Google auth failed. Credentials sign-in is recommended.");
-    } finally {
       setBusy(false);
     }
   };
