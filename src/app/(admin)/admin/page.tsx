@@ -179,7 +179,7 @@ function AdminPortal() {
     .sort((a: any, b: any) => Number(b.rating ?? 0) - Number(a.rating ?? 0));
 
   return (
-    <SiteLayout>
+    <SiteLayout solidNav>
       <section className="px-6 pb-24 pt-24 bg-background text-foreground">
         <div className="mx-auto max-w-7xl">
           <div className="eyebrow mb-3">Admin</div>

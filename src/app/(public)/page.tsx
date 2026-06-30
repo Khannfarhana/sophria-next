@@ -4,7 +4,8 @@ import Link from "next/link";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { BookingWidget } from "@/components/site/BookingWidget";
 import { ShieldCheck, Clock, Sparkles, ArrowRight } from "lucide-react";
-import heroImg from "@/assets/hero.jpg";
+import heroImgDesktop from "@/assets/hero.jpg";
+import heroImgMobile from "@/assets/hero.webp";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import Image from "next/image";
 
@@ -12,14 +13,25 @@ export default function Home() {
   return (
     <SiteLayout>
       {/* Hero */}
-      <section className="relative isolate min-h-[92vh] overflow-hidden bg-[#0d0d0e] text-white">
+      <section className="relative isolate overflow-hidden bg-[#0d0d0e] text-white md:min-h-[92vh]">
         <div className="absolute inset-0 animate-kenburns">
+          {/* Mobile: portrait hero */}
           <Image
-            src={heroImg}
-            alt="Luxury black sedan on Toronto street at night"
+            src={heroImgMobile}
+            alt="Black luxury chauffeur sedan on a rainy Toronto street at night with the CN Tower in the background"
             fill
             priority
-            className="object-cover opacity-45"
+            sizes="100vw"
+            className="object-cover opacity-45 lg:hidden"
+          />
+          {/* Desktop: original landscape hero */}
+          <Image
+            src={heroImgDesktop}
+            alt="Black luxury chauffeur sedan with illuminated headlights on a city street at night"
+            fill
+            priority
+            sizes="100vw"
+            className="hidden object-cover opacity-45 lg:block"
           />
         </div>
         <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/70 to-[#0d0d0e]" />
@@ -27,7 +39,7 @@ export default function Home() {
         <div className="pointer-events-none absolute -top-32 left-1/2 h-[620px] w-[920px] -translate-x-1/2 rounded-full bg-white/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 -left-20 h-80 w-80 rounded-full bg-[#c9a76a]/20 blur-3xl" />
 
-        <div className="relative mx-auto flex min-h-[92vh] max-w-7xl flex-col justify-end px-6 pb-16 pt-32 md:pb-24">
+        <div className="relative mx-auto flex max-w-7xl flex-col justify-start px-6 pb-20 pt-48 md:min-h-[92vh] md:justify-end md:pt-32 md:pb-24">
           <div className="mb-6 animate-rise text-xs uppercase tracking-[0.22em] text-white/70">Toronto · Est. 2018</div>
           <h1 className="max-w-3xl text-5xl leading-[1.05] md:text-7xl animate-rise delay-100">
             Toronto's premier <br />
@@ -56,7 +68,7 @@ export default function Home() {
       </section>
 
       {/* Booking widget */}
-      <section className="relative -mt-12 bg-gradient-to-b from-[#0d0d0e] via-[#151516] to-[#1b1b1d] px-6 pb-14">
+      <section className="relative -mt-16 md:-mt-12 bg-gradient-to-b from-transparent via-[#151516] to-[#1b1b1d] px-6 pb-14">
         <div className="mx-auto max-w-6xl animate-rise delay-500">
           <BookingWidget />
         </div>

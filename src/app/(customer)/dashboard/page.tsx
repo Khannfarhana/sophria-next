@@ -47,7 +47,7 @@ function Dashboard() {
   };
 
   return (
-    <SiteLayout>
+    <SiteLayout solidNav>
       <section className="px-6 pb-24 pt-24 bg-background">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
