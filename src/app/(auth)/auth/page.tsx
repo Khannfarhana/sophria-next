@@ -64,8 +64,15 @@ export default function AuthPage() {
         toast.success("Welcome back.");
         router.push("/dashboard");
       }
-    } catch (err: any) {
-      toast.error(err?.issues?.[0]?.message ?? err.message ?? "Authentication failed");
+    } catch (err: unknown) {
+      const { ZodError } = await import("zod");
+      if (err instanceof ZodError) {
+        toast.error(err.issues[0]?.message ?? "Authentication failed");
+      } else if (err instanceof Error) {
+        toast.error(err.message || "Authentication failed");
+      } else {
+        toast.error("Authentication failed");
+      }
     } finally {
       setBusy(false);
     }
@@ -75,11 +82,13 @@ export default function AuthPage() {
     if (!googleEnabled) { toast.error("Google sign-in is not configured."); return; }
     setBusy(true);
     try {
-      const result = await signIn("google", { callbackUrl: "/dashboard", redirect: false });
-      if (result?.error) throw new Error(result.error);
-    } catch (err: any) {
-      toast.error(err.message || "Google auth failed.");
-    } finally {
+      await signIn("google", { callbackUrl: "/dashboard" });
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        toast.error(err.message || "Google auth failed.");
+      } else {
+        toast.error("Google auth failed.");
+      }
       setBusy(false);
     }
   };
