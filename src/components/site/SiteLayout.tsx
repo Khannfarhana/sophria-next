@@ -3,10 +3,17 @@ import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { WhatsAppButton } from "./WhatsAppButton";
 
-export function SiteLayout({ children }: { children: ReactNode }) {
+export function SiteLayout({
+  children,
+  solidNav = false,
+}: {
+  children: ReactNode;
+  /** Use the solid/light navbar from the top — for pages without a dark hero (e.g. portals). */
+  solidNav?: boolean;
+}) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Navbar />
+      <Navbar solid={solidNav} />
       <main className="flex-1">{children}</main>
       <Footer />
       <WhatsAppButton />

@@ -51,14 +51,20 @@ const SECTIONS = [
 export default function FAQPage() {
   return (
     <SiteLayout>
-      <section className="px-6 pb-16 pt-32 bg-background">
+      {/* Dark page header */}
+      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
         <div className="mx-auto max-w-3xl">
-          <div className="eyebrow mb-6">FAQ</div>
-          <h1 className="text-5xl md:text-6xl font-light text-foreground">Quietly comprehensive.</h1>
+          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">FAQ</div>
+          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
+            Quietly <span className="text-[#e7d3a8]">comprehensive.</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-base text-white/70">
+            Answers about booking, payment, cancellation, drivers, and the SophRia fleet.
+          </p>
         </div>
       </section>
 
-      <section className="px-6 pb-32">
+      <section className="bg-background px-6 pb-32 pt-20">
         <div className="mx-auto max-w-3xl space-y-12">
           {SECTIONS.map((sec) => (
             <div key={sec.title}>

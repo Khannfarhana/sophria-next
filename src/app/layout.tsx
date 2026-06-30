@@ -41,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${cormorant.variable}`}>
+    <html lang="en" className={`dark ${inter.variable} ${cormorant.variable}`} style={{ backgroundColor: '#0d0d0e' }}>
       <body className="bg-background text-foreground min-h-screen flex flex-col antialiased">
         <Providers>{children}</Providers>
       </body>

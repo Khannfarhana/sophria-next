@@ -10,6 +10,7 @@ import { useState } from "react";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Check, X, UserPlus, Star } from "lucide-react";
+import { CustomSelect } from "@/components/ui/custom-select";
 import {
   verifyDriverAction,
   confirmBookingAction,
@@ -178,7 +179,7 @@ function AdminPortal() {
     .sort((a: any, b: any) => Number(b.rating ?? 0) - Number(a.rating ?? 0));
 
   return (
-    <SiteLayout>
+    <SiteLayout solidNav>
       <section className="px-6 pb-24 pt-24 bg-background text-foreground">
         <div className="mx-auto max-w-7xl">
           <div className="eyebrow mb-3">Admin</div>
@@ -234,10 +235,9 @@ function AdminPortal() {
           {/* Bookings */}
           <div className="mt-16 flex items-end justify-between">
             <h2 className="text-2xl font-light">Bookings</h2>
-            <select
+            <CustomSelect
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="rounded-md border border-border bg-background p-2 text-sm text-foreground focus:border-foreground"
             >
               <option value="all">All statuses</option>
               <option value="pending">Pending</option>
@@ -247,7 +247,7 @@ function AdminPortal() {
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
               <option value="rejected">Rejected</option>
-            </select>
+            </CustomSelect>
           </div>
           <div className="mt-4 overflow-hidden rounded-md border border-border bg-card">
             <div className="overflow-x-auto">
@@ -401,13 +401,12 @@ function AdminPortal() {
           <div className="space-y-4">
             <div>
               <label className="mb-1 block text-xs uppercase tracking-wider text-ink-muted font-medium">Reason</label>
-              <select
+              <CustomSelect
                 value={rejReason}
                 onChange={(e) => setRejReason(e.target.value)}
-                className="w-full rounded-md border border-border bg-background p-2 text-sm text-foreground focus:border-foreground"
               >
                 {REJECT_REASONS.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
-              </select>
+              </CustomSelect>
             </div>
             <div>
               <label className="mb-1 block text-xs uppercase tracking-wider text-ink-muted font-medium">Notes (optional)</label>
