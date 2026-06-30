@@ -39,7 +39,20 @@ export default function AuthPage() {
     try {
       if (mode === "signup") {
         const v = signUpSchema.parse(form);
-        const { error } = await supabase.auth.signUp({
+        
+        // 1. Register user in Supabase
+        const { error: signUpError } = await supabase.auth.signUp({
+          email: v.email,
+          password: v.password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/dashboard`,
+            data: { full_name: v.fullName },
+          },
+        });
+        if (signUpError) throw signUpError;
+
+        // 2. Automatically log in using NextAuth
+        const result = await signIn("credentials", {
           email: v.email,
           password: v.password,
           redirect: false,
