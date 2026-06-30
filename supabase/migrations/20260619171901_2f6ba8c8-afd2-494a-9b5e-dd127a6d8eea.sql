@@ -1,1 +1,0 @@
-REVOKE EXECUTE ON FUNCTION public.prevent_driver_privilege_escalation() FROM PUBLIC, anon, authenticated;
