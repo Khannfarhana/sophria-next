@@ -138,10 +138,12 @@ export async function mockCreateBooking(input: {
 }) {
   const reference = newReference();
   const tt = input.tripType ?? "one_way";
+  const startOtp = String(Math.floor(1000 + Math.random() * 9000));
   mutateDB((db) => {
     db.bookings.unshift({
       id: newId(),
       reference,
+      start_otp: startOtp,
       customer_id: input.customerId,
       driver_id: null,
       vehicle_id: input.vehicleId,
@@ -172,11 +174,54 @@ export async function mockCreateBooking(input: {
       updated_at: now(),
     });
   });
-  return { reference };
+  return { reference, start_otp: startOtp };
 }
 
 export async function mockCancelBooking(id: string) {
   patchBooking(id, { status: "cancelled" });
+  return { success: true };
+}
+
+export async function mockBookingDriver(bookingId: string) {
+  const db = readDB();
+  const booking = db.bookings.find((b) => b.id === bookingId);
+  if (!booking?.driver_id) return null;
+  const driver = db.drivers.find((d) => d.id === booking.driver_id);
+  if (!driver) return null;
+  const profile = db.profiles.find((p) => p.id === driver.user_id);
+  return {
+    name: profile?.full_name ?? null,
+    phone: profile?.phone ?? null,
+    rating: driver.rating ?? null,
+    experience_years: driver.experience_years ?? null,
+  };
+}
+
+export async function mockUpdateBookingLocation(
+  id: string,
+  data: {
+    pickup: string;
+    dropoff: string;
+    pickupLat: number | null;
+    pickupLng: number | null;
+    dropoffLat: number | null;
+    dropoffLng: number | null;
+    distanceKm: number | null;
+    durationMin: number | null;
+    fare: number;
+  },
+) {
+  patchBooking(id, {
+    pickup_location: data.pickup,
+    dropoff_location: data.dropoff,
+    pickup_lat: data.pickupLat,
+    pickup_lng: data.pickupLng,
+    dropoff_lat: data.dropoffLat,
+    dropoff_lng: data.dropoffLng,
+    distance_km: data.distanceKm,
+    duration_min: data.durationMin,
+    fare_estimate: data.fare,
+  });
   return { success: true };
 }
 
@@ -227,7 +272,10 @@ export async function mockDeclineRide(id: string) {
   return { success: true };
 }
 
-export async function mockStartRide(id: string) {
+export async function mockStartRide(id: string, otp: string) {
+  const booking = readDB().bookings.find((b) => b.id === id);
+  if (!booking?.start_otp) throw new Error("No pickup code set for this ride.");
+  if (String(otp).trim() !== String(booking.start_otp)) throw new Error("Incorrect pickup code.");
   patchBooking(id, { status: "in_progress" });
   return { success: true };
 }

@@ -181,10 +181,14 @@ export const vehicles: Vehicle[] = [
 /* ================================================================== *
  *  drivers
  * ================================================================== */
+const driverExtras = {
+  city_of_residence: null, province: null, work_authorization: null,
+  languages_spoken: null, time_availability: null, referral_name: null, photo_url: null,
+};
 export const drivers: Driver[] = [
-  { id: ID.driver1, user_id: ID.driverUser1, license_number: "ON-DR-44821", experience_years: 8, rating: 4.9, total_earnings: 18250, is_available: true, is_verified: true, created_at: NOW, updated_at: NOW },
-  { id: ID.driver2, user_id: ID.driverUser2, license_number: "ON-DR-77310", experience_years: 5, rating: 4.8, total_earnings: 12940, is_available: false, is_verified: true, created_at: NOW, updated_at: NOW },
-  { id: ID.driver3, user_id: ID.driverUser3, license_number: "ON-DR-90155", experience_years: 3, rating: 0, total_earnings: 0, is_available: false, is_verified: false, created_at: NOW, updated_at: NOW },
+  { id: ID.driver1, user_id: ID.driverUser1, license_number: "ON-DR-44821", experience_years: 8, rating: 4.9, total_earnings: 18250, is_available: true, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
+  { id: ID.driver2, user_id: ID.driverUser2, license_number: "ON-DR-77310", experience_years: 5, rating: 4.8, total_earnings: 12940, is_available: false, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
+  { id: ID.driver3, user_id: ID.driverUser3, license_number: "ON-DR-90155", experience_years: 3, rating: 0, total_earnings: 0, is_available: false, is_verified: false, created_at: NOW, updated_at: NOW, ...driverExtras },
 ];
 
 /* ================================================================== *
@@ -221,6 +225,7 @@ export const bookings: Booking[] = [
     passenger_name: "Jordan Avery",
     passenger_phone: "+1 (416) 555-0123",
     special_requests: "Meet at the lobby.",
+    start_otp: "4821",
     status: "pending",
     payment_status: "pending",
     stripe_payment_id: null,
@@ -250,6 +255,7 @@ export const bookings: Booking[] = [
     passenger_name: "Priya Nair",
     passenger_phone: "+1 (647) 555-0456",
     special_requests: "Flight from Vancouver — please track.",
+    start_otp: "9137",
     status: "confirmed",
     payment_status: "pending",
     stripe_payment_id: null,
@@ -279,6 +285,7 @@ export const bookings: Booking[] = [
     passenger_name: "Jordan Avery",
     passenger_phone: "+1 (416) 555-0123",
     special_requests: "Multi-stop: showroom visits.",
+    start_otp: "2504",
     status: "driver_assigned",
     payment_status: "pending",
     stripe_payment_id: null,
@@ -308,6 +315,7 @@ export const bookings: Booking[] = [
     passenger_name: "Priya Nair",
     passenger_phone: "+1 (647) 555-0456",
     special_requests: "Wedding party.",
+    start_otp: "7663",
     status: "completed",
     payment_status: "paid",
     stripe_payment_id: "pi_mock_3a91",
@@ -337,6 +345,7 @@ export const bookings: Booking[] = [
     passenger_name: "Jordan Avery",
     passenger_phone: "+1 (416) 555-0123",
     special_requests: null,
+    start_otp: "3390",
     status: "cancelled",
     payment_status: "refunded",
     stripe_payment_id: null,
