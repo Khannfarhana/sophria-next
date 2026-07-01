@@ -9,6 +9,8 @@ import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
 import { StatusBadge } from "@/components/site/StatusBadge";
 import { cancelBookingAction } from "@/lib/actions";
+import { SUPABASE_ENABLED } from "@/lib/data-source";
+import { mockBookingsForCustomer, mockCancelBooking } from "@/lib/mock-db/actions";
 
 export default function DashboardPage() {
   return (
@@ -27,6 +29,7 @@ function Dashboard() {
     queryKey: ["my-bookings", user?.id],
     enabled: !!user?.id,
     queryFn: async () => {
+      if (!SUPABASE_ENABLED) return mockBookingsForCustomer(user!.id);
       const { data, error } = await supabase
         .from("bookings")
         .select("*, vehicles(name)")
@@ -38,7 +41,8 @@ function Dashboard() {
 
   const cancel = async (id: string) => {
     try {
-      await cancelBookingAction(id);
+      if (SUPABASE_ENABLED) await cancelBookingAction(id);
+      else await mockCancelBooking(id);
       toast.success("Booking cancelled");
       qc.invalidateQueries({ queryKey: ["my-bookings"] });
     } catch (err: any) {

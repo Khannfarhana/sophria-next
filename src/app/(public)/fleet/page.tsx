@@ -5,6 +5,8 @@ import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import { Users, Luggage, Check, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import type { Metadata } from "next";
+import { SUPABASE_ENABLED } from "@/lib/data-source";
+import { queries as mockDb } from "@/data/data";
 
 export const metadata: Metadata = {
   title: "Fleet",
@@ -16,11 +18,10 @@ export const metadata: Metadata = {
 };
 
 export default async function FleetPage() {
-  const { data: vehicles } = await supabase
-    .from("vehicles")
-    .select("*")
-    .eq("is_active", true)
-    .order("base_rate");
+  const { data: dbVehicles } = SUPABASE_ENABLED
+    ? await supabase.from("vehicles").select("*").eq("is_active", true).order("base_rate")
+    : { data: null };
+  const vehicles = dbVehicles?.length ? dbVehicles : mockDb.activeVehicles();
 
   return (
     <SiteLayout>

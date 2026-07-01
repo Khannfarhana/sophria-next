@@ -12,19 +12,26 @@ import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import { Check, ArrowRight, ArrowLeft, Sparkles, Users, Luggage } from "lucide-react";
 import Image from "next/image";
 import { createBookingAction } from "@/lib/actions";
+import { TripTypeToggle } from "@/components/site/TripTypeToggle";
+import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { SUPABASE_ENABLED } from "@/lib/data-source";
+import { queries as mockDb } from "@/data/data";
+import { mockCreateBooking } from "@/lib/mock-db/actions";
 
 type State = {
+  tripType: TripType;
   pickup: string;
   dropoff: string;
   datetime: string;
+  durationHours: number;
+  flightNumber: string;
   vehicleId: string | null;
-  fare: number;
   passengerName: string;
   passengerPhone: string;
   notes: string;
 };
 
-const STEP_LABELS = ["Route", "Date & Time", "Vehicle", "Passenger", "Payment", "Confirmed"];
+const STEP_LABELS = ["Trip", "Date & Time", "Vehicle", "Passenger", "Payment", "Confirmed"];
 
 export default function BookPage() {
   return (
@@ -43,16 +50,18 @@ function BookFlow() {
   const [step, setStep] = useState(1);
   const [reference, setReference] = useState<string | null>(null);
   const [s, setS] = useState<State>({
-    pickup: "", dropoff: "", datetime: "", vehicleId: null,
-    fare: 0, passengerName: "", passengerPhone: "", notes: "",
+    tripType: "one_way", pickup: "", dropoff: "", datetime: "",
+    durationHours: HOURLY_MIN_HOURS, flightNumber: "", vehicleId: null,
+    passengerName: "", passengerPhone: "", notes: "",
   });
 
   const { data: vehicles } = useQuery({
     queryKey: ["vehicles-book"],
     queryFn: async () => {
+      if (!SUPABASE_ENABLED) return mockDb.activeVehicles();
       const { data, error } = await supabase.from("vehicles").select("*").eq("is_active", true).order("base_rate");
       if (error) throw error;
-      return data;
+      return data?.length ? data : mockDb.activeVehicles();
     },
   });
 
@@ -72,11 +81,20 @@ function BookFlow() {
       try {
         const params = new URLSearchParams(decodeURIComponent(q));
         setS(prev => {
-          const next = { ...prev, pickup: params.get("pickup") || "", dropoff: params.get("dropoff") || "", datetime: params.get("datetime") || "" };
+          const tt = (params.get("tripType") as TripType) || prev.tripType;
+          const next = {
+            ...prev,
+            tripType: ["one_way", "hourly", "airport"].includes(tt) ? tt : prev.tripType,
+            pickup: params.get("pickup") || "",
+            dropoff: params.get("dropoff") || "",
+            datetime: params.get("datetime") || "",
+            durationHours: Number(params.get("duration")) || prev.durationHours,
+            flightNumber: params.get("flight") || "",
+          };
           const vehicleType = params.get("vehicle") || "";
           if (vehicles && vehicleType) {
             const match = vehicles.find((v: any) => v.type === vehicleType);
-            if (match) { next.vehicleId = match.id; next.fare = Number(match.base_rate); }
+            if (match) next.vehicleId = match.id;
           }
           return next;
         });
@@ -85,15 +103,22 @@ function BookFlow() {
   }, [searchParams, vehicles]);
 
   const selected = vehicles?.find((v: any) => v.id === s.vehicleId);
+  const fare = quote(s.tripType, selected, { durationHours: s.durationHours });
 
   const confirm = async () => {
     if (!user || !s.vehicleId) return;
     try {
-      const data = await createBookingAction({
+      const payload = {
         vehicleId: s.vehicleId, pickup: s.pickup, dropoff: s.dropoff,
-        datetime: s.datetime, fare: s.fare, passengerName: s.passengerName,
+        datetime: s.datetime, fare, passengerName: s.passengerName,
         passengerPhone: s.passengerPhone, notes: s.notes,
-      });
+        tripType: s.tripType,
+        durationHours: s.tripType === "hourly" ? s.durationHours : null,
+        flightNumber: s.tripType === "airport" ? (s.flightNumber || null) : null,
+      };
+      const data = SUPABASE_ENABLED
+        ? await createBookingAction(payload)
+        : await mockCreateBooking({ ...payload, customerId: user.id });
       setReference(data.reference);
       setStep(6);
     } catch (err: any) {
@@ -137,16 +162,39 @@ function BookFlow() {
           {/* Step card */}
           <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
 
-            {/* Step 1 — Route */}
+            {/* Step 1 — Trip details */}
             {step === 1 && (
-              <Step title="Pickup & drop-off">
+              <Step title="Trip details">
+                <div>
+                  <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-ink-muted">Trip type</label>
+                  <TripTypeToggle value={s.tripType} onChange={(t) => setS({ ...s, tripType: t })} />
+                </div>
                 <Field label="Pickup location">
                   <input className={inputCls} value={s.pickup} onChange={(e) => setS({ ...s, pickup: e.target.value })} placeholder="123 Bay St, Toronto" />
                 </Field>
-                <Field label="Drop-off location">
-                  <input className={inputCls} value={s.dropoff} onChange={(e) => setS({ ...s, dropoff: e.target.value })} placeholder="Toronto Pearson (YYZ)" />
-                </Field>
-                <Nav onNext={() => s.pickup && s.dropoff ? setStep(2) : toast.error("Please fill both fields")} />
+                {s.tripType === "hourly" ? (
+                  <Field label="Duration">
+                    <select className={inputCls} value={s.durationHours} onChange={(e) => setS({ ...s, durationHours: Number(e.target.value) })}>
+                      {Array.from({ length: 11 }, (_, i) => i + HOURLY_MIN_HOURS).map((h) => (
+                        <option key={h} value={h}>{h} hours</option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : (
+                  <Field label={s.tripType === "airport" ? "Airport / drop-off" : "Drop-off location"}>
+                    <input className={inputCls} value={s.dropoff} onChange={(e) => setS({ ...s, dropoff: e.target.value })} placeholder="Toronto Pearson (YYZ)" />
+                  </Field>
+                )}
+                {s.tripType === "airport" && (
+                  <Field label="Flight number (optional)">
+                    <input className={inputCls} value={s.flightNumber} onChange={(e) => setS({ ...s, flightNumber: e.target.value })} placeholder="AC 118" />
+                  </Field>
+                )}
+                <Nav onNext={() => {
+                  if (!s.pickup) { toast.error("Add a pickup location"); return; }
+                  if (s.tripType !== "hourly" && !s.dropoff) { toast.error("Add a drop-off location"); return; }
+                  setStep(2);
+                }} />
               </Step>
             )}
 
@@ -173,7 +221,7 @@ function BookFlow() {
                           : "border-border hover:border-foreground/30"
                       }`}
                     >
-                      <input type="radio" name="v" checked={s.vehicleId === v.id} onChange={() => setS({ ...s, vehicleId: v.id, fare: Number(v.base_rate) })} className="sr-only" />
+                      <input type="radio" name="v" checked={s.vehicleId === v.id} onChange={() => setS({ ...s, vehicleId: v.id })} className="sr-only" />
                       <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-lg bg-black">
                         <Image src={VEHICLE_IMAGES[v.type] ?? VEHICLE_IMAGES.sedan} alt={v.name} fill sizes="96px" className="object-cover" />
                       </div>
@@ -185,8 +233,8 @@ function BookFlow() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="text-base font-medium text-foreground">${Number(v.base_rate).toFixed(0)}</div>
-                        <div className="text-xs text-ink-soft">CAD est.</div>
+                        <div className="text-base font-medium text-foreground">${quote(s.tripType, v, { durationHours: s.durationHours }).toFixed(0)}</div>
+                        <div className="text-xs text-ink-soft">{s.tripType === "hourly" ? `CAD · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD est."}</div>
                       </div>
                       {s.vehicleId === v.id && (
                         <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground">
@@ -221,14 +269,20 @@ function BookFlow() {
               <Step title="Review & confirm">
                 <div className="space-y-3">
                   <div className="rounded-xl border border-border bg-surface p-5 text-sm">
-                    {[
+                    {([
+                      ["Trip type", tripTypeLabel(s.tripType)],
                       ["Pickup", s.pickup],
-                      ["Drop-off", s.dropoff],
+                      ...(s.tripType === "hourly"
+                        ? [["Duration", `${Math.max(HOURLY_MIN_HOURS, s.durationHours)} hours`] as [string, string]]
+                        : [["Drop-off", s.dropoff] as [string, string]]),
+                      ...(s.tripType === "airport" && s.flightNumber
+                        ? [["Flight", s.flightNumber] as [string, string]]
+                        : []),
                       ["Date & Time", s.datetime ? new Date(s.datetime).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" }) : "—"],
                       ["Vehicle", selected?.name ?? "—"],
                       ["Passenger", s.passengerName],
-                      ["Estimated fare", `$${s.fare.toFixed(2)} CAD`],
-                    ].map(([k, v]) => (
+                      ["Estimated fare", `$${fare.toFixed(2)} CAD`],
+                    ] as [string, string][]).map(([k, v]) => (
                       <div key={k} className={`flex justify-between py-2.5 ${k !== "Estimated fare" ? "border-b border-border" : "font-medium text-foreground"}`}>
                         <span className="text-ink-muted">{k}</span>
                         <span className="text-right text-foreground">{v}</span>

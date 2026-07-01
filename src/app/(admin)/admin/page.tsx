@@ -17,6 +17,18 @@ import {
   rejectBookingAction,
   assignDriverAction,
 } from "@/lib/actions";
+import { SUPABASE_ENABLED } from "@/lib/data-source";
+import {
+  mockAdminKpi,
+  mockAdminBookings,
+  mockAdminDrivers,
+  mockAdminVehicles,
+  mockAdminWeekly,
+  mockVerifyDriver,
+  mockConfirmBooking,
+  mockRejectBooking,
+  mockAssignDriver,
+} from "@/lib/mock-db/actions";
 
 export default function AdminPage() {
   return (
@@ -48,6 +60,7 @@ function AdminPortal() {
   const { data: kpi } = useQuery({
     queryKey: ["admin-kpi"],
     queryFn: async () => {
+      if (!SUPABASE_ENABLED) return mockAdminKpi();
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const [todays, active, monthly, pending] = await Promise.all([
         supabase.from("bookings").select("id", { count: "exact", head: true }).gte("created_at", today.toISOString()),
@@ -63,6 +76,7 @@ function AdminPortal() {
   const { data: bookings } = useQuery({
     queryKey: ["admin-bookings", filter],
     queryFn: async () => {
+      if (!SUPABASE_ENABLED) return mockAdminBookings(filter);
       let q = supabase.from("bookings").select("*, vehicles(name)").order("created_at", { ascending: false }).limit(50);
       if (filter !== "all") q = q.eq("status", filter as any);
       const { data } = await q;
@@ -95,6 +109,7 @@ function AdminPortal() {
   const { data: drivers } = useQuery({
     queryKey: ["admin-drivers"],
     queryFn: async () => {
+      if (!SUPABASE_ENABLED) return mockAdminDrivers();
       const { data } = await supabase.from("drivers").select("*").order("created_at", { ascending: false });
       if (!data) return [];
       const ids = data.map((d: any) => d.user_id);
@@ -108,12 +123,16 @@ function AdminPortal() {
 
   const { data: vehicles } = useQuery({
     queryKey: ["admin-vehicles"],
-    queryFn: async () => (await supabase.from("vehicles").select("*").order("base_rate")).data,
+    queryFn: async () => {
+      if (!SUPABASE_ENABLED) return mockAdminVehicles();
+      return (await supabase.from("vehicles").select("*").order("base_rate")).data;
+    },
   });
 
   const { data: weekly } = useQuery({
     queryKey: ["admin-weekly"],
     queryFn: async () => {
+      if (!SUPABASE_ENABLED) return mockAdminWeekly();
       const start = new Date(); start.setDate(start.getDate() - 30);
       const { data } = await supabase.from("bookings").select("created_at, fare_estimate").gte("created_at", start.toISOString());
       const buckets: Record<string, { week: string; bookings: number; revenue: number }> = {};
@@ -130,7 +149,8 @@ function AdminPortal() {
 
   const verifyDriver = async (id: string, val: boolean) => {
     try {
-      await verifyDriverAction(id, val);
+      if (SUPABASE_ENABLED) await verifyDriverAction(id, val);
+      else await mockVerifyDriver(id, val);
       qc.invalidateQueries({ queryKey: ["admin-drivers"] });
       toast.success("Updated driver status");
     } catch (err: any) {
@@ -140,7 +160,8 @@ function AdminPortal() {
 
   const confirmBooking = async (b: any) => {
     try {
-      await confirmBookingAction(b.id);
+      if (SUPABASE_ENABLED) await confirmBookingAction(b.id);
+      else await mockConfirmBooking(b.id);
       toast.success(`Booking ${b.reference} confirmed`);
       qc.invalidateQueries({ queryKey: ["admin-bookings"] });
     } catch (err: any) {
@@ -151,7 +172,8 @@ function AdminPortal() {
   const submitReject = async () => {
     if (!rejectFor) return;
     try {
-      await rejectBookingAction(rejectFor.id, rejReason, rejNotes || null);
+      if (SUPABASE_ENABLED) await rejectBookingAction(rejectFor.id, rejReason, rejNotes || null);
+      else await mockRejectBooking(rejectFor.id, rejReason, rejNotes || null);
       toast.success(`Booking ${rejectFor.reference} rejected`);
       setRejectFor(null);
       setRejNotes("");
@@ -165,7 +187,8 @@ function AdminPortal() {
   const assignDriver = async (driverId: string) => {
     if (!assignFor) return;
     try {
-      await assignDriverAction(assignFor.id, driverId);
+      if (SUPABASE_ENABLED) await assignDriverAction(assignFor.id, driverId);
+      else await mockAssignDriver(assignFor.id, driverId);
       toast.success(`Driver assigned to ${assignFor.reference}`);
       setAssignFor(null);
       qc.invalidateQueries({ queryKey: ["admin-bookings"] });
