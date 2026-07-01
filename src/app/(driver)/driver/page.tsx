@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/site/StatusBadge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { RideMap, navigateUrl } from "@/components/site/RideMap";
-import { MapPin, Navigation, Play, Check, X } from "lucide-react";
+import { MapPin, Navigation, Play, Check, X, KeyRound, Loader2 } from "lucide-react";
 import {
   updateDriverAvailabilityAction,
   acceptRideAction,
@@ -94,11 +94,12 @@ function DriverPortal() {
       if (!SUPABASE_ENABLED) return mockRidesForDriver(driver!.id);
       const { data, error } = await supabase
         .from("bookings")
-        .select("*, vehicles(name)")
+        // Explicit columns — never expose start_otp to the driver's client.
+        .select("id, reference, customer_id, driver_id, vehicle_id, pickup_location, dropoff_location, pickup_datetime, status, fare_estimate, passenger_name, passenger_phone, special_requests, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
         .eq("driver_id", driver!.id)
         .order("pickup_datetime");
       if (error) throw error;
-      return (data ?? []) as DriverRide[];
+      return (data ?? []) as unknown as DriverRide[];
     },
   });
 
@@ -137,15 +138,16 @@ function DriverPortal() {
     }
   };
 
-  const startRide = async (r: DriverRide) => {
+  const startRide = async (r: DriverRide, otp: string) => {
     try {
-      if (SUPABASE_ENABLED) await startRideAction(r.id);
-      else await mockStartRide(r.id);
+      if (SUPABASE_ENABLED) await startRideAction(r.id, otp);
+      else await mockStartRide(r.id, otp);
       toast.success("Ride started");
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
       setOpenRide((cur) => cur && { ...cur, status: "in_progress" });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to start ride");
+      throw err;
     }
   };
 
@@ -191,16 +193,16 @@ function DriverPortal() {
           </div>
 
           {/* Stats */}
-          <div className="mt-10 grid gap-4 md:grid-cols-4">
+          <div className="mt-8 grid grid-cols-2 gap-3 md:mt-10 md:grid-cols-4 md:gap-4">
             {[
               { l: "Today's rides", v: today.length },
               { l: "Total earnings", v: `$${Number(driver?.total_earnings ?? 0).toFixed(0)}` },
               { l: "Rating", v: Number(driver?.rating ?? 5).toFixed(2) },
               { l: "Verified", v: driver?.is_verified ? "Yes" : "Pending" },
             ].map((k) => (
-              <div key={k.l} className="rounded-sm border border-border bg-card p-6">
-                <div className="eyebrow">{k.l}</div>
-                <div className="mt-2 text-3xl font-light text-foreground">{k.v}</div>
+              <div key={k.l} className="rounded-xl border border-border bg-card p-4 md:p-6">
+                <div className="eyebrow text-[10px] md:text-xs">{k.l}</div>
+                <div className="mt-2 text-2xl font-light text-foreground md:text-3xl">{k.v}</div>
               </div>
             ))}
           </div>
@@ -282,7 +284,7 @@ function DriverPortal() {
       {/* Ride detail / Start-Complete dialog */}
       <Dialog open={!!openRide} onOpenChange={(o) => !o && setOpenRide(null)}>
         <DialogContent className="max-w-3xl bg-background border border-border">
-          {openRide && <RideDetail ride={openRide} onStart={() => startRide(openRide)} onComplete={() => completeRide(openRide)} />}
+          {openRide && <RideDetail ride={openRide} onStart={(otp) => startRide(openRide, otp)} onComplete={() => completeRide(openRide)} />}
         </DialogContent>
       </Dialog>
     </SiteLayout>
@@ -337,11 +339,26 @@ function RideList({
   );
 }
 
-function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: () => void; onComplete: () => void }) {
+function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: (otp: string) => Promise<void> | void; onComplete: () => void }) {
   const isInProgress = ride.status === "in_progress";
   const pickupTime = new Date(ride.pickup_datetime);
   // eslint-disable-next-line react-hooks/purity
   const canStart = !isInProgress && Date.now() >= pickupTime.getTime() - 30 * 60_000; // 30 min before pickup
+  const [otpMode, setOtpMode] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [verifying, setVerifying] = useState(false);
+
+  const submitOtp = async () => {
+    if (otp.trim().length < 4) { toast.error("Enter the 4-digit pickup code"); return; }
+    setVerifying(true);
+    try {
+      await onStart(otp.trim());
+    } catch {
+      /* toast shown by caller */
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   return (
     <>
@@ -379,6 +396,35 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
         )}
       </div>
 
+      {/* OTP entry — driver enters the code the customer gives them */}
+      {!isInProgress && otpMode && (
+        <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <KeyRound className="h-4 w-4" /> Enter pickup code
+          </div>
+          <p className="mt-1 text-xs text-ink-muted">Ask the customer for the 4-digit code shown in their booking.</p>
+          <div className="mt-3 flex gap-2">
+            <input
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              inputMode="numeric"
+              autoFocus
+              placeholder="0000"
+              onKeyDown={(e) => e.key === "Enter" && submitOtp()}
+              className="w-28 rounded-lg border border-border bg-input px-3 py-2 text-center text-lg font-mono tracking-[0.4em] text-foreground focus:border-foreground focus:outline-none"
+            />
+            <button
+              onClick={submitOtp}
+              disabled={verifying}
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-[#2A2A2A] disabled:opacity-60"
+            >
+              {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Verify &amp; Start
+            </button>
+          </div>
+        </div>
+      )}
+
       <DialogFooter className="gap-2 mt-4">
         <a
           href={navigateUrl(ride.pickup_location, ride.dropoff_location)}
@@ -390,12 +436,12 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
         </a>
         {!isInProgress ? (
           <button
-            onClick={onStart}
-            disabled={!canStart}
+            onClick={() => setOtpMode(true)}
+            disabled={!canStart || otpMode}
             title={canStart ? undefined : "Available 30 min before pickup"}
             className="inline-flex items-center gap-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-[#2A2A2A] disabled:opacity-50 cursor-pointer"
           >
-            <Play className="h-4 w-4" /> Start Ride
+            <KeyRound className="h-4 w-4" /> Start Ride
           </button>
         ) : (
           <button

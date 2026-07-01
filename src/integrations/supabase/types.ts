@@ -42,6 +42,7 @@ export type Database = {
           rejection_notes: string | null
           rejection_reason: string | null
           special_requests: string | null
+          start_otp: string | null
           status: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id: string | null
           updated_at: string
@@ -74,6 +75,7 @@ export type Database = {
           rejection_notes?: string | null
           rejection_reason?: string | null
           special_requests?: string | null
+          start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null
           updated_at?: string
@@ -106,6 +108,7 @@ export type Database = {
           rejection_notes?: string | null
           rejection_reason?: string | null
           special_requests?: string | null
+          start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null
           updated_at?: string
@@ -171,40 +174,61 @@ export type Database = {
       }
       drivers: {
         Row: {
+          city_of_residence: string | null
           created_at: string
           experience_years: number
           id: string
           is_available: boolean
           is_verified: boolean
+          languages_spoken: string | null
           license_number: string
+          province: string | null
           rating: number
+          photo_url: string | null
+          referral_name: string | null
+          time_availability: string | null
           total_earnings: number
           updated_at: string
           user_id: string
+          work_authorization: string | null
         }
         Insert: {
+          city_of_residence?: string | null
           created_at?: string
           experience_years?: number
           id?: string
           is_available?: boolean
           is_verified?: boolean
+          languages_spoken?: string | null
           license_number: string
+          province?: string | null
           rating?: number
+          photo_url?: string | null
+          referral_name?: string | null
+          time_availability?: string | null
           total_earnings?: number
           updated_at?: string
           user_id: string
+          work_authorization?: string | null
         }
         Update: {
+          city_of_residence?: string | null
           created_at?: string
           experience_years?: number
           id?: string
           is_available?: boolean
           is_verified?: boolean
+          languages_spoken?: string | null
           license_number?: string
+          province?: string | null
           rating?: number
+          photo_url?: string | null
+          referral_name?: string | null
+          time_availability?: string | null
           total_earnings?: number
           updated_at?: string
           user_id?: string
+          work_authorization?: string | null
         }
         Relationships: []
       }

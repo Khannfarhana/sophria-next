@@ -26,10 +26,23 @@ export function RideMap({ pickup, dropoff, pickupCoords, dropoffCoords, classNam
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!mapboxEnabled || !containerRef.current) return;
+    if (!mapboxEnabled) return;
     let cancelled = false;
     let map: import("mapbox-gl").Map | null = null;
     let resizeObs: ResizeObserver | null = null;
+    let raf = 0;
+
+    // Container may not be attached/sized yet (e.g. inside a dialog). Poll for it.
+    const waitForContainer = (): Promise<HTMLDivElement | null> =>
+      new Promise((res) => {
+        const check = () => {
+          if (cancelled) return res(null);
+          const el = containerRef.current;
+          if (el && el.clientWidth > 0 && el.clientHeight > 0) return res(el);
+          raf = requestAnimationFrame(check);
+        };
+        check();
+      });
 
     (async () => {
       const mapboxgl = (await import("mapbox-gl")).default;
@@ -39,12 +52,15 @@ export function RideMap({ pickup, dropoff, pickupCoords, dropoffCoords, classNam
         pickupCoords ?? geocode(pickup),
         dropoffCoords ?? geocode(dropoff),
       ]);
-      if (cancelled || !containerRef.current) return;
+      if (cancelled) return;
       if (!p || !d) { setFailed(true); return; }
+
+      const el = await waitForContainer();
+      if (cancelled || !el) return;
 
       mapboxgl.accessToken = MAPBOX_TOKEN;
       map = new mapboxgl.Map({
-        container: containerRef.current,
+        container: el,
         style: "mapbox://styles/mapbox/dark-v11",
         center: [p.lng, p.lat],
         zoom: 11,
@@ -52,12 +68,11 @@ export function RideMap({ pickup, dropoff, pickupCoords, dropoffCoords, classNam
         interactive: true,
       });
       mapRef.current = map;
+      map.on("error", (e) => console.error("[RideMap] mapbox error", e?.error ?? e));
 
-      if (containerRef.current) {
-        const ro = new ResizeObserver(() => map?.resize());
-        ro.observe(containerRef.current);
-        resizeObs = ro;
-      }
+      const ro = new ResizeObserver(() => map?.resize());
+      ro.observe(el);
+      resizeObs = ro;
 
       new mapboxgl.Marker({ color: "#4ade80" }).setLngLat([p.lng, p.lat]).addTo(map);
       new mapboxgl.Marker({ color: "#c9a76a" }).setLngLat([d.lng, d.lat]).addTo(map);
@@ -82,6 +97,7 @@ export function RideMap({ pickup, dropoff, pickupCoords, dropoffCoords, classNam
 
     return () => {
       cancelled = true;
+      cancelAnimationFrame(raf);
       resizeObs?.disconnect();
       map?.remove();
       mapRef.current = null;

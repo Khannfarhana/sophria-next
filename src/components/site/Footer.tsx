@@ -5,8 +5,8 @@ export function Footer() {
   return (
     <footer className="bg-[#101010] text-white">
       <div className="mx-auto max-w-7xl px-6 py-16">
-        <div className="grid gap-12 md:grid-cols-4">
-          <div className="md:col-span-2">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-10 md:grid-cols-4 md:gap-12">
+          <div className="col-span-2">
             <div className="font-display text-3xl tracking-wide">SophRia</div>
             <p className="mt-4 max-w-sm text-sm text-white/60">
               Toronto's premier chauffeur and limousine service. Discreet. Punctual. Effortless.
