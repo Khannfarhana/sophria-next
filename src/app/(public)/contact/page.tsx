@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
+import { MAPBOX_TOKEN } from "@/lib/mapbox";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { Mail, Phone, MapPin } from "lucide-react";
 
@@ -121,14 +122,21 @@ export default function ContactPage() {
               </div>
             </div>
             <div className="overflow-hidden rounded-2xl border border-border shadow-sm">
-              <iframe
-                title="Toronto map"
-                width="100%"
-                height="280"
-                style={{ border: 0, filter: "grayscale(1) invert(0.95)", display: "block" }}
-                loading="lazy"
-                src="https://maps.google.com/maps?q=Toronto%2C%20Ontario%2C%20Canada&t=&z=12&ie=UTF8&iwloc=&output=embed"
-              />
+              {MAPBOX_TOKEN ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt="Map of our Toronto service area"
+                  width={600}
+                  height={280}
+                  loading="lazy"
+                  style={{ display: "block", width: "100%", height: 280, objectFit: "cover" }}
+                  src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/-79.3832,43.6532,10.5,0/600x280@2x?access_token=${MAPBOX_TOKEN}`}
+                />
+              ) : (
+                <div className="flex h-[280px] items-center justify-center bg-muted text-sm text-ink-muted">
+                  Map unavailable
+                </div>
+              )}
             </div>
           </div>
         </div>

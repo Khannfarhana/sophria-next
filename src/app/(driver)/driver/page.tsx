@@ -322,7 +322,13 @@ function RideDetail({ ride, onStart, onComplete }: { ride: any; onStart: () => v
       </DialogHeader>
 
       <div className="space-y-3">
-        <RideMap pickup={ride.pickup_location} dropoff={ride.dropoff_location} height={280} />
+        <RideMap
+          pickup={ride.pickup_location}
+          dropoff={ride.dropoff_location}
+          pickupCoords={ride.pickup_lng != null && ride.pickup_lat != null ? { lng: ride.pickup_lng, lat: ride.pickup_lat } : null}
+          dropoffCoords={ride.dropoff_lng != null && ride.dropoff_lat != null ? { lng: ride.dropoff_lng, lat: ride.dropoff_lat } : null}
+          height={280}
+        />
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-foreground">
           <div>
             <div className="text-ink-muted text-xs uppercase tracking-wider">Pickup</div>

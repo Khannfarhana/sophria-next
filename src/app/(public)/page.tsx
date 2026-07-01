@@ -13,7 +13,7 @@ export default function Home() {
   return (
     <SiteLayout>
       {/* Hero */}
-      <section className="relative isolate overflow-hidden bg-[#0d0d0e] text-white md:min-h-[92vh]">
+      <section className="relative isolate overflow-hidden bg-[#0d0d0e] text-white md:min-h-screen">
         <div className="absolute inset-0 animate-kenburns">
           {/* Mobile: portrait hero */}
           <Image
@@ -39,7 +39,7 @@ export default function Home() {
         <div className="pointer-events-none absolute -top-32 left-1/2 h-[620px] w-[920px] -translate-x-1/2 rounded-full bg-white/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 -left-20 h-80 w-80 rounded-full bg-[#c9a76a]/20 blur-3xl" />
 
-        <div className="relative mx-auto flex max-w-7xl flex-col justify-start px-6 pb-20 pt-48 md:min-h-[92vh] md:justify-end md:pt-32 md:pb-24">
+        <div className="relative mx-auto flex max-w-7xl flex-col justify-start px-6 pb-20 pt-48 md:min-h-screen md:justify-end md:pt-32 md:pb-24">
           <div className="mb-6 animate-rise text-xs uppercase tracking-[0.22em] text-white/70">Toronto · Est. 2018</div>
           <h1 className="max-w-3xl text-5xl leading-[1.05] md:text-7xl animate-rise delay-100">
             Toronto's premier <br />
@@ -68,7 +68,7 @@ export default function Home() {
       </section>
 
       {/* Booking widget */}
-      <section className="relative -mt-16 md:-mt-12 bg-gradient-to-b from-transparent via-[#151516] to-[#1b1b1d] px-6 pb-14">
+      <section className="relative -mt-16 md:-mt-12 bg-gradient-to-b from-[#0d0d0e] via-[#151516] to-[#1b1b1d] px-6 pb-14">
         <div className="mx-auto max-w-6xl animate-rise delay-500">
           <BookingWidget />
         </div>

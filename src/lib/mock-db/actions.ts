@@ -129,6 +129,12 @@ export async function mockCreateBooking(input: {
   tripType?: "one_way" | "hourly" | "airport";
   durationHours?: number | null;
   flightNumber?: string | null;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+  dropoffLat?: number | null;
+  dropoffLng?: number | null;
+  distanceKm?: number | null;
+  durationMin?: number | null;
 }) {
   const reference = newReference();
   const tt = input.tripType ?? "one_way";
@@ -147,6 +153,12 @@ export async function mockCreateBooking(input: {
       flight_number: tt === "airport" ? input.flightNumber ?? null : null,
       passenger_count: null,
       luggage_count: null,
+      pickup_lat: input.pickupLat ?? null,
+      pickup_lng: input.pickupLng ?? null,
+      dropoff_lat: input.dropoffLat ?? null,
+      dropoff_lng: input.dropoffLng ?? null,
+      distance_km: input.distanceKm ?? null,
+      duration_min: input.durationMin ?? null,
       fare_estimate: input.fare,
       passenger_name: input.passengerName,
       passenger_phone: input.passengerPhone,

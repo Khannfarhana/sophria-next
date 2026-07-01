@@ -18,9 +18,13 @@ export type Database = {
         Row: {
           created_at: string
           customer_id: string
+          distance_km: number | null
           driver_id: string | null
+          dropoff_lat: number | null
+          dropoff_lng: number | null
           dropoff_location: string
           duration_hours: number | null
+          duration_min: number | null
           fare_estimate: number
           flight_number: string | null
           id: string
@@ -29,6 +33,8 @@ export type Database = {
           passenger_name: string | null
           passenger_phone: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
+          pickup_lat: number | null
+          pickup_lng: number | null
           trip_type: string
           pickup_datetime: string
           pickup_location: string
@@ -44,9 +50,13 @@ export type Database = {
         Insert: {
           created_at?: string
           customer_id: string
+          distance_km?: number | null
           driver_id?: string | null
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
           dropoff_location: string
           duration_hours?: number | null
+          duration_min?: number | null
           fare_estimate?: number
           flight_number?: string | null
           id?: string
@@ -55,6 +65,8 @@ export type Database = {
           passenger_name?: string | null
           passenger_phone?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
+          pickup_lat?: number | null
+          pickup_lng?: number | null
           pickup_datetime: string
           trip_type?: string
           pickup_location: string
@@ -70,9 +82,13 @@ export type Database = {
         Update: {
           created_at?: string
           customer_id?: string
+          distance_km?: number | null
           driver_id?: string | null
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
           dropoff_location?: string
           duration_hours?: number | null
+          duration_min?: number | null
           fare_estimate?: number
           flight_number?: string | null
           id?: string
@@ -81,6 +97,8 @@ export type Database = {
           passenger_name?: string | null
           passenger_phone?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
+          pickup_lat?: number | null
+          pickup_lng?: number | null
           pickup_datetime?: string
           trip_type?: string
           pickup_location?: string

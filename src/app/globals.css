@@ -4,6 +4,8 @@
 @source "../lib";
 @source "../hooks";
 @import "tw-animate-css";
+/* Mapbox GL base styles — must load globally so map canvas + controls render. */
+@import "mapbox-gl/dist/mapbox-gl.css";
 
 @custom-variant dark (&:is(.dark *));
 

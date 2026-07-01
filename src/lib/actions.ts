@@ -40,6 +40,12 @@ export async function createBookingAction(data: {
   flightNumber?: string | null;
   passengerCount?: number | null;
   luggageCount?: number | null;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+  dropoffLat?: number | null;
+  dropoffLng?: number | null;
+  distanceKm?: number | null;
+  durationMin?: number | null;
 }) {
   const session = await auth();
   if (!session?.user) throw new Error("Unauthorized");
@@ -67,6 +73,12 @@ export async function createBookingAction(data: {
       flight_number: tripType === "airport" ? (data.flightNumber ?? null) : null,
       passenger_count: data.passengerCount ?? null,
       luggage_count: data.luggageCount ?? null,
+      pickup_lat: data.pickupLat ?? null,
+      pickup_lng: data.pickupLng ?? null,
+      dropoff_lat: data.dropoffLat ?? null,
+      dropoff_lng: data.dropoffLng ?? null,
+      distance_km: data.distanceKm ?? null,
+      duration_min: data.durationMin ?? null,
       status: "pending",
       payment_status: "pending",
     })

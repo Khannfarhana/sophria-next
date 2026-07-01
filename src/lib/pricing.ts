@@ -15,6 +15,11 @@ export const TRIP_TYPES: { value: TripType; label: string; hint: string }[] = [
 export const HOURLY_MIN_HOURS = 2;
 const AIRPORT_FEE = 15; // flat zone surcharge (meet & greet + wait)
 
+/** Per-kilometre rate added on top of a vehicle's base for point-to-point trips. */
+export const PER_KM = 2.75;
+/** Airport trips include this many km before per-km charges kick in. */
+const AIRPORT_FREE_KM = 20;
+
 /** Minimal shape we need from a vehicle row to quote. */
 export interface QuotableVehicle {
   base_rate: number | string;
@@ -30,6 +35,8 @@ export function hourlyRateFor(v: QuotableVehicle): number {
 
 export interface QuoteParams {
   durationHours?: number;
+  /** Driving distance in km (from Mapbox Directions). Omit for a flat estimate. */
+  distanceKm?: number;
 }
 
 /** Returns an estimated fare in CAD for the given trip type + vehicle. */
@@ -40,17 +47,21 @@ export function quote(
 ): number {
   if (!vehicle) return 0;
   const base = Number(vehicle.base_rate) || 0;
+  const km = Number(params.distanceKm) || 0;
 
   switch (tripType) {
     case "hourly": {
       const hrs = Math.max(HOURLY_MIN_HOURS, Number(params.durationHours) || HOURLY_MIN_HOURS);
       return hourlyRateFor(vehicle) * hrs;
     }
-    case "airport":
-      return base + AIRPORT_FEE;
+    case "airport": {
+      const extraKm = Math.max(0, km - AIRPORT_FREE_KM);
+      return Math.round(base + AIRPORT_FEE + extraKm * PER_KM);
+    }
     case "one_way":
     default:
-      return base;
+      // Distance-based when we have coordinates; flat base otherwise.
+      return km > 0 ? Math.round(base + km * PER_KM) : base;
   }
 }
 

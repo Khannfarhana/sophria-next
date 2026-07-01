@@ -13,15 +13,24 @@ import { Check, ArrowRight, ArrowLeft, Sparkles, Users, Luggage } from "lucide-r
 import Image from "next/image";
 import { createBookingAction } from "@/lib/actions";
 import { TripTypeToggle } from "@/components/site/TripTypeToggle";
+import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
+import { RideMap } from "@/components/site/RideMap";
+import { getDirections, type Place } from "@/lib/mapbox";
 import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { queries as mockDb } from "@/data/data";
 import { mockCreateBooking } from "@/lib/mock-db/actions";
 
+type Coords = { lng: number; lat: number } | null;
+
 type State = {
   tripType: TripType;
   pickup: string;
   dropoff: string;
+  pickupCoords: Coords;
+  dropoffCoords: Coords;
+  distanceKm: number | null;
+  durationMin: number | null;
   datetime: string;
   durationHours: number;
   flightNumber: string;
@@ -50,8 +59,9 @@ function BookFlow() {
   const [step, setStep] = useState(1);
   const [reference, setReference] = useState<string | null>(null);
   const [s, setS] = useState<State>({
-    tripType: "one_way", pickup: "", dropoff: "", datetime: "",
-    durationHours: HOURLY_MIN_HOURS, flightNumber: "", vehicleId: null,
+    tripType: "one_way", pickup: "", dropoff: "",
+    pickupCoords: null, dropoffCoords: null, distanceKm: null, durationMin: null,
+    datetime: "", durationHours: HOURLY_MIN_HOURS, flightNumber: "", vehicleId: null,
     passengerName: "", passengerPhone: "", notes: "",
   });
 
@@ -82,11 +92,16 @@ function BookFlow() {
         const params = new URLSearchParams(decodeURIComponent(q));
         setS(prev => {
           const tt = (params.get("tripType") as TripType) || prev.tripType;
+          const num = (k: string) => (params.get(k) != null ? Number(params.get(k)) : null);
+          const pLng = num("pickupLng"), pLat = num("pickupLat");
+          const dLng = num("dropoffLng"), dLat = num("dropoffLat");
           const next = {
             ...prev,
             tripType: ["one_way", "hourly", "airport"].includes(tt) ? tt : prev.tripType,
             pickup: params.get("pickup") || "",
             dropoff: params.get("dropoff") || "",
+            pickupCoords: pLng != null && pLat != null ? { lng: pLng, lat: pLat } : null,
+            dropoffCoords: dLng != null && dLat != null ? { lng: dLng, lat: dLat } : null,
             datetime: params.get("datetime") || "",
             durationHours: Number(params.get("duration")) || prev.durationHours,
             flightNumber: params.get("flight") || "",
@@ -102,8 +117,23 @@ function BookFlow() {
     }
   }, [searchParams, vehicles]);
 
+  // Compute driving distance/duration whenever both endpoints have coordinates.
+  useEffect(() => {
+    const p = s.pickupCoords, d = s.dropoffCoords;
+    if (s.tripType === "hourly" || !p || !d) {
+      setS((prev) => (prev.distanceKm == null && prev.durationMin == null ? prev : { ...prev, distanceKm: null, durationMin: null }));
+      return;
+    }
+    let cancelled = false;
+    getDirections(p, d).then((dir) => {
+      if (cancelled || !dir) return;
+      setS((prev) => ({ ...prev, distanceKm: dir.distanceKm, durationMin: dir.durationMin }));
+    });
+    return () => { cancelled = true; };
+  }, [s.pickupCoords, s.dropoffCoords, s.tripType]);
+
   const selected = vehicles?.find((v: any) => v.id === s.vehicleId);
-  const fare = quote(s.tripType, selected, { durationHours: s.durationHours });
+  const fare = quote(s.tripType, selected, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined });
 
   const confirm = async () => {
     if (!user || !s.vehicleId) return;
@@ -115,6 +145,12 @@ function BookFlow() {
         tripType: s.tripType,
         durationHours: s.tripType === "hourly" ? s.durationHours : null,
         flightNumber: s.tripType === "airport" ? (s.flightNumber || null) : null,
+        pickupLat: s.pickupCoords?.lat ?? null,
+        pickupLng: s.pickupCoords?.lng ?? null,
+        dropoffLat: s.dropoffCoords?.lat ?? null,
+        dropoffLng: s.dropoffCoords?.lng ?? null,
+        distanceKm: s.distanceKm,
+        durationMin: s.durationMin,
       };
       const data = SUPABASE_ENABLED
         ? await createBookingAction(payload)
@@ -170,7 +206,15 @@ function BookFlow() {
                   <TripTypeToggle value={s.tripType} onChange={(t) => setS({ ...s, tripType: t })} />
                 </div>
                 <Field label="Pickup location">
-                  <input className={inputCls} value={s.pickup} onChange={(e) => setS({ ...s, pickup: e.target.value })} placeholder="123 Bay St, Toronto" />
+                  <AddressAutocomplete
+                    value={s.pickup}
+                    onChange={(v) => setS({ ...s, pickup: v, pickupCoords: null })}
+                    onSelect={(p: Place) => setS({ ...s, pickup: p.address, pickupCoords: { lng: p.lng, lat: p.lat } })}
+                    placeholder="123 Bay St, Toronto"
+                    inputClassName={inputCls}
+                    mapInitial={s.dropoffCoords}
+                    mapTitle="Choose pickup on map"
+                  />
                 </Field>
                 {s.tripType === "hourly" ? (
                   <Field label="Duration">
@@ -182,13 +226,38 @@ function BookFlow() {
                   </Field>
                 ) : (
                   <Field label={s.tripType === "airport" ? "Airport / drop-off" : "Drop-off location"}>
-                    <input className={inputCls} value={s.dropoff} onChange={(e) => setS({ ...s, dropoff: e.target.value })} placeholder="Toronto Pearson (YYZ)" />
+                    <AddressAutocomplete
+                      value={s.dropoff}
+                      onChange={(v) => setS({ ...s, dropoff: v, dropoffCoords: null })}
+                      onSelect={(p: Place) => setS({ ...s, dropoff: p.address, dropoffCoords: { lng: p.lng, lat: p.lat } })}
+                      placeholder="Toronto Pearson (YYZ)"
+                      inputClassName={inputCls}
+                      mapInitial={s.pickupCoords}
+                      mapTitle="Choose drop-off on map"
+                    />
                   </Field>
                 )}
                 {s.tripType === "airport" && (
                   <Field label="Flight number (optional)">
                     <input className={inputCls} value={s.flightNumber} onChange={(e) => setS({ ...s, flightNumber: e.target.value })} placeholder="AC 118" />
                   </Field>
+                )}
+                {s.tripType !== "hourly" && s.pickupCoords && s.dropoffCoords && (
+                  <div className="space-y-2">
+                    <RideMap
+                      pickup={s.pickup}
+                      dropoff={s.dropoff}
+                      pickupCoords={s.pickupCoords}
+                      dropoffCoords={s.dropoffCoords}
+                      height={220}
+                    />
+                    {s.distanceKm != null && (
+                      <p className="text-sm text-ink-muted">
+                        Approx. <span className="font-medium text-foreground">{s.distanceKm.toFixed(1)} km</span>
+                        {s.durationMin != null && <> · {Math.round(s.durationMin)} min drive</>}
+                      </p>
+                    )}
+                  </div>
                 )}
                 <Nav onNext={() => {
                   if (!s.pickup) { toast.error("Add a pickup location"); return; }
@@ -233,7 +302,7 @@ function BookFlow() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="text-base font-medium text-foreground">${quote(s.tripType, v, { durationHours: s.durationHours }).toFixed(0)}</div>
+                        <div className="text-base font-medium text-foreground">${quote(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined }).toFixed(0)}</div>
                         <div className="text-xs text-ink-soft">{s.tripType === "hourly" ? `CAD · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD est."}</div>
                       </div>
                       {s.vehicleId === v.id && (

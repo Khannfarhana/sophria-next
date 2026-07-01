@@ -5,26 +5,43 @@ import { useRouter } from "next/navigation";
 import { MapPin, Calendar, Car, Clock, Plane } from "lucide-react";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { TripTypeToggle } from "@/components/site/TripTypeToggle";
+import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
 import { HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import type { Place } from "@/lib/mapbox";
+
+type Coords = { lng: number; lat: number } | null;
 
 export function BookingWidget() {
   const router = useRouter();
   const [tripType, setTripType] = useState<TripType>("one_way");
   const [pickup, setPickup] = useState("");
   const [dropoff, setDropoff] = useState("");
+  const [pickupCoords, setPickupCoords] = useState<Coords>(null);
+  const [dropoffCoords, setDropoffCoords] = useState<Coords>(null);
   const [datetime, setDatetime] = useState("");
   const [vehicle, setVehicle] = useState("sedan");
   const [duration, setDuration] = useState(HOURLY_MIN_HOURS);
   const [flight, setFlight] = useState("");
 
   const cell =
-    "flex items-center gap-3 border-b border-border pb-3 md:border-b-0 md:border-r md:pb-0 md:pr-4";
+    "relative flex items-center gap-3 border-b border-border pb-3 md:border-b-0 md:border-r md:pb-0 md:pr-4";
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams({ tripType, pickup, datetime, vehicle });
-    if (tripType === "hourly") params.set("duration", String(duration));
-    else params.set("dropoff", dropoff);
+    if (pickupCoords) {
+      params.set("pickupLng", String(pickupCoords.lng));
+      params.set("pickupLat", String(pickupCoords.lat));
+    }
+    if (tripType === "hourly") {
+      params.set("duration", String(duration));
+    } else {
+      params.set("dropoff", dropoff);
+      if (dropoffCoords) {
+        params.set("dropoffLng", String(dropoffCoords.lng));
+        params.set("dropoffLat", String(dropoffCoords.lat));
+      }
+    }
     if (tripType === "airport") params.set("flight", flight);
     router.push(`/book?q=${encodeURIComponent(params.toString())}`);
   };
@@ -35,16 +52,24 @@ export function BookingWidget() {
 
       <form onSubmit={submit} className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
         {/* Pickup — always */}
-        <label className={`${cell} md:flex-1 md:min-w-[180px]`}>
-          <MapPin className="h-4 w-4 shrink-0 text-ink-muted" />
-          <input
+        <div className={`${cell} md:flex-1 md:min-w-[180px]`}>
+          <AddressAutocomplete
             value={pickup}
-            onChange={(e) => setPickup(e.target.value)}
+            onChange={(v) => {
+              setPickup(v);
+              setPickupCoords(null);
+            }}
+            onSelect={(p: Place) => {
+              setPickup(p.address);
+              setPickupCoords({ lng: p.lng, lat: p.lat });
+            }}
             placeholder="Pickup location"
-            className="w-full bg-transparent text-sm placeholder:text-ink-soft focus:outline-none"
+            leadingIcon={<MapPin className="h-4 w-4 shrink-0 text-ink-muted" />}
+            mapInitial={dropoffCoords}
+            mapTitle="Choose pickup on map"
             required
           />
-        </label>
+        </div>
 
         {/* Drop-off (one-way / airport) OR Duration (hourly) */}
         {tripType === "hourly" ? (
@@ -61,16 +86,24 @@ export function BookingWidget() {
             </select>
           </label>
         ) : (
-          <label className={`${cell} md:flex-1 md:min-w-[180px]`}>
-            <MapPin className="h-4 w-4 shrink-0 text-ink-muted" />
-            <input
+          <div className={`${cell} md:flex-1 md:min-w-[180px]`}>
+            <AddressAutocomplete
               value={dropoff}
-              onChange={(e) => setDropoff(e.target.value)}
+              onChange={(v) => {
+                setDropoff(v);
+                setDropoffCoords(null);
+              }}
+              onSelect={(p: Place) => {
+                setDropoff(p.address);
+                setDropoffCoords({ lng: p.lng, lat: p.lat });
+              }}
               placeholder={tripType === "airport" ? "Airport / address" : "Drop-off location"}
-              className="w-full bg-transparent text-sm placeholder:text-ink-soft focus:outline-none"
+              leadingIcon={<MapPin className="h-4 w-4 shrink-0 text-ink-muted" />}
+              mapInitial={pickupCoords}
+              mapTitle="Choose drop-off on map"
               required
             />
-          </label>
+          </div>
         )}
 
         {/* Flight number — airport only */}
