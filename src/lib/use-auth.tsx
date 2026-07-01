@@ -44,9 +44,17 @@ const Ctx = createContext<AuthCtx>({
   setDemo: () => {},
 });
 
+// Map demo roles to seed user IDs (src/data/data.ts) so demo sessions see the
+// mock DB's seeded bookings/driver data and any CRUD they perform persists.
+const DEMO_SEED_IDS: Record<AppRole, string> = {
+  customer: "00000000-0000-4000-a000-000000000002", // Jordan Avery
+  driver: "00000000-0000-4000-a000-000000000011", // Marcus Bennett (driver1)
+  admin: "00000000-0000-4000-a000-000000000001", // SophRia Operations
+};
+
 function makeDemoUser(role: AppRole) {
   return {
-    id: `demo-${role}`,
+    id: DEMO_SEED_IDS[role],
     name: `Demo ${role[0].toUpperCase()}${role.slice(1)}`,
     email: `demo-${role}@sophria.test`,
     roles: [role],

@@ -20,11 +20,16 @@ export type Database = {
           customer_id: string
           driver_id: string | null
           dropoff_location: string
+          duration_hours: number | null
           fare_estimate: number
+          flight_number: string | null
           id: string
+          luggage_count: number | null
+          passenger_count: number | null
           passenger_name: string | null
           passenger_phone: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
+          trip_type: string
           pickup_datetime: string
           pickup_location: string
           reference: string
@@ -41,12 +46,17 @@ export type Database = {
           customer_id: string
           driver_id?: string | null
           dropoff_location: string
+          duration_hours?: number | null
           fare_estimate?: number
+          flight_number?: string | null
           id?: string
+          luggage_count?: number | null
+          passenger_count?: number | null
           passenger_name?: string | null
           passenger_phone?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_datetime: string
+          trip_type?: string
           pickup_location: string
           reference?: string
           rejection_notes?: string | null
@@ -62,12 +72,17 @@ export type Database = {
           customer_id?: string
           driver_id?: string | null
           dropoff_location?: string
+          duration_hours?: number | null
           fare_estimate?: number
+          flight_number?: string | null
           id?: string
+          luggage_count?: number | null
+          passenger_count?: number | null
           passenger_name?: string | null
           passenger_phone?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_datetime?: string
+          trip_type?: string
           pickup_location?: string
           reference?: string
           rejection_notes?: string | null

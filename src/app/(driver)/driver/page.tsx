@@ -19,6 +19,16 @@ import {
   startRideAction,
   completeRideAction,
 } from "@/lib/actions";
+import { SUPABASE_ENABLED } from "@/lib/data-source";
+import {
+  mockDriverByUserId,
+  mockRidesForDriver,
+  mockSetDriverAvailability,
+  mockAcceptRide,
+  mockDeclineRide,
+  mockStartRide,
+  mockCompleteRide,
+} from "@/lib/mock-db/actions";
 
 export default function DriverPage() {
   return (
@@ -39,6 +49,7 @@ function DriverPortal() {
     queryKey: ["driver-self", user?.id],
     enabled: !!user?.id,
     queryFn: async () => {
+      if (!SUPABASE_ENABLED) return mockDriverByUserId(user!.id);
       const { data } = await supabase.from("drivers").select("*").eq("user_id", user!.id).maybeSingle();
       return data;
     },
@@ -52,6 +63,7 @@ function DriverPortal() {
     queryKey: ["driver-rides", driver?.id],
     enabled: !!driver,
     queryFn: async () => {
+      if (!SUPABASE_ENABLED) return mockRidesForDriver(driver!.id);
       const { data, error } = await supabase
         .from("bookings")
         .select("*, vehicles(name)")
@@ -66,7 +78,8 @@ function DriverPortal() {
     if (!driver) return;
     const next = !available;
     try {
-      await updateDriverAvailabilityAction(next);
+      if (SUPABASE_ENABLED) await updateDriverAvailabilityAction(next);
+      else await mockSetDriverAvailability(driver.id, next);
       setAvailable(next);
       toast.success(next ? "● Online" : "○ Offline");
     } catch (err: any) {
@@ -76,7 +89,8 @@ function DriverPortal() {
 
   const acceptRide = async (r: any) => {
     try {
-      await acceptRideAction(r.id);
+      if (SUPABASE_ENABLED) await acceptRideAction(r.id);
+      else await mockAcceptRide(r.id);
       toast.success("Ride accepted");
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
     } catch (err: any) {
@@ -86,7 +100,8 @@ function DriverPortal() {
 
   const rejectRide = async (r: any) => {
     try {
-      await declineRideAction(r.id);
+      if (SUPABASE_ENABLED) await declineRideAction(r.id);
+      else await mockDeclineRide(r.id);
       toast.success("Ride declined — returned to dispatch");
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
     } catch (err: any) {
@@ -96,7 +111,8 @@ function DriverPortal() {
 
   const startRide = async (r: any) => {
     try {
-      await startRideAction(r.id);
+      if (SUPABASE_ENABLED) await startRideAction(r.id);
+      else await mockStartRide(r.id);
       toast.success("Ride started");
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
       setOpenRide((cur: any) => cur && { ...cur, status: "in_progress" });
@@ -108,7 +124,8 @@ function DriverPortal() {
   const completeRide = async (r: any) => {
     try {
       const fare = Number(r.fare_estimate);
-      await completeRideAction(r.id, fare);
+      if (SUPABASE_ENABLED) await completeRideAction(r.id, fare);
+      else await mockCompleteRide(r.id, fare);
       toast.success(`Ride completed · earned $${(fare * 0.8).toFixed(2)}`);
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
       qc.invalidateQueries({ queryKey: ["driver-self"] });

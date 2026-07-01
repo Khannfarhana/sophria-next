@@ -35,6 +35,11 @@ export async function createBookingAction(data: {
   passengerName: string;
   passengerPhone: string;
   notes: string;
+  tripType?: "one_way" | "hourly" | "airport";
+  durationHours?: number | null;
+  flightNumber?: string | null;
+  passengerCount?: number | null;
+  luggageCount?: number | null;
 }) {
   const session = await auth();
   if (!session?.user) throw new Error("Unauthorized");
@@ -42,18 +47,26 @@ export async function createBookingAction(data: {
   const supabase = getSupabaseServerClient(session);
   const userId = (session.user as any).id;
 
+  const tripType = data.tripType ?? "one_way";
+
   const { data: booking, error } = await supabase
     .from("bookings")
     .insert({
       customer_id: userId,
       vehicle_id: data.vehicleId,
       pickup_location: data.pickup,
-      dropoff_location: data.dropoff,
+      // Hourly trips have no fixed drop-off; store a clear placeholder.
+      dropoff_location: tripType === "hourly" ? (data.dropoff || "As directed (hourly)") : data.dropoff,
       pickup_datetime: new Date(data.datetime).toISOString(),
       fare_estimate: data.fare,
       passenger_name: data.passengerName,
       passenger_phone: data.passengerPhone,
       special_requests: data.notes,
+      trip_type: tripType,
+      duration_hours: tripType === "hourly" ? (data.durationHours ?? null) : null,
+      flight_number: tripType === "airport" ? (data.flightNumber ?? null) : null,
+      passenger_count: data.passengerCount ?? null,
+      luggage_count: data.luggageCount ?? null,
       status: "pending",
       payment_status: "pending",
     })
