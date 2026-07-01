@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft } from "lucide-react";
+import { getDefaultRoute } from "@/lib/roles";
 
 const signUpSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required").max(100),
@@ -22,16 +23,17 @@ const signInSchema = z.object({
 });
 
 export default function AuthPage() {
-  const { user, loading } = useAuth();
+  const { user, roles, loading } = useAuth();
   const router = useRouter();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [form, setForm] = useState({ fullName: "", email: "", password: "" });
   const [busy, setBusy] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
+  // Redirect already-authenticated users to their role-appropriate dashboard
   useEffect(() => {
-    if (!loading && user) router.push("/dashboard");
-  }, [user, loading, router]);
+    if (!loading && user) router.push(getDefaultRoute(roles));
+  }, [user, roles, loading, router]);
 
   useEffect(() => {
     let mounted = true;
@@ -56,13 +58,17 @@ export default function AuthPage() {
         const result = await signIn("credentials", { email: v.email, password: v.password, redirect: false });
         if (result?.error) throw new Error(result.error);
         toast.success("Account created — you're signed in.");
+        // New sign-ups default to "customer" role
         router.push("/dashboard");
       } else {
         const v = signInSchema.parse(form);
         const result = await signIn("credentials", { email: v.email, password: v.password, redirect: false });
         if (result?.error) throw new Error(result.error || "Authentication failed");
         toast.success("Welcome back.");
+        // Session won't update until next render; redirect to dashboard
+        // and the proxy/layout will handle role-appropriate access
         router.push("/dashboard");
+        router.refresh();
       }
     } catch (err: unknown) {
       const { ZodError } = await import("zod");

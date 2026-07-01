@@ -28,12 +28,30 @@ export default function DriverPage() {
   );
 }
 
+interface DriverRide {
+  id: string;
+  reference: string;
+  customer_id: string;
+  driver_id: string | null;
+  vehicle_id: string | null;
+  pickup_location: string;
+  dropoff_location: string;
+  pickup_datetime: string;
+  status: string;
+  fare_estimate: number;
+  passenger_name: string | null;
+  passenger_phone: string | null;
+  special_requests: string | null;
+  created_at: string;
+  vehicles?: { name: string } | null;
+}
+
 function DriverPortal() {
   const { user } = useAuth();
   const supabase = useSupabase();
   const qc = useQueryClient();
   const [available, setAvailable] = useState(false);
-  const [openRide, setOpenRide] = useState<any | null>(null);
+  const [openRide, setOpenRide] = useState<DriverRide | null>(null);
 
   const { data: driver } = useQuery({
     queryKey: ["driver-self", user?.id],
@@ -45,8 +63,12 @@ function DriverPortal() {
   });
 
   useEffect(() => {
-    if (driver) setAvailable(driver.is_available);
-  }, [driver]);
+    if (driver && driver.is_available !== available) {
+      Promise.resolve().then(() => {
+        setAvailable(driver.is_available);
+      });
+    }
+  }, [driver, available]);
 
   const { data: rides } = useQuery({
     queryKey: ["driver-rides", driver?.id],
@@ -58,7 +80,7 @@ function DriverPortal() {
         .eq("driver_id", driver!.id)
         .order("pickup_datetime");
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as DriverRide[];
     },
   });
 
@@ -69,43 +91,43 @@ function DriverPortal() {
       await updateDriverAvailabilityAction(next);
       setAvailable(next);
       toast.success(next ? "● Online" : "○ Offline");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to update availability");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to update availability");
     }
   };
 
-  const acceptRide = async (r: any) => {
+  const acceptRide = async (r: DriverRide) => {
     try {
       await acceptRideAction(r.id);
       toast.success("Ride accepted");
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
-    } catch (err: any) {
-      toast.error(err.message || "Failed to accept ride");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to accept ride");
     }
   };
 
-  const rejectRide = async (r: any) => {
+  const rejectRide = async (r: DriverRide) => {
     try {
       await declineRideAction(r.id);
       toast.success("Ride declined — returned to dispatch");
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
-    } catch (err: any) {
-      toast.error(err.message || "Failed to decline ride");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to decline ride");
     }
   };
 
-  const startRide = async (r: any) => {
+  const startRide = async (r: DriverRide) => {
     try {
       await startRideAction(r.id);
       toast.success("Ride started");
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
-      setOpenRide((cur: any) => cur && { ...cur, status: "in_progress" });
-    } catch (err: any) {
-      toast.error(err.message || "Failed to start ride");
+      setOpenRide((cur) => cur && { ...cur, status: "in_progress" });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to start ride");
     }
   };
 
-  const completeRide = async (r: any) => {
+  const completeRide = async (r: DriverRide) => {
     try {
       const fare = Number(r.fare_estimate);
       await completeRideAction(r.id, fare);
@@ -113,18 +135,18 @@ function DriverPortal() {
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
       qc.invalidateQueries({ queryKey: ["driver-self"] });
       setOpenRide(null);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to complete ride");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to complete ride");
     }
   };
 
   const list = rides ?? [];
-  const newRequests = list.filter((r: any) => r.status === "driver_assigned");
-  const upcoming = list.filter((r: any) => r.status === "confirmed" || r.status === "in_progress");
-  const completed = list.filter((r: any) => r.status === "completed");
+  const newRequests = list.filter((r) => r.status === "driver_assigned");
+  const upcoming = list.filter((r) => r.status === "confirmed" || r.status === "in_progress");
+  const completed = list.filter((r) => r.status === "completed");
 
   const now = new Date();
-  const today = list.filter((r: any) => new Date(r.pickup_datetime).toDateString() === now.toDateString());
+  const today = list.filter((r) => new Date(r.pickup_datetime).toDateString() === now.toDateString());
 
   return (
     <SiteLayout solidNav>
@@ -211,7 +233,7 @@ function DriverPortal() {
                         </tr>
                       </thead>
                       <tbody>
-                        {completed.map((r: any) => (
+                        {completed.map((r) => (
                           <tr key={r.id} className="border-b border-border last:border-0 text-foreground">
                             <td className="p-3">{new Date(r.pickup_datetime).toLocaleDateString("en-CA", { timeZone: "America/Toronto" })}</td>
                             <td className="p-3 text-ink-muted">{r.pickup_location} → {r.dropoff_location}</td>
@@ -249,9 +271,9 @@ function RideList({
   empty,
   children,
 }: {
-  rides: any[];
+  rides: DriverRide[];
   empty: string;
-  children: (r: any) => React.ReactNode;
+  children: (r: DriverRide) => React.ReactNode;
 }) {
   if (rides.length === 0) {
     return <div className="rounded-md border border-border bg-card p-8 text-center text-sm text-ink-muted">{empty}</div>;
@@ -292,7 +314,7 @@ function RideList({
   );
 }
 
-function RideDetail({ ride, onStart, onComplete }: { ride: any; onStart: () => void; onComplete: () => void }) {
+function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: () => void; onComplete: () => void }) {
   const isInProgress = ride.status === "in_progress";
   const pickupTime = new Date(ride.pickup_datetime);
   // eslint-disable-next-line react-hooks/purity

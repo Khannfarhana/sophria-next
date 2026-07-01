@@ -24,14 +24,16 @@ function createSupabaseClient() {
     }
   }
 
+  const isServer = typeof window === 'undefined';
+
   return createClient<Database>(
     SUPABASE_URL || SUPABASE_FALLBACK_URL,
     SUPABASE_PUBLISHABLE_KEY || SUPABASE_FALLBACK_PUBLISHABLE_KEY,
     {
     auth: {
-      storage: typeof window !== 'undefined' ? localStorage : undefined,
-      persistSession: true,
-      autoRefreshToken: true,
+      storage: isServer ? undefined : localStorage,
+      persistSession: !isServer,
+      autoRefreshToken: !isServer,
     }
     }
   );

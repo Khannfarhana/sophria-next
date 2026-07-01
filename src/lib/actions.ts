@@ -3,9 +3,10 @@
 import { auth } from "@/auth";
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
+import type { Session } from "next-auth";
 
-function getSupabaseServerClient(session: any) {
-  const token = session?.user?.accessToken;
+function getSupabaseServerClient(session: Session) {
+  const token = session.user?.accessToken;
   if (!token) {
     throw new Error("Unauthorized: Access token missing");
   }
@@ -26,6 +27,16 @@ function getSupabaseServerClient(session: any) {
   );
 }
 
+/** Type-safe helper to get an authenticated session or throw. */
+async function requireSession(requiredRole?: string): Promise<Session> {
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+  if (requiredRole && !session.user.roles?.includes(requiredRole)) {
+    throw new Error("Unauthorized: insufficient role");
+  }
+  return session;
+}
+
 export async function createBookingAction(data: {
   vehicleId: string;
   pickup: string;
@@ -36,11 +47,9 @@ export async function createBookingAction(data: {
   passengerPhone: string;
   notes: string;
 }) {
-  const session = await auth();
-  if (!session?.user) throw new Error("Unauthorized");
-
+  const session = await requireSession();
   const supabase = getSupabaseServerClient(session);
-  const userId = (session.user as any).id;
+  const userId = session.user.id;
 
   const { data: booking, error } = await supabase
     .from("bookings")
@@ -69,9 +78,7 @@ export async function createBookingAction(data: {
 }
 
 export async function cancelBookingAction(bookingId: string) {
-  const session = await auth();
-  if (!session?.user) throw new Error("Unauthorized");
-
+  const session = await requireSession();
   const supabase = getSupabaseServerClient(session);
 
   const { error } = await supabase
@@ -88,12 +95,9 @@ export async function cancelBookingAction(bookingId: string) {
 }
 
 export async function updateDriverAvailabilityAction(isAvailable: boolean) {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("driver")) throw new Error("Unauthorized");
-
+  const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
-  const userId = (session.user as any).id;
+  const userId = session.user.id;
 
   // Retrieve driver ID
   const { data: driver, error: driverErr } = await supabase
@@ -120,12 +124,9 @@ export async function updateDriverAvailabilityAction(isAvailable: boolean) {
 }
 
 export async function respondToRideAction(rideId: string, action: "accept" | "reject") {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("driver")) throw new Error("Unauthorized");
-
+  const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
-  const userId = (session.user as any).id;
+  const userId = session.user.id;
 
   // Retrieve driver ID
   const { data: driver, error: driverErr } = await supabase
@@ -156,10 +157,7 @@ export async function respondToRideAction(rideId: string, action: "accept" | "re
 }
 
 export async function verifyDriverAction(driverId: string, verified: boolean) {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("admin")) throw new Error("Unauthorized");
-
+  const session = await requireSession("admin");
   const supabase = getSupabaseServerClient(session);
 
   const { error } = await supabase
@@ -176,10 +174,7 @@ export async function verifyDriverAction(driverId: string, verified: boolean) {
 }
 
 export async function confirmBookingAction(bookingId: string) {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("admin")) throw new Error("Unauthorized");
-
+  const session = await requireSession("admin");
   const supabase = getSupabaseServerClient(session);
 
   const { error } = await supabase
@@ -196,10 +191,7 @@ export async function confirmBookingAction(bookingId: string) {
 }
 
 export async function rejectBookingAction(bookingId: string, reason: string, notes: string | null) {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("admin")) throw new Error("Unauthorized");
-
+  const session = await requireSession("admin");
   const supabase = getSupabaseServerClient(session);
 
   const { error } = await supabase
@@ -221,10 +213,7 @@ export async function rejectBookingAction(bookingId: string, reason: string, not
 }
 
 export async function assignDriverAction(bookingId: string, driverId: string) {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("admin")) throw new Error("Unauthorized");
-
+  const session = await requireSession("admin");
   const supabase = getSupabaseServerClient(session);
 
   const { error } = await supabase
@@ -241,10 +230,7 @@ export async function assignDriverAction(bookingId: string, driverId: string) {
 }
 
 export async function acceptRideAction(rideId: string) {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("driver")) throw new Error("Unauthorized");
-
+  const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
 
   const { error } = await supabase
@@ -261,10 +247,7 @@ export async function acceptRideAction(rideId: string) {
 }
 
 export async function declineRideAction(rideId: string) {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("driver")) throw new Error("Unauthorized");
-
+  const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
 
   const { error } = await supabase.rpc("driver_decline_ride", { _booking_id: rideId });
@@ -278,10 +261,7 @@ export async function declineRideAction(rideId: string) {
 }
 
 export async function startRideAction(rideId: string) {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("driver")) throw new Error("Unauthorized");
-
+  const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
 
   const { error } = await supabase
@@ -298,12 +278,9 @@ export async function startRideAction(rideId: string) {
 }
 
 export async function completeRideAction(rideId: string, fareEstimate: number) {
-  const session = await auth();
-  const roles = (session?.user as any)?.roles || [];
-  if (!session?.user || !roles.includes("driver")) throw new Error("Unauthorized");
-
+  const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
-  const userId = (session.user as any).id;
+  const userId = session.user.id;
 
   // Retrieve driver ID
   const { data: driver, error: driverErr } = await supabase

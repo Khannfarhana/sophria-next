@@ -13,6 +13,21 @@ import { Check, ArrowRight, ArrowLeft, Sparkles, Users, Luggage } from "lucide-r
 import Image from "next/image";
 import { createBookingAction } from "@/lib/actions";
 
+interface BookVehicle {
+  id: string;
+  name: string;
+  type: string;
+  capacity: number;
+  luggage: number;
+  features: string[];
+  description: string | null;
+  image_url: string | null;
+  base_rate: number;
+  hourly_rate: number | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 type State = {
   pickup: string;
   dropoff: string;
@@ -47,22 +62,24 @@ function BookFlow() {
     fare: 0, passengerName: "", passengerPhone: "", notes: "",
   });
 
-  const { data: vehicles } = useQuery({
+  const { data: vehicles } = useQuery<BookVehicle[]>({
     queryKey: ["vehicles-book"],
     queryFn: async () => {
       const { data, error } = await supabase.from("vehicles").select("*").eq("is_active", true).order("base_rate");
       if (error) throw error;
-      return data;
+      return data as unknown as BookVehicle[];
     },
   });
 
   useEffect(() => {
     if (user) {
-      setS(prev => ({
-        ...prev,
-        passengerName: prev.passengerName || user.user_metadata?.full_name || "",
-        passengerPhone: prev.passengerPhone || user.phone || "",
-      }));
+      Promise.resolve().then(() => {
+        setS(prev => ({
+          ...prev,
+          passengerName: prev.passengerName || ("name" in user ? (user.name ?? "") : ""),
+          passengerPhone: "",
+        }));
+      });
     }
   }, [user]);
 
@@ -71,20 +88,22 @@ function BookFlow() {
     if (q) {
       try {
         const params = new URLSearchParams(decodeURIComponent(q));
-        setS(prev => {
-          const next = { ...prev, pickup: params.get("pickup") || "", dropoff: params.get("dropoff") || "", datetime: params.get("datetime") || "" };
-          const vehicleType = params.get("vehicle") || "";
-          if (vehicles && vehicleType) {
-            const match = vehicles.find((v: any) => v.type === vehicleType);
-            if (match) { next.vehicleId = match.id; next.fare = Number(match.base_rate); }
-          }
-          return next;
+        Promise.resolve().then(() => {
+          setS(prev => {
+            const next = { ...prev, pickup: params.get("pickup") || "", dropoff: params.get("dropoff") || "", datetime: params.get("datetime") || "" };
+            const vehicleType = params.get("vehicle") || "";
+            if (vehicles && vehicleType) {
+              const match = vehicles.find((v) => v.type === vehicleType);
+              if (match) { next.vehicleId = match.id; next.fare = Number(match.base_rate); }
+            }
+            return next;
+          });
         });
       } catch (err) { console.error(err); }
     }
   }, [searchParams, vehicles]);
 
-  const selected = vehicles?.find((v: any) => v.id === s.vehicleId);
+  const selected = vehicles?.find((v) => v.id === s.vehicleId);
 
   const confirm = async () => {
     if (!user || !s.vehicleId) return;
@@ -96,8 +115,8 @@ function BookFlow() {
       });
       setReference(data.reference);
       setStep(6);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to create booking");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to create booking");
     }
   };
 
@@ -160,11 +179,11 @@ function BookFlow() {
               </Step>
             )}
 
-            {/* Step 3 — Vehicle */}
+            {/* Step 3 — Choose vehicle */}
             {step === 3 && (
               <Step title="Choose your vehicle">
                 <div className="space-y-3">
-                  {vehicles?.map((v: any) => (
+                  {vehicles?.map((v) => (
                     <label
                       key={v.id}
                       className={`flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-all ${
@@ -237,7 +256,7 @@ function BookFlow() {
                   </div>
                   <div className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4 text-sm text-ink-muted">
                     <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
-                    <span>Stripe payment coming soon. Complete your reservation and we'll contact you to finalize payment.</span>
+                    <span>Stripe payment coming soon. Complete your reservation and we&apos;ll contact you to finalize payment.</span>
                   </div>
                 </div>
                 <Nav onBack={() => setStep(4)} onNext={confirm} nextLabel="Confirm Booking" />

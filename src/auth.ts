@@ -1,8 +1,8 @@
 import NextAuth, { DefaultSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
-import { SignJWT } from "jose";
-import { supabase } from "@/integrations/supabase/client";
+import { SignJWT, jwtVerify } from "jose";
+import { createClient } from "@supabase/supabase-js";
 
 const authSecret =
   process.env.NEXTAUTH_SECRET ||
@@ -12,7 +12,7 @@ const authSecret =
 
 if (!process.env.NEXTAUTH_SECRET && process.env.NODE_ENV === "development") {
   console.warn(
-    "[Auth] NEXTAUTH_SECRET is not set. Using a development fallback. Set NEXTAUTH_SECRET in .env.local for stable sessions."
+    "[Auth] NEXTAUTH_SECRET is not set. Using a development fallback. Set NEXTAUTH_SECRET in .env for stable sessions."
   );
 }
 
@@ -32,12 +32,20 @@ declare module "next-auth" {
   }
 }
 
-async function generateSupabaseToken(userId: string, email: string) {
+// --- Supabase RLS Token Utilities ---
+
+const SUPABASE_TOKEN_TTL = "1d"; // Must match session.maxAge below
+
+async function getSupabaseJwtSecret(): Promise<Uint8Array> {
   const secretStr = process.env.SUPABASE_JWT_SECRET;
   if (!secretStr) {
     throw new Error("Missing SUPABASE_JWT_SECRET env variable");
   }
-  const secret = new TextEncoder().encode(secretStr);
+  return new TextEncoder().encode(secretStr);
+}
+
+async function generateSupabaseToken(userId: string, email: string): Promise<string> {
+  const secret = await getSupabaseJwtSecret();
   return await new SignJWT({
     aud: "authenticated",
     role: "authenticated",
@@ -46,15 +54,48 @@ async function generateSupabaseToken(userId: string, email: string) {
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setIssuedAt()
-    .setExpirationTime("1d")
+    .setExpirationTime(SUPABASE_TOKEN_TTL)
     .sign(secret);
 }
+
+/** Returns true if the token will expire within the next 5 minutes. */
+async function isTokenExpiringSoon(token: string): Promise<boolean> {
+  try {
+    const secret = await getSupabaseJwtSecret();
+    const { payload } = await jwtVerify(token, secret);
+    if (!payload.exp) return true;
+    const fiveMinutes = 5 * 60;
+    return payload.exp - Math.floor(Date.now() / 1000) < fiveMinutes;
+  } catch {
+    // Verification failed (expired, bad signature, etc.) — treat as expired
+    return true;
+  }
+}
+
+// --- Non-persisting Supabase client for server-side credential verification ---
+
+function createServerAuthClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        storage: undefined,
+      },
+    }
+  );
+}
+
+// --- NextAuth Configuration ---
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
+      allowDangerousEmailAccountLinking: true,
     }),
     CredentialsProvider({
       name: "Credentials",
@@ -67,18 +108,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
+        // C1: Use a dedicated non-persisting client for server-side auth
+        const serverSupabase = createServerAuthClient();
+
         try {
-          const { data, error } = await supabase.auth.signInWithPassword({
+          const { data, error } = await serverSupabase.auth.signInWithPassword({
             email: credentials.email as string,
             password: credentials.password as string,
           });
 
           if (error || !data.user || !data.session) {
-            throw new Error(error?.message || "Invalid credentials");
+            // R1: Preserve Supabase error codes for better debugging
+            const message = error?.message || "Invalid credentials";
+            const code = error?.code || "unknown";
+            throw new Error(`${message} [${code}]`);
           }
 
-          // Fetch user roles
-          const { data: rolesData } = await supabase
+          // Fetch user roles using the service-role client (bypasses RLS)
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { data: rolesData } = await supabaseAdmin
             .from("user_roles")
             .select("role")
             .eq("user_id", data.user.id);
@@ -103,6 +151,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, user, account }) {
+      // --- Initial sign-in: populate token from user/account ---
       if (user && account && account.provider === "google") {
         try {
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -117,9 +166,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           let userId = profile?.id;
 
-          // 2. If profile is missing, fallback to check auth.users directly via listUsers admin API
+          // 2. Fallback to check auth.users directly via listUsers admin API (search first page of 1000 users)
           if (!userId) {
-            const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+            const { data: listData } = await supabaseAdmin.auth.admin.listUsers({
+              page: 1,
+              perPage: 1000,
+            });
             const existingUser = listData?.users?.find((u) => u.email === email);
             userId = existingUser?.id;
           }
@@ -186,10 +238,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           throw err;
         }
       } else if (user) {
+        // Credentials provider — initial sign-in
         token.id = user.id;
         token.roles = user.roles || [];
         token.accessToken = user.accessToken;
       }
+
+      // --- C3: Token refresh on subsequent requests ---
+      // Check if the stored Supabase access token is expiring soon and regenerate it
+      if (token.accessToken && token.id && token.email) {
+        const currentToken = token.accessToken as string;
+        const shouldRefresh = await isTokenExpiringSoon(currentToken);
+        if (shouldRefresh) {
+          try {
+            token.accessToken = await generateSupabaseToken(
+              token.id as string,
+              token.email as string
+            );
+          } catch (err) {
+            console.error("Failed to refresh Supabase token:", err);
+            // Keep the old token — it may still work or the user will need to re-login
+          }
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {
@@ -204,9 +276,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/auth",
     error: "/auth/error",
+    signOut: "/auth", // M2: Redirect to auth page on sign-out
   },
   session: {
     strategy: "jwt",
+    maxAge: 24 * 60 * 60, // M3: 1 day — aligned with Supabase token TTL
   },
   secret: authSecret,
 });
