@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useSession, signOut as nextAuthSignOut } from "next-auth/react";
+import type { Session } from "next-auth";
 
 export type AppRole = "customer" | "driver" | "admin";
 
@@ -21,9 +22,11 @@ export interface DemoState {
 const DEMO_STORAGE_KEY = "sophria:demo-auth";
 const DEFAULT_DEMO: DemoState = { enabled: false, loggedIn: true, role: "customer" };
 
+type AuthUser = Session["user"] | ReturnType<typeof makeDemoUser> | null;
+
 interface AuthCtx {
-  user: any | null;
-  session: any | null;
+  user: AuthUser;
+  session: Session | null;
   roles: AppRole[];
   loading: boolean;
   signOut: () => Promise<void>;
@@ -92,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // --- Resolve effective auth: demo override wins when enabled ---
-  let user: any | null;
+  let user: AuthUser;
   let roles: AppRole[];
   let loading: boolean;
 
@@ -103,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   } else {
     loading = status === "loading";
     user = session?.user || null;
-    roles = (session?.user as any)?.roles || [];
+    roles = (session?.user?.roles as AppRole[]) || [];
   }
 
   const signOut = async () => {

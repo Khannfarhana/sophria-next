@@ -11,6 +11,7 @@ import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGri
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Check, X, UserPlus, Star } from "lucide-react";
 import { CustomSelect } from "@/components/ui/custom-select";
+import type { Database } from "@/integrations/supabase/types";
 import {
   verifyDriverAction,
   confirmBookingAction,
@@ -48,14 +49,66 @@ const REJECT_REASONS = [
   { v: "other", l: "Other" },
 ];
 
+interface AdminBooking {
+  id: string;
+  reference: string;
+  customer_id: string;
+  driver_id: string | null;
+  vehicle_id: string | null;
+  pickup_location: string;
+  dropoff_location: string;
+  pickup_datetime: string;
+  status: string;
+  fare_estimate: number;
+  passenger_name: string | null;
+  passenger_phone: string | null;
+  special_requests: string | null;
+  rejection_reason?: string | null;
+  rejection_notes?: string | null;
+  created_at: string;
+  vehicles: { name: string | null } | null;
+  customer: {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    phone: string | null;
+  } | null;
+  driver: {
+    id: string;
+    user_id: string;
+    profile: {
+      id: string;
+      full_name: string | null;
+    } | null;
+  } | null;
+}
+
+interface AdminDriver {
+  id: string;
+  user_id: string;
+  license_number: string;
+  experience_years: number;
+  is_available: boolean;
+  is_verified: boolean;
+  rating: number;
+  total_earnings: number;
+  created_at: string;
+  profile: {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    phone: string | null;
+  } | null;
+}
+
 function AdminPortal() {
   const qc = useQueryClient();
   const supabase = useSupabase();
   const [filter, setFilter] = useState<string>("all");
-  const [rejectFor, setRejectFor] = useState<any | null>(null);
+  const [rejectFor, setRejectFor] = useState<AdminBooking | null>(null);
   const [rejReason, setRejReason] = useState<string>("no_drivers");
   const [rejNotes, setRejNotes] = useState<string>("");
-  const [assignFor, setAssignFor] = useState<any | null>(null);
+  const [assignFor, setAssignFor] = useState<AdminBooking | null>(null);
 
   const { data: kpi } = useQuery({
     queryKey: ["admin-kpi"],
@@ -68,7 +121,7 @@ function AdminPortal() {
         supabase.from("bookings").select("fare_estimate").gte("created_at", new Date(new Date().setDate(1)).toISOString()),
         supabase.from("drivers").select("id", { count: "exact", head: true }).eq("is_verified", false),
       ]);
-      const revenue = (monthly.data ?? []).reduce((sum: number, b: any) => sum + Number(b.fare_estimate ?? 0), 0);
+      const revenue = (monthly.data ?? []).reduce((sum: number, b) => sum + Number(b.fare_estimate ?? 0), 0);
       return { todays: todays.count ?? 0, active: active.count ?? 0, revenue, pending: pending.count ?? 0 };
     },
   });
@@ -78,31 +131,31 @@ function AdminPortal() {
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockAdminBookings(filter);
       let q = supabase.from("bookings").select("*, vehicles(name)").order("created_at", { ascending: false }).limit(50);
-      if (filter !== "all") q = q.eq("status", filter as any);
+      if (filter !== "all") q = q.eq("status", filter as Database["public"]["Enums"]["booking_status"]);
       const { data } = await q;
       if (!data) return [];
 
       // Hydrate customer + driver profiles in a single round each
-      const customerIds = Array.from(new Set(data.map((b: any) => b.customer_id).filter(Boolean)));
-      const driverIds = Array.from(new Set(data.map((b: any) => b.driver_id).filter(Boolean)));
+      const customerIds = Array.from(new Set(data.map((b) => b.customer_id).filter(Boolean)));
+      const driverIds = Array.from(new Set(data.map((b) => b.driver_id).filter(Boolean)));
       const [profilesRes, driversRes] = await Promise.all([
-        customerIds.length ? supabase.from("profiles").select("id, full_name, email, phone").in("id", customerIds) : Promise.resolve({ data: [] as any[] }),
-        driverIds.length ? supabase.from("drivers").select("id, user_id").in("id", driverIds) : Promise.resolve({ data: [] as any[] }),
+        customerIds.length ? supabase.from("profiles").select("id, full_name, email, phone").in("id", customerIds) : Promise.resolve({ data: [] as { id: string; full_name: string | null; email: string | null; phone: string | null }[] }),
+        driverIds.length ? supabase.from("drivers").select("id, user_id").in("id", driverIds) : Promise.resolve({ data: [] as { id: string; user_id: string }[] }),
       ]);
-      const driverUserIds = (driversRes.data ?? []).map((d: any) => d.user_id);
+      const driverUserIds = (driversRes.data ?? []).map((d) => d.user_id);
       const driverProfilesRes = driverUserIds.length
         ? await supabase.from("profiles").select("id, full_name").in("id", driverUserIds)
-        : { data: [] as any[] };
+        : { data: [] as { id: string; full_name: string | null }[] };
 
-      const profilesById = Object.fromEntries((profilesRes.data ?? []).map((p: any) => [p.id, p]));
-      const driverProfilesById = Object.fromEntries((driverProfilesRes.data ?? []).map((p: any) => [p.id, p]));
-      const driversById = Object.fromEntries((driversRes.data ?? []).map((d: any) => [d.id, { ...d, profile: driverProfilesById[d.user_id] }]));
+      const profilesById = Object.fromEntries((profilesRes.data ?? []).map((p) => [p.id, p]));
+      const driverProfilesById = Object.fromEntries((driverProfilesRes.data ?? []).map((p) => [p.id, p]));
+      const driversById = Object.fromEntries((driversRes.data ?? []).map((d) => [d.id, { ...d, profile: driverProfilesById[d.user_id] || null }]));
 
-      return data.map((b: any) => ({
+      return data.map((b) => ({
         ...b,
         customer: profilesById[b.customer_id] ?? null,
         driver: b.driver_id ? driversById[b.driver_id] ?? null : null,
-      }));
+      })) as AdminBooking[];
     },
   });
 
@@ -112,12 +165,12 @@ function AdminPortal() {
       if (!SUPABASE_ENABLED) return mockAdminDrivers();
       const { data } = await supabase.from("drivers").select("*").order("created_at", { ascending: false });
       if (!data) return [];
-      const ids = data.map((d: any) => d.user_id);
+      const ids = data.map((d) => d.user_id);
       const { data: profs } = ids.length
         ? await supabase.from("profiles").select("id, full_name, email, phone").in("id", ids)
-        : { data: [] as any[] };
-      const byId = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p]));
-      return data.map((d: any) => ({ ...d, profile: byId[d.user_id] ?? null }));
+        : { data: [] as { id: string; full_name: string | null; email: string | null; phone: string | null }[] };
+      const byId = Object.fromEntries((profs ?? []).map((p) => [p.id, p]));
+      return data.map((d) => ({ ...d, profile: byId[d.user_id] ?? null })) as AdminDriver[];
     },
   });
 
@@ -136,7 +189,7 @@ function AdminPortal() {
       const start = new Date(); start.setDate(start.getDate() - 30);
       const { data } = await supabase.from("bookings").select("created_at, fare_estimate").gte("created_at", start.toISOString());
       const buckets: Record<string, { week: string; bookings: number; revenue: number }> = {};
-      (data ?? []).forEach((b: any) => {
+      (data ?? []).forEach((b) => {
         const d = new Date(b.created_at);
         const wk = `W${Math.ceil(d.getDate() / 7)}`;
         if (!buckets[wk]) buckets[wk] = { week: wk, bookings: 0, revenue: 0 };
@@ -153,19 +206,19 @@ function AdminPortal() {
       else await mockVerifyDriver(id, val);
       qc.invalidateQueries({ queryKey: ["admin-drivers"] });
       toast.success("Updated driver status");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to verify driver");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to verify driver");
     }
   };
 
-  const confirmBooking = async (b: any) => {
+  const confirmBooking = async (b: AdminBooking) => {
     try {
       if (SUPABASE_ENABLED) await confirmBookingAction(b.id);
       else await mockConfirmBooking(b.id);
       toast.success(`Booking ${b.reference} confirmed`);
       qc.invalidateQueries({ queryKey: ["admin-bookings"] });
-    } catch (err: any) {
-      toast.error(err.message || "Failed to confirm booking");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to confirm booking");
     }
   };
 
@@ -179,8 +232,8 @@ function AdminPortal() {
       setRejNotes("");
       setRejReason("no_drivers");
       qc.invalidateQueries({ queryKey: ["admin-bookings"] });
-    } catch (err: any) {
-      toast.error(err.message || "Failed to reject booking");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to reject booking");
     }
   };
 
@@ -192,14 +245,14 @@ function AdminPortal() {
       toast.success(`Driver assigned to ${assignFor.reference}`);
       setAssignFor(null);
       qc.invalidateQueries({ queryKey: ["admin-bookings"] });
-    } catch (err: any) {
-      toast.error(err.message || "Failed to assign driver");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to assign driver");
     }
   };
 
   const availableDrivers = (drivers ?? [])
-    .filter((d: any) => d.is_verified && d.is_available)
-    .sort((a: any, b: any) => Number(b.rating ?? 0) - Number(a.rating ?? 0));
+    .filter((d) => d.is_verified && d.is_available)
+    .sort((a, b) => Number(b.rating ?? 0) - Number(a.rating ?? 0));
 
   return (
     <SiteLayout solidNav>
@@ -289,7 +342,7 @@ function AdminPortal() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(bookings ?? []).map((b: any) => (
+                  {(bookings ?? []).map((b) => (
                     <tr key={b.id} className="border-b border-border last:border-0 hover:bg-muted/50 text-foreground">
                       <td className="p-3 font-mono text-xs">{b.reference}</td>
                       <td className="p-3">
@@ -357,7 +410,7 @@ function AdminPortal() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(drivers ?? []).map((d: any) => (
+                  {(drivers ?? []).map((d) => (
                     <tr key={d.id} className="border-b border-border last:border-0 text-foreground">
                       <td className="p-3 font-mono text-xs">{String(d.user_id).slice(0, 8)}</td>
                       <td className="p-3 font-mono text-xs">{d.license_number}</td>
@@ -399,7 +452,7 @@ function AdminPortal() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(vehicles ?? []).map((v: any) => (
+                  {(vehicles ?? []).map((v) => (
                     <tr key={v.id} className="border-b border-border last:border-0 text-foreground">
                       <td className="p-3">{v.name}</td>
                       <td className="p-3 text-ink-muted">{v.type}</td>
@@ -473,7 +526,7 @@ function AdminPortal() {
               <div className="p-8 text-center text-sm text-ink-muted">No verified, available drivers right now.</div>
             ) : (
               <ul className="divide-y divide-border">
-                {availableDrivers.map((d: any) => {
+                {availableDrivers.map((d) => {
                   const isCurrent = d.id === assignFor?.driver_id;
                   return (
                     <li key={d.id} className="flex items-center justify-between gap-4 p-3 hover:bg-muted/30">

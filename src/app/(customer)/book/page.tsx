@@ -23,6 +23,21 @@ import { mockCreateBooking } from "@/lib/mock-db/actions";
 
 type Coords = { lng: number; lat: number } | null;
 
+interface BookVehicle {
+  id: string;
+  name: string;
+  type: string;
+  capacity: number;
+  luggage: number;
+  features: string[];
+  description: string | null;
+  image_url: string | null;
+  base_rate: number;
+  hourly_rate: number | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 type State = {
   tripType: TripType;
   pickup: string;
@@ -65,23 +80,25 @@ function BookFlow() {
     passengerName: "", passengerPhone: "", notes: "",
   });
 
-  const { data: vehicles } = useQuery({
+  const { data: vehicles } = useQuery<BookVehicle[]>({
     queryKey: ["vehicles-book"],
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockDb.activeVehicles();
       const { data, error } = await supabase.from("vehicles").select("*").eq("is_active", true).order("base_rate");
       if (error) throw error;
-      return data?.length ? data : mockDb.activeVehicles();
+      return data as unknown as BookVehicle[];
     },
   });
 
   useEffect(() => {
     if (user) {
-      setS(prev => ({
-        ...prev,
-        passengerName: prev.passengerName || user.user_metadata?.full_name || "",
-        passengerPhone: prev.passengerPhone || user.phone || "",
-      }));
+      Promise.resolve().then(() => {
+        setS(prev => ({
+          ...prev,
+          passengerName: prev.passengerName || ("name" in user ? (user.name ?? "") : ""),
+          passengerPhone: "",
+        }));
+      });
     }
   }, [user]);
 
@@ -90,28 +107,30 @@ function BookFlow() {
     if (q) {
       try {
         const params = new URLSearchParams(decodeURIComponent(q));
-        setS(prev => {
-          const tt = (params.get("tripType") as TripType) || prev.tripType;
-          const num = (k: string) => (params.get(k) != null ? Number(params.get(k)) : null);
-          const pLng = num("pickupLng"), pLat = num("pickupLat");
-          const dLng = num("dropoffLng"), dLat = num("dropoffLat");
-          const next = {
-            ...prev,
-            tripType: ["one_way", "hourly", "airport"].includes(tt) ? tt : prev.tripType,
-            pickup: params.get("pickup") || "",
-            dropoff: params.get("dropoff") || "",
-            pickupCoords: pLng != null && pLat != null ? { lng: pLng, lat: pLat } : null,
-            dropoffCoords: dLng != null && dLat != null ? { lng: dLng, lat: dLat } : null,
-            datetime: params.get("datetime") || "",
-            durationHours: Number(params.get("duration")) || prev.durationHours,
-            flightNumber: params.get("flight") || "",
-          };
-          const vehicleType = params.get("vehicle") || "";
-          if (vehicles && vehicleType) {
-            const match = vehicles.find((v: any) => v.type === vehicleType);
-            if (match) next.vehicleId = match.id;
-          }
-          return next;
+        Promise.resolve().then(() => {
+          setS(prev => {
+            const tt = (params.get("tripType") as TripType) || prev.tripType;
+            const num = (k: string) => (params.get(k) != null ? Number(params.get(k)) : null);
+            const pLng = num("pickupLng"), pLat = num("pickupLat");
+            const dLng = num("dropoffLng"), dLat = num("dropoffLat");
+            const next = {
+              ...prev,
+              tripType: ["one_way", "hourly", "airport"].includes(tt) ? tt : prev.tripType,
+              pickup: params.get("pickup") || "",
+              dropoff: params.get("dropoff") || "",
+              pickupCoords: pLng != null && pLat != null ? { lng: pLng, lat: pLat } : null,
+              dropoffCoords: dLng != null && dLat != null ? { lng: dLng, lat: dLat } : null,
+              datetime: params.get("datetime") || "",
+              durationHours: Number(params.get("duration")) || prev.durationHours,
+              flightNumber: params.get("flight") || "",
+            };
+            const vehicleType = params.get("vehicle") || "";
+            if (vehicles && vehicleType) {
+              const match = vehicles.find((v) => v.type === vehicleType);
+              if (match) next.vehicleId = match.id;
+            }
+            return next;
+          });
         });
       } catch (err) { console.error(err); }
     }
@@ -121,7 +140,9 @@ function BookFlow() {
   useEffect(() => {
     const p = s.pickupCoords, d = s.dropoffCoords;
     if (s.tripType === "hourly" || !p || !d) {
-      setS((prev) => (prev.distanceKm == null && prev.durationMin == null ? prev : { ...prev, distanceKm: null, durationMin: null }));
+      Promise.resolve().then(() =>
+        setS((prev) => (prev.distanceKm == null && prev.durationMin == null ? prev : { ...prev, distanceKm: null, durationMin: null })),
+      );
       return;
     }
     let cancelled = false;
@@ -132,7 +153,7 @@ function BookFlow() {
     return () => { cancelled = true; };
   }, [s.pickupCoords, s.dropoffCoords, s.tripType]);
 
-  const selected = vehicles?.find((v: any) => v.id === s.vehicleId);
+  const selected = vehicles?.find((v) => v.id === s.vehicleId);
   const fare = quote(s.tripType, selected, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined });
 
   const confirm = async () => {
@@ -157,8 +178,8 @@ function BookFlow() {
         : await mockCreateBooking({ ...payload, customerId: user.id });
       setReference(data.reference);
       setStep(6);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to create booking");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to create booking");
     }
   };
 
@@ -277,11 +298,11 @@ function BookFlow() {
               </Step>
             )}
 
-            {/* Step 3 — Vehicle */}
+            {/* Step 3 — Choose vehicle */}
             {step === 3 && (
               <Step title="Choose your vehicle">
                 <div className="space-y-3">
-                  {vehicles?.map((v: any) => (
+                  {vehicles?.map((v) => (
                     <label
                       key={v.id}
                       className={`flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-all ${
@@ -360,7 +381,7 @@ function BookFlow() {
                   </div>
                   <div className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4 text-sm text-ink-muted">
                     <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
-                    <span>Stripe payment coming soon. Complete your reservation and we'll contact you to finalize payment.</span>
+                    <span>Stripe payment coming soon. Complete your reservation and we&apos;ll contact you to finalize payment.</span>
                   </div>
                 </div>
                 <Nav onBack={() => setStep(4)} onNext={confirm} nextLabel="Confirm Booking" />
