@@ -144,6 +144,8 @@ export async function mockCreateBooking(input: {
       id: newId(),
       reference,
       start_otp: startOtp,
+      otp_attempts: 0,
+      otp_last_attempt_at: null,
       customer_id: input.customerId,
       driver_id: null,
       vehicle_id: input.vehicleId,
@@ -177,9 +179,21 @@ export async function mockCreateBooking(input: {
   return { reference, start_otp: startOtp };
 }
 
+const CANCELLABLE = new Set(["pending", "confirmed", "driver_assigned", "accepted"]);
+
 export async function mockCancelBooking(id: string) {
+  const booking = readDB().bookings.find((b) => b.id === id);
+  if (!booking || !CANCELLABLE.has(booking.status)) {
+    throw new Error("This ride can no longer be cancelled.");
+  }
   patchBooking(id, { status: "cancelled" });
   return { success: true };
+}
+
+export async function mockBookingOtp(bookingId: string): Promise<string | null> {
+  const booking = readDB().bookings.find((b) => b.id === bookingId);
+  if (!booking || ["completed", "cancelled", "rejected"].includes(booking.status)) return null;
+  return booking.start_otp ?? null;
 }
 
 export async function mockBookingDriver(bookingId: string) {
@@ -263,24 +277,63 @@ export async function mockSetDriverAvailability(driverId: string, isAvailable: b
 }
 
 export async function mockAcceptRide(id: string) {
-  patchBooking(id, { status: "confirmed" });
+  const booking = readDB().bookings.find((b) => b.id === id);
+  if (booking?.status !== "driver_assigned") {
+    throw new Error("This ride is no longer awaiting acceptance.");
+  }
+  patchBooking(id, { status: "accepted" });
   return { success: true };
 }
 
 export async function mockDeclineRide(id: string) {
-  patchBooking(id, { status: "pending", driver_id: null });
+  const booking = readDB().bookings.find((b) => b.id === id);
+  if (booking?.status !== "driver_assigned") {
+    throw new Error("This ride is no longer awaiting acceptance.");
+  }
+  // Back to dispatch: admin already confirmed it, so it returns unassigned
+  // to "confirmed" (matches the driver_decline_ride RPC), not "pending".
+  patchBooking(id, { status: "confirmed", driver_id: null });
   return { success: true };
 }
 
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_WINDOW_MS = 10 * 60_000;
+
 export async function mockStartRide(id: string, otp: string) {
   const booking = readDB().bookings.find((b) => b.id === id);
-  if (!booking?.start_otp) throw new Error("No pickup code set for this ride.");
-  if (String(otp).trim() !== String(booking.start_otp)) throw new Error("Incorrect pickup code.");
-  patchBooking(id, { status: "in_progress" });
+  if (!booking || !["accepted", "confirmed", "driver_assigned"].includes(booking.status)) {
+    throw new Error("Ride cannot be started from its current state.");
+  }
+  if (!booking.start_otp) throw new Error("No pickup code set for this ride.");
+
+  // 5 wrong attempts locks the code for 10 minutes (mirrors start_ride_with_otp).
+  const windowExpired =
+    !booking.otp_last_attempt_at || Date.now() - +new Date(booking.otp_last_attempt_at) > OTP_WINDOW_MS;
+  const attempts = windowExpired ? 0 : booking.otp_attempts ?? 0;
+  if (attempts >= OTP_MAX_ATTEMPTS) {
+    throw new Error("Too many incorrect attempts. Try again in about 10 minutes.");
+  }
+
+  if (String(otp).trim() !== String(booking.start_otp)) {
+    const next = attempts + 1;
+    patchBooking(id, { otp_attempts: next, otp_last_attempt_at: now() });
+    const left = OTP_MAX_ATTEMPTS - next;
+    throw new Error(
+      left <= 0
+        ? "Too many incorrect attempts. Try again in about 10 minutes."
+        : `Incorrect pickup code — ${left} attempt${left === 1 ? "" : "s"} remaining.`,
+    );
+  }
+
+  patchBooking(id, { status: "in_progress", otp_attempts: 0, otp_last_attempt_at: null });
   return { success: true };
 }
 
 export async function mockCompleteRide(id: string, fare: number) {
+  const booking = readDB().bookings.find((b) => b.id === id);
+  if (booking?.status !== "in_progress") {
+    throw new Error("Only a ride in progress can be completed.");
+  }
   mutateDB((db) => {
     const b = db.bookings.find((x) => x.id === id);
     if (!b) return;

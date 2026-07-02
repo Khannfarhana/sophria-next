@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { ProtectedRoute } from "@/components/site/ProtectedRoute";
@@ -90,6 +90,7 @@ function DriverPortal() {
   const { data: rides } = useQuery({
     queryKey: ["driver-rides", driver?.id],
     enabled: !!driver,
+    refetchInterval: 30_000, // new assignments appear without a manual reload
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockRidesForDriver(driver!.id);
       const { data, error } = await supabase
@@ -139,16 +140,12 @@ function DriverPortal() {
   };
 
   const startRide = async (r: DriverRide, otp: string) => {
-    try {
-      if (SUPABASE_ENABLED) await startRideAction(r.id, otp);
-      else await mockStartRide(r.id, otp);
-      toast.success("Ride started");
-      qc.invalidateQueries({ queryKey: ["driver-rides"] });
-      setOpenRide((cur) => cur && { ...cur, status: "in_progress" });
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to start ride");
-      throw err;
-    }
+    // Errors propagate to the OTP panel, which shows them inline for retry.
+    if (SUPABASE_ENABLED) await startRideAction(r.id, otp);
+    else await mockStartRide(r.id, otp);
+    toast.success("Ride started");
+    qc.invalidateQueries({ queryKey: ["driver-rides"] });
+    setOpenRide((cur) => cur && { ...cur, status: "in_progress" });
   };
 
   const completeRide = async (r: DriverRide) => {
@@ -167,7 +164,8 @@ function DriverPortal() {
 
   const list = rides ?? [];
   const newRequests = list.filter((r) => r.status === "driver_assigned");
-  const upcoming = list.filter((r) => r.status === "confirmed" || r.status === "in_progress");
+  // "confirmed" kept for rides accepted before the dedicated status existed.
+  const upcoming = list.filter((r) => r.status === "accepted" || r.status === "confirmed" || r.status === "in_progress");
   const completed = list.filter((r) => r.status === "completed");
 
   const now = new Date();
@@ -341,20 +339,28 @@ function RideList({
 
 function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: (otp: string) => Promise<void> | void; onComplete: () => void }) {
   const isInProgress = ride.status === "in_progress";
+  // Only pre-ride states can start — never completed/cancelled/rejected rides.
+  const startable = ["accepted", "confirmed", "driver_assigned"].includes(ride.status);
   const pickupTime = new Date(ride.pickup_datetime);
   // eslint-disable-next-line react-hooks/purity
-  const canStart = !isInProgress && Date.now() >= pickupTime.getTime() - 30 * 60_000; // 30 min before pickup
+  const canStart = startable && Date.now() >= pickupTime.getTime() - 30 * 60_000; // 30 min before pickup
   const [otpMode, setOtpMode] = useState(false);
   const [otp, setOtp] = useState("");
+  const [otpError, setOtpError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const otpInputRef = useRef<HTMLInputElement | null>(null);
 
   const submitOtp = async () => {
-    if (otp.trim().length < 4) { toast.error("Enter the 4-digit pickup code"); return; }
+    if (otp.trim().length < 4) { setOtpError("Enter the 4-digit pickup code."); return; }
     setVerifying(true);
+    setOtpError(null);
     try {
       await onStart(otp.trim());
-    } catch {
-      /* toast shown by caller */
+    } catch (err: unknown) {
+      // Wrong code / lockout: surface inline and reset for a quick retry.
+      setOtpError(err instanceof Error ? err.message : "Failed to start ride");
+      setOtp("");
+      otpInputRef.current?.focus();
     } finally {
       setVerifying(false);
     }
@@ -397,21 +403,34 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
       </div>
 
       {/* OTP entry — driver enters the code the customer gives them */}
-      {!isInProgress && otpMode && (
+      {startable && otpMode && (
         <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <KeyRound className="h-4 w-4" /> Enter pickup code
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <KeyRound className="h-4 w-4" /> Enter pickup code
+            </div>
+            <button
+              type="button"
+              aria-label="Close code entry"
+              onClick={() => { setOtpMode(false); setOtp(""); setOtpError(null); }}
+              className="text-ink-soft hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
           <p className="mt-1 text-xs text-ink-muted">Ask the customer for the 4-digit code shown in their booking.</p>
           <div className="mt-3 flex gap-2">
             <input
+              ref={otpInputRef}
               value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              onChange={(e) => { setOtp(e.target.value.replace(/\D/g, "").slice(0, 4)); setOtpError(null); }}
               inputMode="numeric"
               autoFocus
               placeholder="0000"
               onKeyDown={(e) => e.key === "Enter" && submitOtp()}
-              className="w-28 rounded-lg border border-border bg-input px-3 py-2 text-center text-lg font-mono tracking-[0.4em] text-foreground focus:border-foreground focus:outline-none"
+              className={`w-28 rounded-lg border bg-input px-3 py-2 text-center text-lg font-mono tracking-[0.4em] text-foreground focus:outline-none ${
+                otpError ? "border-red-400 focus:border-red-500" : "border-border focus:border-foreground"
+              }`}
             />
             <button
               onClick={submitOtp}
@@ -422,6 +441,7 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
               Verify &amp; Start
             </button>
           </div>
+          {otpError && <p className="mt-2 text-xs font-medium text-red-500">{otpError}</p>}
         </div>
       )}
 
@@ -434,7 +454,7 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
         >
           <Navigation className="h-4 w-4" /> Navigate
         </a>
-        {!isInProgress ? (
+        {startable ? (
           <button
             onClick={() => setOtpMode(true)}
             disabled={!canStart || otpMode}
@@ -443,14 +463,14 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
           >
             <KeyRound className="h-4 w-4" /> Start Ride
           </button>
-        ) : (
+        ) : isInProgress ? (
           <button
             onClick={onComplete}
             className="inline-flex items-center gap-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-[#2A2A2A] cursor-pointer"
           >
             <Check className="h-4 w-4" /> Complete Ride
           </button>
-        )}
+        ) : null}
       </DialogFooter>
     </>
   );
