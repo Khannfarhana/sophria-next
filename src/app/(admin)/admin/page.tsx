@@ -6,8 +6,8 @@ import { SiteLayout } from "@/components/site/SiteLayout";
 import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { useSupabase } from "@/hooks/use-supabase";
 import { StatusBadge } from "@/components/site/StatusBadge";
+import { AdminTabs } from "@/components/site/AdminTabs";
 import { useState } from "react";
-import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Check, X, UserPlus, Star } from "lucide-react";
 import { CustomSelect } from "@/components/ui/custom-select";
@@ -20,11 +20,9 @@ import {
 } from "@/lib/actions";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import {
-  mockAdminKpi,
   mockAdminBookings,
   mockAdminDrivers,
   mockAdminVehicles,
-  mockAdminWeekly,
   mockVerifyDriver,
   mockConfirmBooking,
   mockRejectBooking,
@@ -38,9 +36,6 @@ export default function AdminPage() {
     </ProtectedRoute>
   );
 }
-
-const CHART_GRID = "oklch(0.91 0 0)";
-const CHART_LINE = "oklch(0.16 0 0)";
 
 const REJECT_REASONS = [
   { v: "no_drivers", l: "No drivers available" },
@@ -110,22 +105,6 @@ function AdminPortal() {
   const [rejNotes, setRejNotes] = useState<string>("");
   const [assignFor, setAssignFor] = useState<AdminBooking | null>(null);
 
-  const { data: kpi } = useQuery({
-    queryKey: ["admin-kpi"],
-    queryFn: async () => {
-      if (!SUPABASE_ENABLED) return mockAdminKpi();
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const [todays, active, monthly, pending] = await Promise.all([
-        supabase.from("bookings").select("id", { count: "exact", head: true }).gte("created_at", today.toISOString()),
-        supabase.from("drivers").select("id", { count: "exact", head: true }).eq("is_available", true).eq("is_verified", true),
-        supabase.from("bookings").select("fare_estimate").gte("created_at", new Date(new Date().setDate(1)).toISOString()),
-        supabase.from("drivers").select("id", { count: "exact", head: true }).eq("is_verified", false),
-      ]);
-      const revenue = (monthly.data ?? []).reduce((sum: number, b) => sum + Number(b.fare_estimate ?? 0), 0);
-      return { todays: todays.count ?? 0, active: active.count ?? 0, revenue, pending: pending.count ?? 0 };
-    },
-  });
-
   const { data: bookings } = useQuery({
     queryKey: ["admin-bookings", filter],
     queryFn: async () => {
@@ -179,24 +158,6 @@ function AdminPortal() {
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockAdminVehicles();
       return (await supabase.from("vehicles").select("*").order("base_rate")).data;
-    },
-  });
-
-  const { data: weekly } = useQuery({
-    queryKey: ["admin-weekly"],
-    queryFn: async () => {
-      if (!SUPABASE_ENABLED) return mockAdminWeekly();
-      const start = new Date(); start.setDate(start.getDate() - 30);
-      const { data } = await supabase.from("bookings").select("created_at, fare_estimate").gte("created_at", start.toISOString());
-      const buckets: Record<string, { week: string; bookings: number; revenue: number }> = {};
-      (data ?? []).forEach((b) => {
-        const d = new Date(b.created_at);
-        const wk = `W${Math.ceil(d.getDate() / 7)}`;
-        if (!buckets[wk]) buckets[wk] = { week: wk, bookings: 0, revenue: 0 };
-        buckets[wk].bookings += 1;
-        buckets[wk].revenue += Number(b.fare_estimate ?? 0);
-      });
-      return Object.values(buckets);
     },
   });
 
@@ -260,56 +221,10 @@ function AdminPortal() {
         <div className="mx-auto max-w-7xl">
           <div className="eyebrow mb-3">Admin</div>
           <h1 className="text-4xl md:text-5xl font-light">Operations</h1>
-
-          {/* KPIs */}
-          <div className="mt-10 grid gap-4 md:grid-cols-4">
-            {[
-              { l: "Bookings today", v: kpi?.todays ?? 0 },
-              { l: "Active drivers", v: kpi?.active ?? 0 },
-              { l: "Monthly revenue", v: `$${(kpi?.revenue ?? 0).toFixed(0)}` },
-              { l: "Pending verifications", v: kpi?.pending ?? 0 },
-            ].map((k) => (
-              <div key={k.l} className="rounded-md border border-border bg-card p-6">
-                <div className="eyebrow">{k.l}</div>
-                <div className="mt-2 text-3xl font-light">{k.v}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Charts */}
-          <div className="mt-10 grid gap-6 md:grid-cols-2">
-            <div className="rounded-md border border-border bg-card p-6">
-              <div className="eyebrow mb-4">Bookings (30d)</div>
-              <div className="h-[220px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={weekly ?? []}>
-                    <CartesianGrid stroke={CHART_GRID} strokeDasharray="3 3" />
-                    <XAxis dataKey="week" stroke="#6B6B6B" fontSize={11} />
-                    <YAxis stroke="#6B6B6B" fontSize={11} />
-                    <Tooltip contentStyle={{ background: "#FFFFFF", border: "1px solid #E5E5E5", fontSize: 12, color: "#101010" }} />
-                    <Bar dataKey="bookings" fill={CHART_LINE} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div className="rounded-md border border-border bg-card p-6">
-              <div className="eyebrow mb-4">Revenue trend</div>
-              <div className="h-[220px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weekly ?? []}>
-                    <CartesianGrid stroke={CHART_GRID} strokeDasharray="3 3" />
-                    <XAxis dataKey="week" stroke="#6B6B6B" fontSize={11} />
-                    <YAxis stroke="#6B6B6B" fontSize={11} />
-                    <Tooltip contentStyle={{ background: "#FFFFFF", border: "1px solid #E5E5E5", fontSize: 12, color: "#101010" }} />
-                    <Line type="monotone" dataKey="revenue" stroke={CHART_LINE} strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
+          <AdminTabs />
 
           {/* Bookings */}
-          <div className="mt-16 flex items-end justify-between">
+          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <h2 className="text-2xl font-light">Bookings</h2>
             <CustomSelect
               value={filter}
@@ -325,7 +240,53 @@ function AdminPortal() {
               <option value="rejected">Rejected</option>
             </CustomSelect>
           </div>
-          <div className="mt-4 overflow-hidden rounded-md border border-border bg-card">
+
+          {/* Mobile cards */}
+          <div className="mt-4 space-y-3 md:hidden">
+            {(bookings ?? []).map((b) => (
+              <div key={b.id} className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-ink-soft">{b.reference}</div>
+                    <div className="mt-0.5 truncate text-sm font-medium text-foreground">{b.customer?.full_name || b.passenger_name || "—"}</div>
+                  </div>
+                  <StatusBadge status={b.status} />
+                </div>
+                <div className="mt-3 space-y-1 text-sm text-ink-muted">
+                  <div className="truncate">{b.pickup_location} → {b.dropoff_location}</div>
+                  <div className="text-xs text-ink-soft">{new Date(b.pickup_datetime).toLocaleString("en-CA", { timeZone: "America/Toronto" })}</div>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm">
+                  <span className="text-ink-muted">{b.vehicles?.name ?? "—"} · {b.driver?.profile?.full_name ?? "Unassigned"}</span>
+                  <span className="font-medium text-foreground">${Number(b.fare_estimate).toFixed(2)}</span>
+                </div>
+                {(b.status === "pending" || b.status === "confirmed" || b.status === "driver_assigned") && (
+                  <div className="mt-3 flex gap-2">
+                    {b.status === "pending" ? (
+                      <>
+                        <button onClick={() => confirmBooking(b)} className="inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground">
+                          <Check className="h-3 w-3" /> Confirm
+                        </button>
+                        <button onClick={() => setRejectFor(b)} className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground">
+                          <X className="h-3 w-3" /> Reject
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => setAssignFor(b)} className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground">
+                        <UserPlus className="h-3 w-3" /> {b.driver_id ? "Reassign driver" : "Assign driver"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            {(!bookings || bookings.length === 0) && (
+              <div className="rounded-xl border border-border bg-card p-8 text-center text-ink-muted">No bookings.</div>
+            )}
+          </div>
+
+          {/* Desktop table */}
+          <div className="mt-4 hidden overflow-hidden rounded-md border border-border bg-card md:block">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1100px] text-sm">
                 <thead className="border-b border-border bg-muted text-left text-xs uppercase tracking-wider text-ink-muted">
@@ -395,13 +356,42 @@ function AdminPortal() {
           </div>
 
           {/* Drivers */}
-          <h2 className="mt-16 mb-4 text-2xl font-light">Drivers</h2>
-          <div className="overflow-hidden rounded-md border border-border bg-card">
+          <h2 className="mt-12 mb-4 text-2xl font-light sm:mt-16">Drivers</h2>
+
+          {/* Mobile cards */}
+          <div className="space-y-3 md:hidden">
+            {(drivers ?? []).map((d) => (
+              <div key={d.id} className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-foreground">{d.profile?.full_name ?? "Unnamed driver"}</div>
+                    {d.profile?.email && <div className="truncate text-xs text-ink-muted">{d.profile.email}</div>}
+                    <div className="mt-0.5 truncate font-mono text-xs text-ink-soft">Lic · {d.license_number}</div>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${d.is_verified ? "bg-foreground text-background" : "border border-border text-ink-muted"}`}>
+                    {d.is_verified ? "Verified" : "Unverified"}
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm text-ink-muted">
+                  <span>{d.experience_years}y exp · ★ {Number(d.rating).toFixed(2)}</span>
+                  <button onClick={() => verifyDriver(d.id, !d.is_verified)} className="text-xs text-foreground underline">
+                    {d.is_verified ? "Deactivate" : "Verify"}
+                  </button>
+                </div>
+              </div>
+            ))}
+            {(!drivers || drivers.length === 0) && (
+              <div className="rounded-xl border border-border bg-card p-8 text-center text-ink-muted">No drivers yet.</div>
+            )}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden overflow-hidden rounded-md border border-border bg-card md:block">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="border-b border-border bg-muted text-left text-xs uppercase tracking-wider text-ink-muted">
                   <tr>
-                    <th className="p-3">User</th>
+                    <th className="p-3">Driver</th>
                     <th className="p-3">License</th>
                     <th className="p-3">Exp.</th>
                     <th className="p-3">Rating</th>
@@ -412,7 +402,10 @@ function AdminPortal() {
                 <tbody>
                   {(drivers ?? []).map((d) => (
                     <tr key={d.id} className="border-b border-border last:border-0 text-foreground">
-                      <td className="p-3 font-mono text-xs">{String(d.user_id).slice(0, 8)}</td>
+                      <td className="p-3">
+                        <div className="font-medium">{d.profile?.full_name ?? "Unnamed driver"}</div>
+                        <div className="text-xs text-ink-soft">{d.profile?.email ?? String(d.user_id).slice(0, 8)}</div>
+                      </td>
                       <td className="p-3 font-mono text-xs">{d.license_number}</td>
                       <td className="p-3">{d.experience_years}y</td>
                       <td className="p-3">{Number(d.rating).toFixed(2)}</td>
@@ -438,8 +431,28 @@ function AdminPortal() {
           </div>
 
           {/* Vehicles */}
-          <h2 className="mt-16 mb-4 text-2xl font-light">Fleet</h2>
-          <div className="overflow-hidden rounded-md border border-border bg-card">
+          <h2 className="mt-12 mb-4 text-2xl font-light sm:mt-16">Fleet</h2>
+
+          {/* Mobile cards */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:hidden">
+            {(vehicles ?? []).map((v) => (
+              <div key={v.id} className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm font-medium text-foreground">{v.name}</div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs ${v.is_active ? "bg-foreground text-background" : "border border-border text-ink-muted"}`}>
+                    {v.is_active ? "Active" : "Inactive"}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-sm text-ink-muted">
+                  <span className="capitalize">{v.type} · {v.capacity} seats</span>
+                  <span className="font-medium text-foreground">${Number(v.base_rate).toFixed(0)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden overflow-hidden rounded-md border border-border bg-card md:block">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="border-b border-border bg-muted text-left text-xs uppercase tracking-wider text-ink-muted">
@@ -529,24 +542,26 @@ function AdminPortal() {
                 {availableDrivers.map((d) => {
                   const isCurrent = d.id === assignFor?.driver_id;
                   return (
-                    <li key={d.id} className="flex items-center justify-between gap-4 p-3 hover:bg-muted/30">
-                      <div className="flex items-center gap-3">
-                        <div className="grid h-10 w-10 place-items-center rounded-full bg-muted text-sm font-medium text-foreground">
+                    <li key={d.id} className="flex items-center justify-between gap-3 p-3 hover:bg-muted/30">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-muted text-sm font-medium text-foreground">
                           {(d.profile?.full_name ?? "D").slice(0, 1).toUpperCase()}
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <div className="text-sm font-medium text-foreground">{d.profile?.full_name ?? "Driver"}</div>
                           <div className="flex items-center gap-2 text-xs text-ink-muted">
                             <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{Number(d.rating).toFixed(2)}</span>
                             <span>· {d.experience_years}y exp</span>
                             <span>· {d.is_available ? "Online" : "Offline"}</span>
                           </div>
+                          {d.profile?.email && <div className="mt-0.5 truncate text-xs text-ink-soft">{d.profile.email}</div>}
+                          <div className="truncate font-mono text-xs text-ink-soft">Lic · {d.license_number}</div>
                         </div>
                       </div>
                       <button
                         onClick={() => assignDriver(d.id)}
                         disabled={isCurrent}
-                        className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium transition hover:bg-[#2A2A2A] disabled:opacity-50 cursor-pointer"
+                        className="shrink-0 rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium transition hover:bg-[#2A2A2A] disabled:opacity-50 cursor-pointer"
                       >
                         {isCurrent ? "Current" : "Assign"}
                       </button>

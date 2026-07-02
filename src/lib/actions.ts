@@ -88,10 +88,11 @@ export async function createBookingAction(data: {
       dropoff_lng: data.dropoffLng ?? null,
       distance_km: data.distanceKm ?? null,
       duration_min: data.durationMin ?? null,
+      start_otp: generateOtp(),
       status: "pending",
       payment_status: "pending",
     })
-    .select("reference")
+    .select("reference, start_otp")
     .single();
 
   if (error) {
@@ -100,6 +101,90 @@ export async function createBookingAction(data: {
 
   revalidatePath("/dashboard");
   return booking;
+}
+
+/** 4-digit pickup verification code. */
+function generateOtp(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+/**
+ * Assigned-driver details for a booking the caller owns. Customers can't read
+ * the drivers/profiles tables under RLS, so we use the service role and scope
+ * strictly to the caller's own booking.
+ */
+export async function getBookingDriverAction(bookingId: string) {
+  const session = await requireSession();
+  const admin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  );
+
+  const { data: booking } = await admin
+    .from("bookings")
+    .select("customer_id, driver_id")
+    .eq("id", bookingId)
+    .single();
+  if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
+  if (!booking.driver_id) return null;
+
+  const { data: driver } = await admin
+    .from("drivers")
+    .select("user_id, rating, experience_years")
+    .eq("id", booking.driver_id)
+    .single();
+  if (!driver) return null;
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("full_name, phone")
+    .eq("id", driver.user_id)
+    .single();
+
+  return {
+    name: profile?.full_name ?? null,
+    phone: profile?.phone ?? null,
+    rating: driver.rating ?? null,
+    experience_years: driver.experience_years ?? null,
+  };
+}
+
+export async function updateBookingLocationAction(
+  bookingId: string,
+  data: {
+    pickup: string;
+    dropoff: string;
+    pickupLat: number | null;
+    pickupLng: number | null;
+    dropoffLat: number | null;
+    dropoffLng: number | null;
+    distanceKm: number | null;
+    durationMin: number | null;
+    fare: number;
+  },
+) {
+  const session = await requireSession();
+  const supabase = getSupabaseServerClient(session);
+
+  const { error } = await supabase
+    .from("bookings")
+    .update({
+      pickup_location: data.pickup,
+      dropoff_location: data.dropoff,
+      pickup_lat: data.pickupLat,
+      pickup_lng: data.pickupLng,
+      dropoff_lat: data.dropoffLat,
+      dropoff_lng: data.dropoffLng,
+      distance_km: data.distanceKm,
+      duration_min: data.durationMin,
+      fare_estimate: data.fare,
+    })
+    .eq("id", bookingId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/dashboard");
+  return { success: true };
 }
 
 export async function cancelBookingAction(bookingId: string) {
@@ -285,9 +370,19 @@ export async function declineRideAction(rideId: string) {
   return { success: true };
 }
 
-export async function startRideAction(rideId: string) {
+export async function startRideAction(rideId: string, otp: string) {
   const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
+
+  // Verify the customer's pickup code server-side before starting.
+  const { data: ride, error: fetchErr } = await supabase
+    .from("bookings")
+    .select("start_otp")
+    .eq("id", rideId)
+    .single();
+  if (fetchErr) throw new Error(fetchErr.message);
+  if (!ride?.start_otp) throw new Error("No pickup code set for this ride.");
+  if (String(otp).trim() !== String(ride.start_otp)) throw new Error("Incorrect pickup code.");
 
   const { error } = await supabase
     .from("bookings")
