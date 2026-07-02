@@ -188,6 +188,10 @@ function BookFlow() {
   // Build a branded, print-ready receipt and hand it to the browser (Save as PDF).
   const downloadReceipt = () => {
     if (!reference) return;
+    // Escape every value interpolated into the receipt HTML — pickup/dropoff/
+    // name/notes are user-controlled and this string is written into a new doc.
+    const esc = (v: unknown) =>
+      String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const dt = s.datetime
       ? new Date(s.datetime).toLocaleString("en-CA", { dateStyle: "full", timeStyle: "short" })
       : "—";
@@ -206,12 +210,9 @@ function BookFlow() {
       ...(s.passengerPhone ? ([["Phone", s.passengerPhone]] as [string, string][]) : []),
     ];
     const rowsHtml = rows
-      .map(
-        ([k, v]) =>
-          `<tr><td class="k">${k}</td><td class="v">${String(v).replace(/</g, "&lt;")}</td></tr>`,
-      )
+      .map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td class="v">${esc(v)}</td></tr>`)
       .join("");
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>SophRia Receipt ${reference}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>SophRia Receipt ${esc(reference)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:Georgia,'Times New Roman',serif;color:#0d0d0e;background:#f1efe9;padding:40px}
@@ -237,7 +238,7 @@ function BookFlow() {
 </style></head><body>
   <div class="r">
     <div class="top"><div class="brand">Soph<b>Ria</b></div><div class="sub">Chauffeur Receipt</div></div>
-    <div class="ref"><div><div class="lbl">Booking reference</div><div class="num">${reference}</div></div><div class="badge">${tripTypeLabel(s.tripType)}</div></div>
+    <div class="ref"><div><div class="lbl">Booking reference</div><div class="num">${esc(reference)}</div></div><div class="badge">${esc(tripTypeLabel(s.tripType))}</div></div>
     <table>${rowsHtml}</table>
     <div class="total"><div class="lbl">Estimated fare</div><div class="amt">$${fare.toFixed(2)} CAD</div></div>
     <div class="foot">This is an estimate, not a paid invoice. A SophRia coordinator will confirm your reservation and finalize payment. Thank you for choosing SophRia — Toronto's premier chauffeur service.</div>

@@ -4,16 +4,11 @@ import Google from "next-auth/providers/google";
 import { SignJWT, jwtVerify } from "jose";
 import { createClient } from "@supabase/supabase-js";
 
-const authSecret =
-  process.env.NEXTAUTH_SECRET ||
-  (process.env.NODE_ENV === "development"
-    ? "dev-only-nextauth-secret-change-me"
-    : undefined);
-
-if (!process.env.NEXTAUTH_SECRET && process.env.NODE_ENV === "development") {
-  console.warn(
-    "[Auth] NEXTAUTH_SECRET is not set. Using a development fallback. Set NEXTAUTH_SECRET in .env for stable sessions."
-  );
+// No hardcoded fallback — a static, source-committed secret is a signing-key
+// risk even in dev. NEXTAUTH_SECRET must be set (it's in .env.local / .env).
+const authSecret = process.env.NEXTAUTH_SECRET;
+if (!authSecret) {
+  throw new Error("NEXTAUTH_SECRET is not set — generate one with `openssl rand -base64 32`.");
 }
 
 declare module "next-auth" {
@@ -95,7 +90,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
-      allowDangerousEmailAccountLinking: true,
+      // Do NOT auto-link a Google login to an existing same-email password
+      // account — that enables account takeover if the Gmail is compromised.
+      allowDangerousEmailAccountLinking: false,
     }),
     CredentialsProvider({
       name: "Credentials",

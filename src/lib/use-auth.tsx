@@ -65,6 +65,12 @@ function makeDemoUser(role: AppRole) {
   };
 }
 
+// Demo mode is a dev/preview aid only. It fabricates a client-side session
+// (no real accessToken, so it can't pass server layouts or authorize actions),
+// but it should never be activatable in production. Gated behind a build flag.
+const DEMO_ALLOWED =
+  process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_ENABLE_DEMO === "true";
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: session, status, update } = useSession();
 
@@ -73,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [demoReady, setDemoReady] = useState(false);
 
   useEffect(() => {
+    if (!DEMO_ALLOWED) { setDemoReady(true); return; }
     try {
       const raw = localStorage.getItem(DEMO_STORAGE_KEY);
       if (raw) setDemoState({ ...DEFAULT_DEMO, ...JSON.parse(raw) });
@@ -99,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   let roles: AppRole[];
   let loading: boolean;
 
-  if (demo.enabled) {
+  if (DEMO_ALLOWED && demo.enabled) {
     loading = !demoReady;
     user = demo.loggedIn ? makeDemoUser(demo.role) : null;
     roles = demo.loggedIn ? [demo.role] : [];
