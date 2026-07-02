@@ -107,9 +107,15 @@ function AdminPortal() {
 
   const { data: bookings } = useQuery({
     queryKey: ["admin-bookings", filter],
+    refetchInterval: 30_000, // new bookings appear without a manual reload
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockAdminBookings(filter);
-      let q = supabase.from("bookings").select("*, vehicles(name)").order("created_at", { ascending: false }).limit(50);
+      // Explicit columns — start_otp is not client-readable (column privilege).
+      let q = supabase
+        .from("bookings")
+        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, passenger_count, luggage_count, fare_estimate, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, updated_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
+        .order("created_at", { ascending: false })
+        .limit(50);
       if (filter !== "all") q = q.eq("status", filter as Database["public"]["Enums"]["booking_status"]);
       const { data } = await q;
       if (!data) return [];
@@ -130,7 +136,7 @@ function AdminPortal() {
       const driverProfilesById = Object.fromEntries((driverProfilesRes.data ?? []).map((p) => [p.id, p]));
       const driversById = Object.fromEntries((driversRes.data ?? []).map((d) => [d.id, { ...d, profile: driverProfilesById[d.user_id] || null }]));
 
-      return data.map((b) => ({
+      return data.map((b: any) => ({
         ...b,
         customer: profilesById[b.customer_id] ?? null,
         driver: b.driver_id ? driversById[b.driver_id] ?? null : null,
@@ -234,6 +240,7 @@ function AdminPortal() {
               <option value="pending">Pending</option>
               <option value="confirmed">Confirmed</option>
               <option value="driver_assigned">Driver Assigned</option>
+              <option value="accepted">Driver Accepted</option>
               <option value="in_progress">In Progress</option>
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
@@ -260,7 +267,7 @@ function AdminPortal() {
                   <span className="text-ink-muted">{b.vehicles?.name ?? "—"} · {b.driver?.profile?.full_name ?? "Unassigned"}</span>
                   <span className="font-medium text-foreground">${Number(b.fare_estimate).toFixed(2)}</span>
                 </div>
-                {(b.status === "pending" || b.status === "confirmed" || b.status === "driver_assigned") && (
+                {(b.status === "pending" || b.status === "confirmed" || b.status === "driver_assigned" || b.status === "accepted") && (
                   <div className="mt-3 flex gap-2">
                     {b.status === "pending" ? (
                       <>
@@ -332,7 +339,7 @@ function AdminPortal() {
                               <X className="h-3 w-3" /> Reject
                             </button>
                           </div>
-                        ) : (b.status === "confirmed" || b.status === "driver_assigned") ? (
+                        ) : (b.status === "confirmed" || b.status === "driver_assigned" || b.status === "accepted") ? (
                           <button
                             onClick={() => setAssignFor(b)}
                             className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-accent cursor-pointer"

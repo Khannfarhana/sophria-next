@@ -29,6 +29,8 @@ export type Database = {
           flight_number: string | null
           id: string
           luggage_count: number | null
+          otp_attempts: number
+          otp_last_attempt_at: string | null
           passenger_count: number | null
           passenger_name: string | null
           passenger_phone: string | null
@@ -62,6 +64,8 @@ export type Database = {
           flight_number?: string | null
           id?: string
           luggage_count?: number | null
+          otp_attempts?: number
+          otp_last_attempt_at?: string | null
           passenger_count?: number | null
           passenger_name?: string | null
           passenger_phone?: string | null
@@ -95,6 +99,8 @@ export type Database = {
           flight_number?: string | null
           id?: string
           luggage_count?: number | null
+          otp_attempts?: number
+          otp_last_attempt_at?: string | null
           passenger_count?: number | null
           passenger_name?: string | null
           passenger_phone?: string | null
@@ -389,6 +395,7 @@ export type Database = {
         | "pending"
         | "confirmed"
         | "driver_assigned"
+        | "accepted"
         | "in_progress"
         | "completed"
         | "cancelled"
@@ -528,6 +535,7 @@ export const Constants = {
         "pending",
         "confirmed",
         "driver_assigned",
+        "accepted",
         "in_progress",
         "completed",
         "cancelled",

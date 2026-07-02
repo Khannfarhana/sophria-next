@@ -1,9 +1,10 @@
-type Status = "pending" | "confirmed" | "driver_assigned" | "in_progress" | "completed" | "cancelled" | "rejected";
+type Status = "pending" | "confirmed" | "driver_assigned" | "accepted" | "in_progress" | "completed" | "cancelled" | "rejected";
 
 const STYLES: Record<Status, string> = {
   pending: "border border-border bg-background text-ink-muted",
   confirmed: "bg-foreground text-background",
   driver_assigned: "bg-foreground text-background",
+  accepted: "bg-foreground text-background",
   in_progress: "bg-foreground text-background",
   completed: "border border-border bg-background text-ink-muted",
   cancelled: "bg-muted text-ink-soft line-through",
@@ -14,6 +15,7 @@ const LABELS: Record<Status, string> = {
   pending: "Pending",
   confirmed: "Confirmed",
   driver_assigned: "Driver Assigned",
+  accepted: "Driver Accepted",
   in_progress: "In Progress",
   completed: "Completed",
   cancelled: "Cancelled",

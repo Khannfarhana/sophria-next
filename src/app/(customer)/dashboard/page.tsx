@@ -32,11 +32,14 @@ function Dashboard() {
   const { data: bookings, isLoading } = useQuery({
     queryKey: ["my-bookings", user?.id],
     enabled: !!user?.id,
+    refetchInterval: 30_000, // driver assignment / status changes appear live
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockBookingsForCustomer(user!.id);
+      // Explicit columns — start_otp is not client-readable (column privilege);
+      // the detail dialog fetches it via getBookingOtpAction.
       const { data, error } = await supabase
         .from("bookings")
-        .select("*, vehicles(name, type, base_rate, hourly_rate)")
+        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, fare_estimate, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name, type, base_rate, hourly_rate)")
         .order("pickup_datetime", { ascending: false });
       if (error) throw error;
       return data ?? [];
@@ -90,7 +93,8 @@ function Dashboard() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
                 {bookings.map((b: any) => {
-                  const cancellable = b.status !== "cancelled" && b.status !== "completed" && b.status !== "rejected";
+                  // Pre-ride only — an in-progress ride can't be cancelled from here.
+                  const cancellable = ["pending", "confirmed", "driver_assigned", "accepted"].includes(b.status);
                   return (
                     <div
                       key={b.id}

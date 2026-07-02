@@ -17,8 +17,8 @@ import { getDirections, type Place } from "@/lib/mapbox";
 import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
-import { updateBookingLocationAction, getBookingDriverAction } from "@/lib/actions";
-import { mockUpdateBookingLocation, mockBookingDriver } from "@/lib/mock-db/actions";
+import { updateBookingLocationAction, getBookingDriverAction, getBookingOtpAction } from "@/lib/actions";
+import { mockUpdateBookingLocation, mockBookingDriver, mockBookingOtp } from "@/lib/mock-db/actions";
 
 type DriverInfo = { name: string | null; phone: string | null; rating: number | string | null; experience_years: number | null };
 
@@ -44,7 +44,6 @@ interface BookingRow {
   fare_estimate: number;
   passenger_name: string | null;
   passenger_phone: string | null;
-  start_otp?: string | null;
   driver_id?: string | null;
   vehicles?: { name?: string | null; type?: string | null; base_rate?: number | string | null; hourly_rate?: number | string | null } | null;
 }
@@ -71,6 +70,7 @@ export function BookingDetailDialog({
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [durationMin, setDurationMin] = useState<number | null>(null);
   const [driverInfo, setDriverInfo] = useState<DriverInfo | null>(null);
+  const [otp, setOtp] = useState<string | null>(null);
 
   const b = booking;
   const tripType = (b?.trip_type as TripType) ?? "one_way";
@@ -97,6 +97,15 @@ export function BookingDetailDialog({
     load.then((info) => { if (!cancelled) setDriverInfo(info); }).catch(() => { if (!cancelled) setDriverInfo(null); });
     return () => { cancelled = true; };
   }, [open, b?.id, b?.driver_id]);
+
+  // Fetch the pickup code (start_otp isn't client-readable; owner-only action).
+  useEffect(() => {
+    if (!open || !b?.id) { setOtp(null); return; }
+    let cancelled = false;
+    const load = SUPABASE_ENABLED ? getBookingOtpAction(b.id) : mockBookingOtp(b.id);
+    load.then((code) => { if (!cancelled) setOtp(code); }).catch(() => { if (!cancelled) setOtp(null); });
+    return () => { cancelled = true; };
+  }, [open, b?.id, b?.status]);
 
   // Recompute distance while editing when both endpoints have coordinates.
   useEffect(() => {
@@ -213,13 +222,13 @@ export function BookingDetailDialog({
           )}
 
           {/* Pickup code */}
-          {b.start_otp && !["completed", "cancelled", "rejected"].includes(b.status) && (
+          {otp && !["completed", "cancelled", "rejected"].includes(b.status) && (
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <div>
                 <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Pickup code</div>
                 <div className="mt-0.5 text-xs text-white/55">Share with your driver to start the ride</div>
               </div>
-              <div className="font-mono text-2xl tracking-[0.3em] text-[#e7d3a8]">{b.start_otp}</div>
+              <div className="font-mono text-2xl tracking-[0.3em] text-[#e7d3a8]">{otp}</div>
             </div>
           )}
 

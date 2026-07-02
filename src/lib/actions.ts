@@ -63,6 +63,9 @@ export async function createBookingAction(data: {
   const userId = session.user.id;
 
   const tripType = data.tripType ?? "one_way";
+  // Generated here and returned directly — clients can no longer SELECT the
+  // start_otp column, so it must not appear in the returning clause.
+  const startOtp = generateOtp();
 
   const { data: booking, error } = await supabase
     .from("bookings")
@@ -88,11 +91,11 @@ export async function createBookingAction(data: {
       dropoff_lng: data.dropoffLng ?? null,
       distance_km: data.distanceKm ?? null,
       duration_min: data.durationMin ?? null,
-      start_otp: generateOtp(),
+      start_otp: startOtp,
       status: "pending",
       payment_status: "pending",
     })
-    .select("reference, start_otp")
+    .select("reference")
     .single();
 
   if (error) {
@@ -100,7 +103,7 @@ export async function createBookingAction(data: {
   }
 
   revalidatePath("/dashboard");
-  return booking;
+  return { reference: booking.reference, start_otp: startOtp };
 }
 
 /** 4-digit pickup verification code. */
@@ -149,6 +152,28 @@ export async function getBookingDriverAction(bookingId: string) {
   };
 }
 
+/**
+ * Pickup code for a booking the caller owns. start_otp is not client-readable
+ * (column privilege), so the owner fetches it through the service role.
+ */
+export async function getBookingOtpAction(bookingId: string): Promise<string | null> {
+  const session = await requireSession();
+  const admin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  );
+
+  const { data: booking } = await admin
+    .from("bookings")
+    .select("customer_id, start_otp, status")
+    .eq("id", bookingId)
+    .single();
+  if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
+  if (["completed", "cancelled", "rejected"].includes(booking.status)) return null;
+  return booking.start_otp ?? null;
+}
+
 export async function updateBookingLocationAction(
   bookingId: string,
   data: {
@@ -191,13 +216,19 @@ export async function cancelBookingAction(bookingId: string) {
   const session = await requireSession();
   const supabase = getSupabaseServerClient(session);
 
-  const { error } = await supabase
+  // Only pre-ride bookings can be cancelled — never one already in progress.
+  const { data, error } = await supabase
     .from("bookings")
     .update({ status: "cancelled" })
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .in("status", ["pending", "confirmed", "driver_assigned", "accepted"])
+    .select("id");
 
   if (error) {
     throw new Error(error.message);
+  }
+  if (!data || data.length === 0) {
+    throw new Error("This ride can no longer be cancelled.");
   }
 
   revalidatePath("/dashboard");
@@ -343,13 +374,18 @@ export async function acceptRideAction(rideId: string) {
   const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("bookings")
-    .update({ status: "confirmed" as any })
-    .eq("id", rideId);
+    .update({ status: "accepted" })
+    .eq("id", rideId)
+    .eq("status", "driver_assigned")
+    .select("id");
 
   if (error) {
     throw new Error(error.message);
+  }
+  if (!data || data.length === 0) {
+    throw new Error("This ride is no longer awaiting acceptance.");
   }
 
   revalidatePath("/driver");
@@ -374,23 +410,21 @@ export async function startRideAction(rideId: string, otp: string) {
   const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
 
-  // Verify the customer's pickup code server-side before starting.
-  const { data: ride, error: fetchErr } = await supabase
-    .from("bookings")
-    .select("start_otp")
-    .eq("id", rideId)
-    .single();
-  if (fetchErr) throw new Error(fetchErr.message);
-  if (!ride?.start_otp) throw new Error("No pickup code set for this ride.");
-  if (String(otp).trim() !== String(ride.start_otp)) throw new Error("Incorrect pickup code.");
-
-  const { error } = await supabase
-    .from("bookings")
-    .update({ status: "in_progress" as any })
-    .eq("id", rideId);
+  // Atomic SECURITY DEFINER RPC: verifies assigned driver + startable status +
+  // pickup code, then flips to in_progress. Clients can't read start_otp.
+  // Soft failures (wrong code / attempt lockout) come back in the result so
+  // the attempt counter survives — a raised exception would roll it back.
+  const { data, error } = await supabase.rpc("start_ride_with_otp", {
+    _booking_id: rideId,
+    _otp: String(otp).trim(),
+  });
 
   if (error) {
     throw new Error(error.message);
+  }
+  const result = data as { ok: boolean; error?: string } | null;
+  if (!result?.ok) {
+    throw new Error(result?.error ?? "Failed to start ride");
   }
 
   revalidatePath("/driver");
@@ -413,14 +447,21 @@ export async function completeRideAction(rideId: string, fareEstimate: number) {
     throw new Error("Driver profile not found");
   }
 
-  // Update booking status
-  const { error: bookingErr } = await supabase
+  // Update booking status. Only an in-progress ride can be completed.
+  // payment_status stays "pending" — payment collection isn't wired yet
+  // ("completed" isn't even a valid payment_status enum value).
+  const { data: updated, error: bookingErr } = await supabase
     .from("bookings")
-    .update({ status: "completed" as any, payment_status: "completed" as any })
-    .eq("id", rideId);
+    .update({ status: "completed" })
+    .eq("id", rideId)
+    .eq("status", "in_progress")
+    .select("id");
 
   if (bookingErr) {
     throw new Error(bookingErr.message);
+  }
+  if (!updated || updated.length === 0) {
+    throw new Error("Only a ride in progress can be completed.");
   }
 
   // Increment driver's total earnings (80% of the fare)
