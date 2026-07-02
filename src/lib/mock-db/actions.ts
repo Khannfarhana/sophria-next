@@ -9,6 +9,7 @@
  * client-side hydration the pages used to do) so callers can swap 1:1.
  */
 import { readDB, mutateDB, newId, newReference } from "./store";
+import { quote, type TripType } from "@/lib/pricing";
 import type { Booking } from "@/data/data";
 
 const now = () => new Date().toISOString();
@@ -222,9 +223,19 @@ export async function mockUpdateBookingLocation(
     dropoffLng: number | null;
     distanceKm: number | null;
     durationMin: number | null;
-    fare: number;
   },
 ) {
+  // Recompute the fare from the booking's vehicle rates (no client fare).
+  const db = readDB();
+  const booking = db.bookings.find((b) => b.id === id);
+  const vehicle = booking ? db.vehicles.find((v) => v.id === booking.vehicle_id) : null;
+  const fare = vehicle
+    ? quote((booking!.trip_type as TripType) ?? "one_way", vehicle, {
+        durationHours: booking!.duration_hours ?? undefined,
+        distanceKm: data.distanceKm ?? undefined,
+      })
+    : Number(booking?.fare_estimate ?? 0);
+
   patchBooking(id, {
     pickup_location: data.pickup,
     dropoff_location: data.dropoff,
@@ -234,9 +245,9 @@ export async function mockUpdateBookingLocation(
     dropoff_lng: data.dropoffLng,
     distance_km: data.distanceKm,
     duration_min: data.durationMin,
-    fare_estimate: data.fare,
+    fare_estimate: fare,
   });
-  return { success: true };
+  return { success: true, fare };
 }
 
 export async function mockConfirmBooking(id: string) {

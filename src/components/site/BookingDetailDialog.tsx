@@ -134,6 +134,7 @@ export function BookingDetailDialog({
     }
     setSaving(true);
     try {
+      // No fare sent — the server recomputes it from the vehicle's DB rates.
       const payload = {
         pickup,
         dropoff: isHourly ? (b.dropoff_location || "As directed (hourly)") : dropoff,
@@ -143,7 +144,6 @@ export function BookingDetailDialog({
         dropoffLng: dropoffCoords?.lng ?? null,
         distanceKm,
         durationMin,
-        fare: liveFare,
       };
       if (SUPABASE_ENABLED) await updateBookingLocationAction(b.id, payload);
       else await mockUpdateBookingLocation(b.id, payload);

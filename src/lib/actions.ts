@@ -4,6 +4,55 @@ import { auth } from "@/auth";
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import type { Session } from "next-auth";
+import { quote, type TripType } from "@/lib/pricing";
+import { getDirections } from "@/lib/mapbox";
+
+/** Service-role client — bypasses RLS. Only ever used inside "use server"
+ * actions, scoped to the caller's own rows / after an in-code auth check. */
+function getServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  );
+}
+
+/**
+ * Recompute a trustworthy fare on the server: never trust the client-sent
+ * amount. Reads the vehicle's real rates from the DB, and (when coordinates
+ * are present) re-derives the driving distance server-side via Mapbox.
+ */
+async function computeServerFare(
+  admin: ReturnType<typeof getServiceClient>,
+  opts: {
+    vehicleId: string;
+    tripType: TripType;
+    durationHours?: number | null;
+    pickup?: { lng: number; lat: number } | null;
+    dropoff?: { lng: number; lat: number } | null;
+    fallbackDistanceKm?: number | null;
+  },
+): Promise<{ fare: number; distanceKm: number | null; durationMin: number | null }> {
+  const { data: vehicle } = await admin
+    .from("vehicles")
+    .select("base_rate, hourly_rate")
+    .eq("id", opts.vehicleId)
+    .single();
+  if (!vehicle) throw new Error("Vehicle not found");
+
+  let distanceKm: number | null = opts.fallbackDistanceKm ?? null;
+  let durationMin: number | null = null;
+  if (opts.tripType !== "hourly" && opts.pickup && opts.dropoff) {
+    const dir = await getDirections(opts.pickup, opts.dropoff);
+    if (dir) { distanceKm = dir.distanceKm; durationMin = dir.durationMin; }
+  }
+
+  const fare = quote(opts.tripType, vehicle, {
+    durationHours: opts.durationHours ?? undefined,
+    distanceKm: distanceKm ?? undefined,
+  });
+  return { fare, distanceKm, durationMin };
+}
 
 function getSupabaseServerClient(session: Session) {
   const token = session.user?.accessToken;
@@ -67,6 +116,16 @@ export async function createBookingAction(data: {
   // start_otp column, so it must not appear in the returning clause.
   const startOtp = generateOtp();
 
+  // Never trust the client-supplied fare/distance — recompute from DB rates.
+  const pricing = await computeServerFare(getServiceClient(), {
+    vehicleId: data.vehicleId,
+    tripType,
+    durationHours: data.durationHours,
+    pickup: data.pickupLng != null && data.pickupLat != null ? { lng: data.pickupLng, lat: data.pickupLat } : null,
+    dropoff: data.dropoffLng != null && data.dropoffLat != null ? { lng: data.dropoffLng, lat: data.dropoffLat } : null,
+    fallbackDistanceKm: data.distanceKm,
+  });
+
   const { data: booking, error } = await supabase
     .from("bookings")
     .insert({
@@ -76,7 +135,7 @@ export async function createBookingAction(data: {
       // Hourly trips have no fixed drop-off; store a clear placeholder.
       dropoff_location: tripType === "hourly" ? (data.dropoff || "As directed (hourly)") : data.dropoff,
       pickup_datetime: new Date(data.datetime).toISOString(),
-      fare_estimate: data.fare,
+      fare_estimate: pricing.fare,
       passenger_name: data.passengerName,
       passenger_phone: data.passengerPhone,
       special_requests: data.notes,
@@ -89,8 +148,8 @@ export async function createBookingAction(data: {
       pickup_lng: data.pickupLng ?? null,
       dropoff_lat: data.dropoffLat ?? null,
       dropoff_lng: data.dropoffLng ?? null,
-      distance_km: data.distanceKm ?? null,
-      duration_min: data.durationMin ?? null,
+      distance_km: pricing.distanceKm,
+      duration_min: pricing.durationMin ?? data.durationMin ?? null,
       start_otp: startOtp,
       status: "pending",
       payment_status: "pending",
@@ -185,11 +244,32 @@ export async function updateBookingLocationAction(
     dropoffLng: number | null;
     distanceKm: number | null;
     durationMin: number | null;
-    fare: number;
   },
 ) {
   const session = await requireSession();
   const supabase = getSupabaseServerClient(session);
+  const admin = getServiceClient();
+
+  // Load the booking's own vehicle + trip type (server truth), verify ownership
+  // and editability, then recompute the fare — never trust a client amount.
+  const { data: booking } = await admin
+    .from("bookings")
+    .select("customer_id, vehicle_id, trip_type, duration_hours, status")
+    .eq("id", bookingId)
+    .single();
+  if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
+  if (!["pending", "confirmed"].includes(booking.status)) {
+    throw new Error("This booking can no longer be edited.");
+  }
+
+  const pricing = await computeServerFare(admin, {
+    vehicleId: booking.vehicle_id,
+    tripType: booking.trip_type as TripType,
+    durationHours: booking.duration_hours,
+    pickup: data.pickupLng != null && data.pickupLat != null ? { lng: data.pickupLng, lat: data.pickupLat } : null,
+    dropoff: data.dropoffLng != null && data.dropoffLat != null ? { lng: data.dropoffLng, lat: data.dropoffLat } : null,
+    fallbackDistanceKm: data.distanceKm,
+  });
 
   const { error } = await supabase
     .from("bookings")
@@ -200,16 +280,16 @@ export async function updateBookingLocationAction(
       pickup_lng: data.pickupLng,
       dropoff_lat: data.dropoffLat,
       dropoff_lng: data.dropoffLng,
-      distance_km: data.distanceKm,
-      duration_min: data.durationMin,
-      fare_estimate: data.fare,
+      distance_km: pricing.distanceKm,
+      duration_min: pricing.durationMin ?? data.durationMin,
+      fare_estimate: pricing.fare,
     })
     .eq("id", bookingId);
 
   if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard");
-  return { success: true };
+  return { success: true, fare: pricing.fare };
 }
 
 export async function cancelBookingAction(bookingId: string) {
@@ -264,44 +344,13 @@ export async function updateDriverAvailabilityAction(isAvailable: boolean) {
   return { success: true };
 }
 
-export async function respondToRideAction(rideId: string, action: "accept" | "reject") {
-  const session = await requireSession("driver");
-  const supabase = getSupabaseServerClient(session);
-  const userId = session.user.id;
-
-  // Retrieve driver ID
-  const { data: driver, error: driverErr } = await supabase
-    .from("drivers")
-    .select("id")
-    .eq("user_id", userId)
-    .single();
-
-  if (driverErr || !driver) {
-    throw new Error("Driver profile not found");
-  }
-
-  const payload = action === "accept"
-    ? { driver_id: driver.id, status: "confirmed" as const }
-    : { driver_id: null, status: "cancelled" as const };
-
-  const { error } = await supabase
-    .from("bookings")
-    .update(payload)
-    .eq("id", rideId);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  revalidatePath("/driver");
-  return { success: true };
-}
-
 export async function verifyDriverAction(driverId: string, verified: boolean) {
-  const session = await requireSession("admin");
-  const supabase = getSupabaseServerClient(session);
+  await requireSession("admin");
+  // is_verified is a privileged column (revoked from the authenticated role),
+  // so this write goes through the service role after the admin gate above.
+  const admin = getServiceClient();
 
-  const { error } = await supabase
+  const { error } = await admin
     .from("drivers")
     .update({ is_verified: verified })
     .eq("id", driverId);
@@ -431,7 +480,7 @@ export async function startRideAction(rideId: string, otp: string) {
   return { success: true };
 }
 
-export async function completeRideAction(rideId: string, fareEstimate: number) {
+export async function completeRideAction(rideId: string) {
   const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
   const userId = session.user.id;
@@ -447,15 +496,15 @@ export async function completeRideAction(rideId: string, fareEstimate: number) {
     throw new Error("Driver profile not found");
   }
 
-  // Update booking status. Only an in-progress ride can be completed.
-  // payment_status stays "pending" — payment collection isn't wired yet
-  // ("completed" isn't even a valid payment_status enum value).
+  // Complete only an in-progress ride, and read its fare from the DB in the
+  // same statement — the client no longer supplies the fare (was tamperable).
+  // payment_status stays "pending" — payment collection isn't wired yet.
   const { data: updated, error: bookingErr } = await supabase
     .from("bookings")
     .update({ status: "completed" })
     .eq("id", rideId)
     .eq("status", "in_progress")
-    .select("id");
+    .select("id, fare_estimate");
 
   if (bookingErr) {
     throw new Error(bookingErr.message);
@@ -464,11 +513,12 @@ export async function completeRideAction(rideId: string, fareEstimate: number) {
     throw new Error("Only a ride in progress can be completed.");
   }
 
-  // Increment driver's total earnings (80% of the fare)
-  const earningsIncrease = fareEstimate * 0.8;
+  // Earnings from the server-side fare (80%). total_earnings is a privileged
+  // column revoked from authenticated, so credit it via the service role.
+  const earningsIncrease = Number(updated[0].fare_estimate ?? 0) * 0.8;
   const newEarnings = Number(driver.total_earnings ?? 0) + earningsIncrease;
 
-  const { error: driverUpdateErr } = await supabase
+  const { error: driverUpdateErr } = await getServiceClient()
     .from("drivers")
     .update({ total_earnings: newEarnings })
     .eq("id", driver.id);

@@ -150,8 +150,9 @@ function DriverPortal() {
 
   const completeRide = async (r: DriverRide) => {
     try {
+      // Earnings are computed server-side from the DB fare — not sent by us.
       const fare = Number(r.fare_estimate);
-      if (SUPABASE_ENABLED) await completeRideAction(r.id, fare);
+      if (SUPABASE_ENABLED) await completeRideAction(r.id);
       else await mockCompleteRide(r.id, fare);
       toast.success(`Ride completed · earned $${(fare * 0.8).toFixed(2)}`);
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
