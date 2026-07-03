@@ -1,38 +1,19 @@
 # Mailer Configuration & Usage Guide
 
-This document describes how to configure, test, and use the SophRia email notification system, as well as recent refactoring work to ensure type safety.
+This document describes how to configure, test, and use the SophRia email notification system.
 
 ---
 
-## 1. What Was Changed (Refactoring Summary)
-
-To comply with strict TypeScript/ESLint guidelines and prevent potential runtime exceptions, we performed the following code improvements:
-
-### Type Safety Upgrades
-* **Unsafe Catch Blocks Resolved:** Removed explicit `error: any` from `catch` blocks in both the mailer package and client components:
-  * In [send.ts](file:///Users/ankit/Projects/sophria-rides/next-sophria/src/lib/mailer/send.ts#L60), updated to `catch (error: unknown)` and utilized safe type guards to retrieve the error message (`error instanceof Error ? error.message : String(error)`).
-  * In the [dashboard page](file:///Users/ankit/Projects/sophria-rides/next-sophria/src/app/(customer)/dashboard/page.tsx#L55), caught exceptions safely and normalized error handling.
-* **Component Prop Alignment:**
-  * Updated [BookingDetailDialog.tsx](file:///Users/ankit/Projects/sophria-rides/next-sophria/src/components/site/BookingDetailDialog.tsx#L45-L50)'s `BookingRow` interface to support rejection fields (`rejection_reason` and `rejection_notes`).
-  * Mapped and typed the Supabase query results to `BookingRow[]` inside the dashboard's `useQuery` query function. This guarantees compatibility and resolves type-checking mismatches between the query data and the dialog's expectations.
-
-### Performance & React Compliance
-* **Cascading Effects Fixed:** Removed synchronous `setState()` calls inside `useEffect()` hooks in [BookingDetailDialog.tsx](file:///Users/ankit/Projects/sophria-rides/next-sophria/src/components/site/BookingDetailDialog.tsx#L73-L100).
-* **Render-Phase Synchronization:** Optimized state copying and resets when booking properties or the dialog state changes. The dialog now utilizes React's standard "adjust state during render" pattern by checking previous keys (`prevBookingId`, `prevDriverId`, `prevOpen`).
-* **Clean Imports:** Removed unused imports (e.g., `Luggage` from `lucide-react`).
-
----
-
-## 2. SMTP Setup & Environment Configuration
+## 1. SMTP Setup & Environment Configuration
 
 Email sending is handled by `nodemailer` and configured entirely via environment variables.
 
-### Port Selection (Important)
+### Port Selection
 * **Port 587 (STARTTLS):** Often blocked/timed out (`ETIMEDOUT`) by residential ISPs, cloud providers (like AWS, GCP), or office network firewalls.
 * **Port 465 (SSL/TLS):** **Recommended.** Most environments leave Port 465 open. 
 
 ### Configuration Variables (`.env`)
-Add or update the following keys at the root `.env` file:
+Add or update the following keys in your root `.env` file:
 
 ```env
 # SMTP Mailer Settings
@@ -51,7 +32,7 @@ SMTP_FROM="SophRia <your-email@gmail.com>"
 
 ---
 
-## 3. How to Use the Mailer in Code
+## 2. How to Use the Mailer
 
 Imports should be resolved from `@/lib/mailer`.
 
@@ -101,20 +82,14 @@ Available templates:
 * `'booking-confirmation'`: For customer booking summaries.
 * `'generic'`: Accepts `heading` and `body` placeholders for custom messaging.
 
----
+### Standalone Command Line Testing
+A test script is provided in the repository to check SMTP credentials and send test emails.
 
-## 4. Testing the Mailer
-
-A standalone script is provided in the repository to check SMTP credentials and send test emails.
-
-### Send to Default SMTP User
-To test if credentials work by sending an email to the configured `SMTP_USER` email address:
-```bash
-npx tsx scripts/test-mailer.ts
-```
-
-### Send to a Custom Recipient
-To test delivery to a specific external recipient:
-```bash
-npx tsx scripts/test-mailer.ts recipient@domain.com
-```
+* **Send to Default SMTP User:**
+  ```bash
+  npx tsx scripts/test-mailer.ts
+  ```
+* **Send to a Custom Recipient:**
+  ```bash
+  npx tsx scripts/test-mailer.ts recipient@domain.com
+  ```
