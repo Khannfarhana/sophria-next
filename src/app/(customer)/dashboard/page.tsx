@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ChevronRight, CalendarClock, Car } from "lucide-react";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { ProtectedRoute } from "@/components/site/ProtectedRoute";
-import { BookingDetailDialog } from "@/components/site/BookingDetailDialog";
+import { BookingDetailDialog, type BookingRow } from "@/components/site/BookingDetailDialog";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
 import { StatusBadge } from "@/components/site/StatusBadge";
@@ -27,7 +27,7 @@ function Dashboard() {
   const { user, signOut } = useAuth();
   const supabase = useSupabase();
   const qc = useQueryClient();
-  const [selected, setSelected] = useState<any | null>(null);
+  const [selected, setSelected] = useState<BookingRow | null>(null);
 
   const { data: bookings, isLoading } = useQuery({
     queryKey: ["my-bookings", user?.id],
@@ -42,7 +42,15 @@ function Dashboard() {
         .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, fare_estimate, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name, type, base_rate, hourly_rate)")
         .order("pickup_datetime", { ascending: false });
       if (error) throw error;
-      return data ?? [];
+
+      const rows = (data ?? []).map((b) => {
+        const vehicles = Array.isArray(b.vehicles) ? (b.vehicles[0] ?? null) : (b.vehicles ?? null);
+        return {
+          ...b,
+          vehicles,
+        };
+      });
+      return rows as BookingRow[];
     },
   });
 
@@ -52,8 +60,8 @@ function Dashboard() {
       else await mockCancelBooking(id);
       toast.success("Booking cancelled");
       qc.invalidateQueries({ queryKey: ["my-bookings"] });
-    } catch (err: any) {
-      toast.error(err.message || "Failed to cancel booking");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel booking");
     }
   };
 
@@ -92,7 +100,7 @@ function Dashboard() {
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
-                {bookings.map((b: any) => {
+                {bookings.map((b: BookingRow) => {
                   // Pre-ride only — an in-progress ride can't be cancelled from here.
                   const cancellable = ["pending", "confirmed", "driver_assigned", "accepted"].includes(b.status);
                   return (
@@ -183,7 +191,7 @@ function Dashboard() {
       </section>
 
       <BookingDetailDialog
-        booking={selected ? (bookings?.find((x: any) => x.id === selected.id) ?? selected) : null}
+        booking={selected ? (bookings?.find((x: BookingRow) => x.id === selected.id) ?? selected) : null}
         open={!!selected}
         onClose={() => setSelected(null)}
         onUpdated={() => qc.invalidateQueries({ queryKey: ["my-bookings"] })}
