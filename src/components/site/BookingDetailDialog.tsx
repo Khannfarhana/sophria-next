@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { toast } from "sonner";
-import { MapPin, Users, Luggage, Pencil, X, Check, Loader2, Plane, CalendarClock, Phone } from "lucide-react";
+import { MapPin, Users, Pencil, X, Check, Loader2, Plane, CalendarClock, Phone } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -25,7 +25,7 @@ type DriverInfo = { name: string | null; phone: string | null; rating: number | 
 type Coords = { lng: number; lat: number } | null;
 
 // Loose shape — the dashboard passes a Supabase/mock booking row + joined vehicle.
-interface BookingRow {
+export interface BookingRow {
   id: string;
   reference: string;
   status: string;
@@ -45,6 +45,8 @@ interface BookingRow {
   passenger_name: string | null;
   passenger_phone: string | null;
   driver_id?: string | null;
+  rejection_reason?: string | null;
+  rejection_notes?: string | null;
   vehicles?: { name?: string | null; type?: string | null; base_rate?: number | string | null; hourly_rate?: number | string | null } | null;
 }
 
@@ -72,26 +74,46 @@ export function BookingDetailDialog({
   const [driverInfo, setDriverInfo] = useState<DriverInfo | null>(null);
   const [otp, setOtp] = useState<string | null>(null);
 
+  const [prevBookingId, setPrevBookingId] = useState<string | null>(null);
+  const [prevDriverId, setPrevDriverId] = useState<string | null>(null);
+  const [prevOpen, setPrevOpen] = useState(false);
+
   const b = booking;
+
+  // Sync / reset state during render when booking, driver, or open state changes
+  if (b?.id !== prevBookingId) {
+    setPrevBookingId(b?.id ?? null);
+    setEditing(false);
+    setPickup(b?.pickup_location ?? "");
+    setDropoff(b?.dropoff_location ?? "");
+    setPickupCoords(b?.pickup_lng != null && b?.pickup_lat != null ? { lng: b.pickup_lng, lat: b.pickup_lat } : null);
+    setDropoffCoords(b?.dropoff_lng != null && b?.dropoff_lat != null ? { lng: b.dropoff_lng, lat: b.dropoff_lat } : null);
+    setDistanceKm(b?.distance_km ?? null);
+    setDurationMin(b?.duration_min ?? null);
+    setDriverInfo(null);
+    setOtp(null);
+  }
+
+  if (b?.driver_id !== prevDriverId) {
+    setPrevDriverId(b?.driver_id ?? null);
+    setDriverInfo(null);
+  }
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) {
+      setDriverInfo(null);
+      setOtp(null);
+    }
+  }
+
   const tripType = (b?.trip_type as TripType) ?? "one_way";
   const isHourly = tripType === "hourly";
   const canEdit = !!b && EDITABLE.has(b.status);
 
-  // Reset local state whenever a new booking opens.
-  useEffect(() => {
-    if (!b) return;
-    setEditing(false);
-    setPickup(b.pickup_location);
-    setDropoff(b.dropoff_location);
-    setPickupCoords(b.pickup_lng != null && b.pickup_lat != null ? { lng: b.pickup_lng, lat: b.pickup_lat } : null);
-    setDropoffCoords(b.dropoff_lng != null && b.dropoff_lat != null ? { lng: b.dropoff_lng, lat: b.dropoff_lat } : null);
-    setDistanceKm(b.distance_km);
-    setDurationMin(b.duration_min);
-  }, [b]);
-
   // Fetch assigned-driver details (via an ownership-checked server action).
   useEffect(() => {
-    if (!open || !b?.id || !b?.driver_id) { setDriverInfo(null); return; }
+    if (!open || !b?.id || !b?.driver_id) return;
     let cancelled = false;
     const load = SUPABASE_ENABLED ? getBookingDriverAction(b.id) : mockBookingDriver(b.id);
     load.then((info) => { if (!cancelled) setDriverInfo(info); }).catch(() => { if (!cancelled) setDriverInfo(null); });
@@ -100,7 +122,7 @@ export function BookingDetailDialog({
 
   // Fetch the pickup code (start_otp isn't client-readable; owner-only action).
   useEffect(() => {
-    if (!open || !b?.id) { setOtp(null); return; }
+    if (!open || !b?.id) return;
     let cancelled = false;
     const load = SUPABASE_ENABLED ? getBookingOtpAction(b.id) : mockBookingOtp(b.id);
     load.then((code) => { if (!cancelled) setOtp(code); }).catch(() => { if (!cancelled) setOtp(null); });
