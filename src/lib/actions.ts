@@ -362,19 +362,85 @@ export async function updateDriverAvailabilityAction(isAvailable: boolean) {
 
 export async function verifyDriverAction(driverId: string, verified: boolean) {
   await requireSession("admin");
-  // is_verified is a privileged column (revoked from the authenticated role),
-  // so this write goes through the service role after the admin gate above.
+  // is_verified / role are privileged; both go through the service role after
+  // the admin gate. Approving here is what GRANTS the 'driver' role — a
+  // successful /become-chauffeur application only creates a pending record.
   const admin = getServiceClient();
 
-  const { error } = await admin
+  const { data: driver, error } = await admin
     .from("drivers")
-    .update({ is_verified: verified })
-    .eq("id", driverId);
+    .update({ is_verified: verified, is_available: verified })
+    .eq("id", driverId)
+    .select("user_id")
+    .single();
 
   if (error) {
     throw new Error(error.message);
   }
 
+  if (driver?.user_id) {
+    if (verified) {
+      await admin.from("user_roles").upsert({ user_id: driver.user_id, role: "driver" }, { onConflict: "user_id,role" });
+    } else {
+      await admin.from("user_roles").delete().eq("user_id", driver.user_id).eq("role", "driver");
+    }
+  }
+
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+/**
+ * Public chauffeur application. Requires sign-in (to link the account), but the
+ * applicant is NOT granted the driver role — this creates a PENDING record only.
+ * Runs via the service role so it works before the user is a driver, and so the
+ * applicant can't set privileged fields (is_verified stays false).
+ */
+export async function submitDriverApplicationAction(data: {
+  fullName: string;
+  phone: string;
+  license: string;
+  experience: number;
+  city: string;
+  province: string;
+  workAuthorization: string;
+  languages: string;
+  referral: string | null;
+  availability: string;
+  photoPath: string | null;
+  docs: { docType: string; path: string }[];
+}) {
+  const session = await requireSession();
+  const admin = getServiceClient();
+  const userId = session.user.id;
+
+  const { data: driver, error } = await admin
+    .from("drivers")
+    .upsert({
+      user_id: userId,
+      license_number: data.license,
+      experience_years: data.experience,
+      city_of_residence: data.city,
+      province: data.province,
+      work_authorization: data.workAuthorization,
+      languages_spoken: data.languages,
+      time_availability: data.availability,
+      referral_name: data.referral || null,
+      photo_url: data.photoPath,
+      is_verified: false,
+      is_available: false,
+    }, { onConflict: "user_id" })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  await admin.from("profiles").update({ full_name: data.fullName, phone: data.phone }).eq("id", userId);
+
+  for (const d of data.docs) {
+    if (d.path) await admin.from("driver_documents").insert({ driver_id: driver.id, doc_type: d.docType, file_url: d.path });
+  }
+
+  after(() => notifyDriverApplication(data.fullName || "there", session.user.email ?? ""));
   revalidatePath("/admin");
   return { success: true };
 }
@@ -559,13 +625,5 @@ export async function completeRideAction(rideId: string) {
 
   after(() => notifyRideCompleted(rideId));
   revalidatePath("/driver");
-  return { success: true };
-}
-
-/** Sent from the become-chauffeur flow after a successful application submit. */
-export async function notifyDriverApplicationAction(fullName: string) {
-  const session = await requireSession();
-  const email = session.user.email ?? "";
-  after(() => notifyDriverApplication(fullName || "there", email));
   return { success: true };
 }

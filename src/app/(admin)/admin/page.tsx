@@ -7,9 +7,10 @@ import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { useSupabase } from "@/hooks/use-supabase";
 import { StatusBadge } from "@/components/site/StatusBadge";
 import { AdminTabs } from "@/components/site/AdminTabs";
+import { DriverReviewDialog } from "@/components/site/DriverReviewDialog";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Check, X, UserPlus, Star } from "lucide-react";
+import { Check, X, UserPlus, Star, ChevronRight } from "lucide-react";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { formatDateTime } from "@/lib/datetime";
 import type { Database } from "@/integrations/supabase/types";
@@ -89,6 +90,13 @@ interface AdminDriver {
   rating: number;
   total_earnings: number;
   created_at: string;
+  city_of_residence: string | null;
+  province: string | null;
+  work_authorization: string | null;
+  languages_spoken: string | null;
+  time_availability: string | null;
+  referral_name: string | null;
+  photo_url: string | null;
   profile: {
     id: string;
     full_name: string | null;
@@ -105,6 +113,7 @@ function AdminPortal() {
   const [rejReason, setRejReason] = useState<string>("no_drivers");
   const [rejNotes, setRejNotes] = useState<string>("");
   const [assignFor, setAssignFor] = useState<AdminBooking | null>(null);
+  const [reviewDriver, setReviewDriver] = useState<AdminDriver | null>(null);
 
   const { data: bookings } = useQuery({
     queryKey: ["admin-bookings", filter],
@@ -363,30 +372,44 @@ function AdminPortal() {
             </div>
           </div>
 
-          {/* Drivers */}
-          <h2 className="mt-12 mb-4 text-2xl font-light sm:mt-16">Drivers</h2>
+          {/* Drivers & applications */}
+          {(() => {
+            const pendingCount = (drivers ?? []).filter((d) => !d.is_verified).length;
+            return (
+              <div className="mt-12 mb-4 flex items-center gap-3 sm:mt-16">
+                <h2 className="text-2xl font-light">Drivers &amp; applications</h2>
+                {pendingCount > 0 && (
+                  <span className="rounded-full bg-[#c9a76a]/15 px-2.5 py-1 text-xs font-medium text-[#8a6d33]">{pendingCount} pending review</span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Mobile cards */}
           <div className="space-y-3 md:hidden">
             {(drivers ?? []).map((d) => (
-              <div key={d.id} className="rounded-xl border border-border bg-card p-4">
+              <button
+                key={d.id}
+                onClick={() => setReviewDriver(d)}
+                className={`block w-full rounded-xl border bg-card p-4 text-left transition hover:border-foreground/25 ${d.is_verified ? "border-border" : "border-[#c9a76a]/50"}`}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-foreground">{d.profile?.full_name ?? "Unnamed driver"}</div>
+                    <div className="truncate text-sm font-medium text-foreground">{d.profile?.full_name ?? "Unnamed applicant"}</div>
                     {d.profile?.email && <div className="truncate text-xs text-ink-muted">{d.profile.email}</div>}
                     <div className="mt-0.5 truncate font-mono text-xs text-ink-soft">Lic · {d.license_number}</div>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${d.is_verified ? "bg-foreground text-background" : "border border-border text-ink-muted"}`}>
-                    {d.is_verified ? "Verified" : "Unverified"}
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${d.is_verified ? "bg-foreground text-background" : "bg-[#c9a76a]/15 text-[#8a6d33]"}`}>
+                    {d.is_verified ? "Verified" : "Pending"}
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm text-ink-muted">
                   <span>{d.experience_years}y exp · ★ {Number(d.rating).toFixed(2)}</span>
-                  <button onClick={() => verifyDriver(d.id, !d.is_verified)} className="text-xs text-foreground underline">
-                    {d.is_verified ? "Deactivate" : "Verify"}
-                  </button>
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground">
+                    {d.is_verified ? "View" : "Review"} <ChevronRight className="h-3.5 w-3.5" />
+                  </span>
                 </div>
-              </div>
+              </button>
             ))}
             {(!drivers || drivers.length === 0) && (
               <div className="rounded-xl border border-border bg-card p-8 text-center text-ink-muted">No drivers yet.</div>
@@ -403,28 +426,33 @@ function AdminPortal() {
                     <th className="p-3">License</th>
                     <th className="p-3">Exp.</th>
                     <th className="p-3">Rating</th>
-                    <th className="p-3">Verified</th>
-                    <th className="p-3 text-right">Action</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Review</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(drivers ?? []).map((d) => (
-                    <tr key={d.id} className="border-b border-border last:border-0 text-foreground">
+                    <tr
+                      key={d.id}
+                      onClick={() => setReviewDriver(d)}
+                      className="group cursor-pointer border-b border-border last:border-0 text-foreground transition-colors hover:bg-muted/50"
+                    >
                       <td className="p-3">
-                        <div className="font-medium">{d.profile?.full_name ?? "Unnamed driver"}</div>
+                        <div className="font-medium">{d.profile?.full_name ?? "Unnamed applicant"}</div>
                         <div className="text-xs text-ink-soft">{d.profile?.email ?? String(d.user_id).slice(0, 8)}</div>
                       </td>
                       <td className="p-3 font-mono text-xs">{d.license_number}</td>
                       <td className="p-3">{d.experience_years}y</td>
                       <td className="p-3">{Number(d.rating).toFixed(2)}</td>
-                      <td className="p-3">{d.is_verified ? "Yes" : "No"}</td>
+                      <td className="p-3">
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs ${d.is_verified ? "bg-foreground text-background" : "bg-[#c9a76a]/15 text-[#8a6d33]"}`}>
+                          {d.is_verified ? "Verified" : "Pending"}
+                        </span>
+                      </td>
                       <td className="p-3 text-right">
-                        <button
-                          onClick={() => verifyDriver(d.id, !d.is_verified)}
-                          className="text-xs text-ink-muted hover:text-foreground cursor-pointer underline"
-                        >
-                          {d.is_verified ? "Deactivate" : "Verify"}
-                        </button>
+                        <span className="inline-flex items-center justify-end gap-1 text-xs font-medium text-ink-muted group-hover:text-foreground">
+                          {d.is_verified ? "View" : "Review"} <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -589,6 +617,14 @@ function AdminPortal() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Driver application review */}
+      <DriverReviewDialog
+        driver={reviewDriver}
+        open={!!reviewDriver}
+        onClose={() => setReviewDriver(null)}
+        onDecision={async (verified) => { await verifyDriver(reviewDriver!.id, verified); }}
+      />
     </SiteLayout>
   );
 }
