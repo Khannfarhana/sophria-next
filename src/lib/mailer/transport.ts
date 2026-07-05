@@ -1,3 +1,4 @@
+import 'server-only'; // SMTP transport must never reach the client bundle
 import nodemailer from 'nodemailer';
 import { getSMTPConfig } from './config';
 

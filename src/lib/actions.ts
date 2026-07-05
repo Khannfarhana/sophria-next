@@ -3,9 +3,22 @@
 import { auth } from "@/auth";
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import type { Session } from "next-auth";
 import { quote, type TripType } from "@/lib/pricing";
 import { getDirections } from "@/lib/mapbox";
+import { toStorageIso } from "@/lib/datetime";
+import {
+  notifyBookingCreated,
+  notifyBookingConfirmed,
+  notifyBookingRejected,
+  notifyDriverAssigned,
+  notifyDriverAccepted,
+  notifyDriverDeclined,
+  notifyRideCompleted,
+  notifyBookingCancelled,
+  notifyDriverApplication,
+} from "@/lib/mailer/notifications";
 
 /** Service-role client — bypasses RLS. Only ever used inside "use server"
  * actions, scoped to the caller's own rows / after an in-code auth check. */
@@ -134,7 +147,8 @@ export async function createBookingAction(data: {
       pickup_location: data.pickup,
       // Hourly trips have no fixed drop-off; store a clear placeholder.
       dropoff_location: tripType === "hourly" ? (data.dropoff || "As directed (hourly)") : data.dropoff,
-      pickup_datetime: new Date(data.datetime).toISOString(),
+      // Store the exact picked wall clock (as UTC) — no timezone conversion.
+      pickup_datetime: toStorageIso(data.datetime),
       fare_estimate: pricing.fare,
       passenger_name: data.passengerName,
       passenger_phone: data.passengerPhone,
@@ -154,13 +168,14 @@ export async function createBookingAction(data: {
       status: "pending",
       payment_status: "pending",
     })
-    .select("reference")
+    .select("id, reference")
     .single();
 
   if (error) {
     throw new Error(error.message);
   }
 
+  after(() => notifyBookingCreated(booking.id));
   revalidatePath("/dashboard");
   return { reference: booking.reference, start_otp: startOtp };
 }
@@ -311,6 +326,7 @@ export async function cancelBookingAction(bookingId: string) {
     throw new Error("This ride can no longer be cancelled.");
   }
 
+  after(() => notifyBookingCancelled(bookingId));
   revalidatePath("/dashboard");
   return { success: true };
 }
@@ -376,6 +392,7 @@ export async function confirmBookingAction(bookingId: string) {
     throw new Error(error.message);
   }
 
+  after(() => notifyBookingConfirmed(bookingId));
   revalidatePath("/admin");
   return { success: true };
 }
@@ -397,6 +414,7 @@ export async function rejectBookingAction(bookingId: string, reason: string, not
     throw new Error(error.message);
   }
 
+  after(() => notifyBookingRejected(bookingId));
   revalidatePath("/admin");
   revalidatePath("/dashboard");
   return { success: true };
@@ -415,6 +433,7 @@ export async function assignDriverAction(bookingId: string, driverId: string) {
     throw new Error(error.message);
   }
 
+  after(() => notifyDriverAssigned(bookingId));
   revalidatePath("/admin");
   return { success: true };
 }
@@ -437,6 +456,7 @@ export async function acceptRideAction(rideId: string) {
     throw new Error("This ride is no longer awaiting acceptance.");
   }
 
+  after(() => notifyDriverAccepted(rideId));
   revalidatePath("/driver");
   return { success: true };
 }
@@ -445,12 +465,22 @@ export async function declineRideAction(rideId: string) {
   const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
 
+  // Capture the driver's name before the RPC clears the assignment (driver_id → null).
+  const admin = getServiceClient();
+  const { data: me } = await admin.from("drivers").select("user_id").eq("user_id", session.user.id).single();
+  let driverName = "A chauffeur";
+  if (me?.user_id) {
+    const { data: p } = await admin.from("profiles").select("full_name").eq("id", me.user_id).single();
+    if (p?.full_name) driverName = p.full_name;
+  }
+
   const { error } = await supabase.rpc("driver_decline_ride", { _booking_id: rideId });
 
   if (error) {
     throw new Error(error.message);
   }
 
+  after(() => notifyDriverDeclined(rideId, driverName));
   revalidatePath("/driver");
   return { success: true };
 }
@@ -527,6 +557,15 @@ export async function completeRideAction(rideId: string) {
     throw new Error(driverUpdateErr.message);
   }
 
+  after(() => notifyRideCompleted(rideId));
   revalidatePath("/driver");
+  return { success: true };
+}
+
+/** Sent from the become-chauffeur flow after a successful application submit. */
+export async function notifyDriverApplicationAction(fullName: string) {
+  const session = await requireSession();
+  const email = session.user.email ?? "";
+  after(() => notifyDriverApplication(fullName || "there", email));
   return { success: true };
 }

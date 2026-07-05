@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, CalendarClock, Car } from "lucide-react";
+import { formatDateTime } from "@/lib/datetime";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { BookingDetailDialog, type BookingRow } from "@/components/site/BookingDetailDialog";
@@ -121,7 +122,7 @@ function Dashboard() {
                           <div className="mt-1.5 flex items-center gap-1.5 text-sm text-foreground">
                             <CalendarClock className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
                             <span className="truncate">
-                              {new Date(b.pickup_datetime).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Toronto" })}
+                              {formatDateTime(b.pickup_datetime)}
                             </span>
                           </div>
                         </div>
