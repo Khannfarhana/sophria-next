@@ -6,6 +6,11 @@ export interface SMTPConfig {
   from: string;
 }
 
+/** Where admin/dispatch notifications go. Falls back to the SMTP account. */
+export function getAdminEmail(): string {
+  return process.env.ADMIN_EMAIL || process.env.SMTP_USER || process.env.SMTP_FROM || "";
+}
+
 export function getSMTPConfig(): SMTPConfig {
   const host = process.env.SMTP_HOST;
   const portStr = process.env.SMTP_PORT;

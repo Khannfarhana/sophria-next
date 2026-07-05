@@ -14,6 +14,7 @@ import { RideMap } from "@/components/site/RideMap";
 import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
 import { StatusBadge } from "@/components/site/StatusBadge";
 import { getDirections, type Place } from "@/lib/mapbox";
+import { formatDateTime } from "@/lib/datetime";
 import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
@@ -74,15 +75,12 @@ export function BookingDetailDialog({
   const [driverInfo, setDriverInfo] = useState<DriverInfo | null>(null);
   const [otp, setOtp] = useState<string | null>(null);
 
-  const [prevBookingId, setPrevBookingId] = useState<string | null>(null);
-  const [prevDriverId, setPrevDriverId] = useState<string | null>(null);
-  const [prevOpen, setPrevOpen] = useState(false);
-
   const b = booking;
 
-  // Sync / reset state during render when booking, driver, or open state changes
-  if (b?.id !== prevBookingId) {
-    setPrevBookingId(b?.id ?? null);
+  // Reset editing state whenever a DIFFERENT booking is opened. Keyed on the id
+  // (a stable primitive) so it runs once per booking — never mid-edit, and never
+  // loops on new object identities the way a render-phase setState would.
+  useEffect(() => {
     setEditing(false);
     setPickup(b?.pickup_location ?? "");
     setDropoff(b?.dropoff_location ?? "");
@@ -92,20 +90,8 @@ export function BookingDetailDialog({
     setDurationMin(b?.duration_min ?? null);
     setDriverInfo(null);
     setOtp(null);
-  }
-
-  if (b?.driver_id !== prevDriverId) {
-    setPrevDriverId(b?.driver_id ?? null);
-    setDriverInfo(null);
-  }
-
-  if (open !== prevOpen) {
-    setPrevOpen(open);
-    if (!open) {
-      setDriverInfo(null);
-      setOtp(null);
-    }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [b?.id]);
 
   const tripType = (b?.trip_type as TripType) ?? "one_way";
   const isHourly = tripType === "hourly";
@@ -179,7 +165,7 @@ export function BookingDetailDialog({
     }
   };
 
-  const dt = new Date(b.pickup_datetime).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Toronto" });
+  const dt = formatDateTime(b.pickup_datetime);
   const vehImg = b.vehicles?.type ? (VEHICLE_IMAGES[b.vehicles.type] ?? VEHICLE_IMAGES.sedan) : VEHICLE_IMAGES.sedan;
 
   return (

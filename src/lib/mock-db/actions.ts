@@ -10,6 +10,7 @@
  */
 import { readDB, mutateDB, newId, newReference } from "./store";
 import { quote, type TripType } from "@/lib/pricing";
+import { toStorageIso } from "@/lib/datetime";
 import type { Booking } from "@/data/data";
 
 const now = () => new Date().toISOString();
@@ -153,7 +154,7 @@ export async function mockCreateBooking(input: {
       trip_type: tt,
       pickup_location: input.pickup,
       dropoff_location: tt === "hourly" ? input.dropoff || "As directed (hourly)" : input.dropoff,
-      pickup_datetime: new Date(input.datetime).toISOString(),
+      pickup_datetime: toStorageIso(input.datetime),
       duration_hours: tt === "hourly" ? input.durationHours ?? null : null,
       flight_number: tt === "airport" ? input.flightNumber ?? null : null,
       passenger_count: null,

@@ -11,6 +11,7 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Check, X, UserPlus, Star } from "lucide-react";
 import { CustomSelect } from "@/components/ui/custom-select";
+import { formatDateTime } from "@/lib/datetime";
 import type { Database } from "@/integrations/supabase/types";
 import {
   verifyDriverAction,
@@ -261,7 +262,7 @@ function AdminPortal() {
                 </div>
                 <div className="mt-3 space-y-1 text-sm text-ink-muted">
                   <div className="truncate">{b.pickup_location} → {b.dropoff_location}</div>
-                  <div className="text-xs text-ink-soft">{new Date(b.pickup_datetime).toLocaleString("en-CA", { timeZone: "America/Toronto" })}</div>
+                  <div className="text-xs text-ink-soft">{formatDateTime(b.pickup_datetime)}</div>
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm">
                   <span className="text-ink-muted">{b.vehicles?.name ?? "—"} · {b.driver?.profile?.full_name ?? "Unassigned"}</span>
@@ -317,7 +318,7 @@ function AdminPortal() {
                         <div className="font-medium">{b.customer?.full_name || b.passenger_name || "—"}</div>
                         <div className="text-xs text-ink-soft">{b.customer?.email ?? ""}</div>
                       </td>
-                      <td className="p-3 text-ink-muted">{new Date(b.pickup_datetime).toLocaleString("en-CA", { timeZone: "America/Toronto" })}</td>
+                      <td className="p-3 text-ink-muted">{formatDateTime(b.pickup_datetime)}</td>
                       <td className="p-3 text-ink-muted">{b.pickup_location} → {b.dropoff_location}</td>
                       <td className="p-3">{b.driver?.profile?.full_name ?? <span className="text-ink-soft">Unassigned</span>}</td>
                       <td className="p-3">{b.vehicles?.name ?? "—"}</td>
@@ -539,7 +540,7 @@ function AdminPortal() {
             <DialogTitle className="text-foreground">Assign driver — {assignFor?.reference}</DialogTitle>
           </DialogHeader>
           <div className="text-xs text-ink-muted">
-            Pickup: {assignFor?.pickup_location} · {assignFor && new Date(assignFor.pickup_datetime).toLocaleString("en-CA", { timeZone: "America/Toronto" })}
+            Pickup: {assignFor?.pickup_location} · {assignFor && formatDateTime(assignFor.pickup_datetime)}
           </div>
           <div className="mt-4 max-h-[55vh] overflow-y-auto rounded-md border border-border">
             {availableDrivers.length === 0 ? (

@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/site/StatusBadge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { RideMap, navigateUrl } from "@/components/site/RideMap";
+import { formatDateTime, formatDate, isSameUtcDay } from "@/lib/datetime";
 import { MapPin, Navigation, Play, Check, X, KeyRound, Loader2 } from "lucide-react";
 import {
   updateDriverAvailabilityAction,
@@ -169,8 +170,7 @@ function DriverPortal() {
   const upcoming = list.filter((r) => r.status === "accepted" || r.status === "confirmed" || r.status === "in_progress");
   const completed = list.filter((r) => r.status === "completed");
 
-  const now = new Date();
-  const today = list.filter((r) => new Date(r.pickup_datetime).toDateString() === now.toDateString());
+  const today = list.filter((r) => isSameUtcDay(r.pickup_datetime));
 
   return (
     <SiteLayout solidNav>
@@ -259,7 +259,7 @@ function DriverPortal() {
                       <tbody>
                         {completed.map((r) => (
                           <tr key={r.id} className="border-b border-border last:border-0 text-foreground">
-                            <td className="p-3">{new Date(r.pickup_datetime).toLocaleDateString("en-CA", { timeZone: "America/Toronto" })}</td>
+                            <td className="p-3">{formatDate(r.pickup_datetime)}</td>
                             <td className="p-3 text-ink-muted">{r.pickup_location} → {r.dropoff_location}</td>
                             <td className="p-3">${Number(r.fare_estimate).toFixed(2)}</td>
                             <td className="p-3 font-medium">${(Number(r.fare_estimate) * 0.8).toFixed(2)}</td>
@@ -324,7 +324,7 @@ function RideList({
                 </div>
               </div>
               <div className="mt-2 text-xs text-ink-muted">
-                {new Date(r.pickup_datetime).toLocaleString("en-CA", { timeZone: "America/Toronto" })} · {r.vehicles?.name ?? "Vehicle TBD"}
+                {formatDateTime(r.pickup_datetime)} · {r.vehicles?.name ?? "Vehicle TBD"}
               </div>
             </div>
             <div className="flex flex-col items-end gap-2 text-foreground">
@@ -384,7 +384,7 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-foreground">
           <div>
             <div className="text-ink-muted text-xs uppercase tracking-wider">Pickup</div>
-            <div>{pickupTime.toLocaleString("en-CA", { timeZone: "America/Toronto" })}</div>
+            <div>{formatDateTime(ride.pickup_datetime)}</div>
           </div>
           <div className="text-right">
             <div className="text-ink-muted text-xs uppercase tracking-wider">Fare</div>

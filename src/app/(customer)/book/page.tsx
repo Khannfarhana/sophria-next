@@ -16,6 +16,7 @@ import { TripTypeToggle } from "@/components/site/TripTypeToggle";
 import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
 import { RideMap } from "@/components/site/RideMap";
 import { getDirections, type Place } from "@/lib/mapbox";
+import { formatDateTime } from "@/lib/datetime";
 import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { queries as mockDb } from "@/data/data";
@@ -193,7 +194,7 @@ function BookFlow() {
     const esc = (v: unknown) =>
       String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const dt = s.datetime
-      ? new Date(s.datetime).toLocaleString("en-CA", { dateStyle: "full", timeStyle: "short" })
+      ? formatDateTime(s.datetime, { dateStyle: "full", timeStyle: "short" })
       : "—";
     const rows: [string, string][] = [
       ["Trip type", tripTypeLabel(s.tripType)],
@@ -444,7 +445,7 @@ function BookFlow() {
                       ...(s.tripType === "airport" && s.flightNumber
                         ? [["Flight", s.flightNumber] as [string, string]]
                         : []),
-                      ["Date & Time", s.datetime ? new Date(s.datetime).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" }) : "—"],
+                      ["Date & Time", formatDateTime(s.datetime)],
                       ["Vehicle", selected?.name ?? "—"],
                       ["Passenger", s.passengerName],
                       ["Estimated fare", `$${fare.toFixed(2)} CAD`],
@@ -566,7 +567,7 @@ function BookFlow() {
                     <div className="bg-[#0d0d0e] px-6 py-4">
                       <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Date &amp; time</div>
                       <div className="mt-1 text-sm">
-                        {s.datetime ? new Date(s.datetime).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" }) : "—"}
+                        {formatDateTime(s.datetime)}
                       </div>
                     </div>
                     <div className="bg-[#0d0d0e] px-6 py-4">

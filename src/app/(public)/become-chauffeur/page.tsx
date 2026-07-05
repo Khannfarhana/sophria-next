@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
+import { notifyDriverApplicationAction } from "@/lib/actions";
 import { Check, Upload, Camera, ArrowLeft, ArrowRight, Loader2, X } from "lucide-react";
 
 const schema = z.object({
@@ -129,6 +130,8 @@ export default function BecomeChauffeurPage() {
       }
 
       await refreshRoles();
+      // Fire the confirmation + admin-notice emails (non-blocking).
+      notifyDriverApplicationAction(parsed.data.fullName).catch(() => {});
       setSubmitted(true);
       toast.success("Application submitted. We'll review and respond shortly.");
     } catch (err: unknown) {
