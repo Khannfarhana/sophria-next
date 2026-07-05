@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
-import { notifyDriverApplicationAction } from "@/lib/actions";
-import { Check, Upload, Camera, ArrowLeft, ArrowRight, Loader2, X } from "lucide-react";
+import { submitDriverApplicationAction } from "@/lib/actions";
+import { formatDate } from "@/lib/datetime";
+import { Check, Upload, Camera, ArrowLeft, ArrowRight, Loader2, X, Clock, ShieldCheck } from "lucide-react";
+
+type Application = { is_verified: boolean; is_available: boolean; created_at: string; license_number: string };
 
 const schema = z.object({
   fullName: z.string().trim().min(1, "Full name is required").max(100),
@@ -48,7 +51,7 @@ const DOCS = [
 ];
 
 export default function BecomeChauffeurPage() {
-  const { user, refreshRoles } = useAuth();
+  const { user } = useAuth();
   const supabase = useSupabase();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
@@ -59,7 +62,21 @@ export default function BecomeChauffeurPage() {
   const [photoPreview, setPhotoPreview] = useState<string>("");
   const [files, setFiles] = useState<Record<string, File | null>>({ license_doc: null, background: null });
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  // undefined = still checking · null = no application · object = already applied
+  const [application, setApplication] = useState<Application | null | undefined>(undefined);
+
+  // On load, check whether this account already has an application on file.
+  useEffect(() => {
+    if (!user) { setApplication(null); return; }
+    let cancelled = false;
+    supabase
+      .from("drivers")
+      .select("is_verified, is_available, created_at, license_number")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => { if (!cancelled) setApplication((data as Application) ?? null); });
+    return () => { cancelled = true; };
+  }, [user, supabase]);
 
   const inputCls = "w-full rounded-xl border bg-input px-4 py-3 text-sm text-foreground transition focus:border-foreground focus:outline-none";
   const selectCls = (value: string) => `${inputCls} cursor-pointer ${value ? "text-foreground" : "text-ink-soft"}`;
@@ -96,43 +113,43 @@ export default function BecomeChauffeurPage() {
 
     setSubmitting(true);
     try {
-      // Upload the driver photo first so we can store its path on the record.
-      // Non-fatal: a storage hiccup shouldn't discard the whole application.
-      let photoPath: string | null = null;
-      const photoUpload = `${user.id}/photo-${Date.now()}-${photo.name}`;
-      const { error: photoErr } = await supabase.storage.from("driver-documents").upload(photoUpload, photo, { upsert: true });
-      if (photoErr) { console.warn("photo upload failed", photoErr); toast.warning("Photo couldn't be uploaded — we'll follow up for it."); }
-      else photoPath = photoUpload;
+      // Storage keys can't contain spaces/special chars — sanitize filenames.
+      const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const uploadTo = async (folder: string, file: File): Promise<string | null> => {
+        const path = `${user.id}/${folder}-${Date.now()}-${safeName(file.name)}`;
+        const { error } = await supabase.storage.from("driver-documents").upload(path, file, { upsert: true });
+        if (error) { console.warn(`${folder} upload failed`, error); return null; }
+        return path;
+      };
 
-      const { data: driver, error: drvErr } = await supabase.from("drivers").upsert({
-        user_id: user.id,
-        license_number: parsed.data.license,
-        experience_years: parsed.data.experience,
-        city_of_residence: parsed.data.city,
-        province: parsed.data.province,
-        work_authorization: parsed.data.workAuthorization,
-        languages_spoken: parsed.data.languages,
-        time_availability: parsed.data.availability,
-        referral_name: parsed.data.referral || null,
-        photo_url: photoPath,
-      }, { onConflict: "user_id" }).select().single();
-      if (drvErr) throw drvErr;
-
-      await supabase.from("profiles").update({ full_name: parsed.data.fullName, phone: parsed.data.phone }).eq("id", user.id);
-      await supabase.from("user_roles").upsert({ user_id: user.id, role: "driver" });
-
+      // Uploads run under the applicant's own account (path-based storage RLS).
+      const photoPath = await uploadTo("photo", photo);
+      const docs: { docType: string; path: string }[] = [];
       for (const [docType, file] of Object.entries(files)) {
         if (!file) continue;
-        const path = `${user.id}/${docType}-${Date.now()}-${file.name}`;
-        const { error: upErr } = await supabase.storage.from("driver-documents").upload(path, file, { upsert: true });
-        if (upErr) { console.warn(`${docType} upload failed`, upErr); continue; }
-        await supabase.from("driver_documents").insert({ driver_id: driver.id, doc_type: docType, file_url: path });
+        const path = await uploadTo(docType, file);
+        if (path) docs.push({ docType, path });
       }
 
-      await refreshRoles();
-      // Fire the confirmation + admin-notice emails (non-blocking).
-      notifyDriverApplicationAction(parsed.data.fullName).catch(() => {});
-      setSubmitted(true);
+      // Create the PENDING application (server-side, service role). This does NOT
+      // grant the driver role — an admin does that when they approve.
+      await submitDriverApplicationAction({
+        fullName: parsed.data.fullName,
+        phone: parsed.data.phone,
+        license: parsed.data.license,
+        experience: parsed.data.experience,
+        city: parsed.data.city,
+        province: parsed.data.province,
+        workAuthorization: parsed.data.workAuthorization,
+        languages: parsed.data.languages,
+        referral: parsed.data.referral || null,
+        availability: parsed.data.availability,
+        photoPath,
+        docs,
+      });
+
+      // Flip straight to the status view.
+      setApplication({ is_verified: false, is_available: false, created_at: new Date().toISOString(), license_number: parsed.data.license });
       toast.success("Application submitted. We'll review and respond shortly.");
     } catch (err: unknown) {
       console.error(err);
@@ -167,30 +184,56 @@ export default function BecomeChauffeurPage() {
                 to submit your application.
               </p>
             </div>
-          ) : submitted ? (
-            /* Success + status tracker */
-            <div className="space-y-8">
-              <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-sm">
-                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#e7d3a8] to-[#c9a76a] shadow-lg">
-                  <Check className="h-8 w-8 text-[#0d0d0e]" strokeWidth={2.5} />
-                </div>
-                <h2 className="text-2xl font-light text-foreground">Application submitted</h2>
-                <p className="mt-2 text-sm text-ink-muted">
-                  Thanks{form.fullName ? `, ${form.fullName.split(" ")[0]}` : ""}. Our team will review your details and reach out shortly.
-                </p>
-              </div>
-              <div className="flex items-center rounded-2xl border border-border bg-card p-6 shadow-sm">
-                {STATUS_STEPS.map((s, i) => (
-                  <div key={s} className="flex flex-1 items-center">
-                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${i === 0 ? "border-foreground bg-foreground text-background" : "border-border text-ink-soft"}`}>
-                      {i === 0 ? <Check className="h-3.5 w-3.5" /> : i + 1}
-                    </div>
-                    <span className={`ml-2.5 text-xs font-medium ${i === 0 ? "text-foreground" : "text-ink-soft"}`}>{s}</span>
-                    {i < STATUS_STEPS.length - 1 && <div className={`mx-4 h-px flex-1 ${i === 0 ? "bg-foreground" : "bg-border"}`} />}
-                  </div>
-                ))}
-              </div>
+          ) : application === undefined ? (
+            <div className="flex items-center justify-center rounded-2xl border border-border bg-card p-16">
+              <Loader2 className="h-5 w-5 animate-spin text-ink-muted" />
             </div>
+          ) : application ? (
+            /* Already applied — show status instead of the form */
+            (() => {
+              const approved = application.is_verified;
+              const activeIdx = approved ? 2 : 1; // 0 Submitted · 1 Under Review · 2 Approved
+              return (
+                <div className="space-y-8">
+                  <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-sm">
+                    <div className={`mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full shadow-lg ${approved ? "bg-gradient-to-br from-[#e7d3a8] to-[#c9a76a]" : "bg-muted"}`}>
+                      {approved ? <ShieldCheck className="h-8 w-8 text-[#0d0d0e]" strokeWidth={2} /> : <Clock className="h-7 w-7 text-ink-muted" />}
+                    </div>
+                    <h2 className="text-2xl font-light text-foreground">
+                      {approved ? "You're a SophRia chauffeur" : "Application under review"}
+                    </h2>
+                    <p className="mt-2 text-sm text-ink-muted">
+                      {approved
+                        ? "Your application has been approved. You can now access the driver portal and start accepting rides."
+                        : "Thanks for applying. Our team is reviewing your details and will be in touch — you don't need to submit again."}
+                    </p>
+                    <div className="mt-5 text-xs text-ink-soft">
+                      Applied {formatDate(application.created_at)} · License {application.license_number}
+                    </div>
+                    {approved && (
+                      <Link href="/driver" className="mt-6 inline-flex items-center gap-2 rounded-sm bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]">
+                        Go to Driver Portal <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    )}
+                  </div>
+                  <div className="flex items-center rounded-2xl border border-border bg-card p-6 shadow-sm">
+                    {STATUS_STEPS.map((s, i) => {
+                      const done = i < activeIdx;
+                      const current = i === activeIdx;
+                      return (
+                        <div key={s} className="flex flex-1 items-center">
+                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${done || current ? "border-foreground" : "border-border text-ink-soft"} ${done ? "bg-foreground text-background" : current ? "text-foreground" : ""}`}>
+                            {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                          </div>
+                          <span className={`ml-2.5 text-xs font-medium ${done || current ? "text-foreground" : "text-ink-soft"}`}>{s}</span>
+                          {i < STATUS_STEPS.length - 1 && <div className={`mx-4 h-px flex-1 ${i < activeIdx ? "bg-foreground" : "bg-border"}`} />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()
           ) : (
             <>
               {/* Step indicator */}
