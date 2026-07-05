@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
-import { DebugMenu } from "./DebugMenu";
 
 const NAV = [
   { href: "/", label: "Home" },
@@ -92,7 +91,6 @@ export function Navbar({ solid = false }: { solid?: boolean }) {
 
         {/* Right actions */}
         <div className="hidden items-center gap-4 lg:flex">
-          <DebugMenu dark={!onLight} />
           <Link
             href="/become-chauffeur"
             className={`text-sm transition-colors duration-500 ${
@@ -144,7 +142,6 @@ export function Navbar({ solid = false }: { solid?: boolean }) {
 
         {/* Mobile toggle */}
         <div className="flex items-center gap-3 lg:hidden">
-          <DebugMenu dark={!onLight} />
           <button
             className={`transition-colors duration-500 ${onLight ? "text-foreground" : "text-white"}`}
             onClick={() => setOpen(!open)}
