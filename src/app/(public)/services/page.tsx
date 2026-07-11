@@ -1,23 +1,26 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteLayout } from "@/components/site/SiteLayout";
-import { Plane, Briefcase, Heart, Compass, Clock, ArrowRight } from "lucide-react";
+import { Plane, Briefcase, Heart, Clock, ArrowRight, ShoppingBag, Flower2, Wine, GraduationCap } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Chauffeur Services",
-  description: "Airport transfers, corporate travel, weddings, city tours and hourly charter. Toronto chauffeur service.",
+  description: "Airport transfers, corporate travel, wedding and prom packages, shopping, spa and wine tours. Luxury chauffeur service across Toronto and Southern Ontario.",
   openGraph: {
     title: "SophRia Services",
-    description: "Airport, corporate, weddings, tours, hourly.",
+    description: "Airport, corporate, weddings, proms, shopping, spa and wine tours.",
   },
 };
 
 const SERVICES = [
-  { Icon: Plane, title: "Airport Transfers", body: "Flat-rate transfers to and from Pearson (YYZ) and Billy Bishop (YTZ). Live flight tracking included.", from: 85 },
-  { Icon: Briefcase, title: "Corporate Travel", body: "Discreet point-to-point service for board meetings, client visits, and roadshows.", from: 95 },
-  { Icon: Heart, title: "Wedding & Events", body: "Multi-vehicle coordination, day-of timing, and the right car for the moment.", from: 220 },
-  { Icon: Compass, title: "City Tours", body: "Bespoke tours of Toronto — Distillery District, Niagara, Prince Edward County and beyond.", from: 120 },
-  { Icon: Clock, title: "Hourly Charter", body: "Reserve a chauffeur and vehicle for the hour. Ideal for events with multiple stops.", from: 95 },
+  { Icon: Plane, title: "Airport Transfers", body: "Transfers to and from Pearson (YYZ), Billy Bishop (YTZ), Hamilton (YHM) and Buffalo Niagara (BUF). Live flight tracking included.", from: "$110" },
+  { Icon: Briefcase, title: "Corporate Transportation", body: "Executive meetings, conferences, corporate events and client transportation. Corporate accounts and monthly billing available upon approval.", from: "$95" },
+  { Icon: Heart, title: "Wedding Packages", body: "Professional chauffeur, optional decorative ribbons, red carpet on request and multiple photo stops. Custom packages available.", from: "$695" },
+  { Icon: GraduationCap, title: "Prom Packages", body: "Safety-focused transportation with a professional chauffeur and complimentary bottled water. Group pricing available.", from: "$595" },
+  { Icon: ShoppingBag, title: "Luxury Shopping", body: "Private chauffeur to Yorkdale, Eaton Centre, Square One, Sherway Gardens and Vaughan Mills — flexible waiting while you shop. 3-hour minimum.", from: "$95/hr" },
+  { Icon: Flower2, title: "Daily Spa Tours", body: "Quiet luxury travel to Elmwood, Body Blitz, Thermëa Whitby, Ste. Anne's and more — waiting time during your visit included. 4-hour minimum.", from: "$120/hr" },
+  { Icon: Wine, title: "Wine & Niagara Tours", body: "Chauffeured wine-country and Niagara itineraries, customized to your day. 6-hour minimum.", from: "$125/hr" },
+  { Icon: Clock, title: "Hourly Charter", body: "Reserve a chauffeur and vehicle for the hour. Ideal for events with multiple stops. 2-hour minimum.", from: "$85/hr" },
 ];
 
 export default function ServicesPage() {
@@ -31,7 +34,8 @@ export default function ServicesPage() {
             For every kind of <span className="text-[#e7d3a8]">arrival.</span>
           </h1>
           <p className="mt-5 max-w-xl text-base text-white/70">
-            From airport runs to weddings — one standard of service, every time.
+            From airport runs to weddings — one standard of service across Toronto, Hamilton,
+            Burlington, Oakville, Mississauga, the Niagara Region and Southern Ontario.
           </p>
         </div>
       </section>
@@ -53,7 +57,7 @@ export default function ServicesPage() {
                 <div className="mt-6 flex items-end justify-between border-t border-border pt-5">
                   <div>
                     <div className="text-[10px] text-ink-soft">from</div>
-                    <div className="text-lg text-foreground">${from} <span className="text-xs text-ink-soft">CAD</span></div>
+                    <div className="text-lg text-foreground">{from} <span className="text-xs text-ink-soft">CAD</span></div>
                   </div>
                   <Link
                     href="/book"

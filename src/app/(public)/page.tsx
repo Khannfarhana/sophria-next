@@ -71,7 +71,7 @@ export default function Home() {
             <span className="text-[#e7d3a8]">chauffeur service.</span>
           </h1>
           <p className="mt-6 max-w-xl text-base text-white/80 md:text-lg animate-rise delay-200">
-            Discreet. Punctual. Effortless. Reserve a private driver for any occasion across the GTA — from Pearson arrivals to evening galas.
+            Discreet. Punctual. Effortless. Reserve a private driver for any occasion across Toronto, Hamilton, Mississauga, Niagara and Southern Ontario — from Pearson arrivals to evening galas.
           </p>
           <div className="mt-10 flex flex-wrap gap-3 animate-rise delay-300">
             <Link
@@ -140,7 +140,7 @@ export default function Home() {
           </div>
           <div className="grid gap-6 md:grid-cols-3">
             {[
-              { key: "sedan", name: "Luxury Sedan", cap: "1–3 guests", desc: "Mercedes S-Class. For executive travel." },
+              { key: "sedan", name: "Executive Sedan", cap: "1–3 guests", desc: "Mercedes S-Class. For executive travel." },
               { key: "suv", name: "Luxury SUV", cap: "1–6 guests", desc: "Cadillac Escalade. Group comfort." },
               { key: "limousine", name: "Stretch Limousine", cap: "1–8 guests", desc: "Classic. For special occasions." },
             ].map((v) => (
@@ -264,7 +264,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-4xl flex-col items-center text-center">
           <Eyebrow center>Reserve</Eyebrow>
           <h2 className="text-4xl md:text-5xl">Ready when <span className="shimmer-text">you</span> are.</h2>
-          <p className="mt-4 max-w-lg text-[#555]">Reserve a chauffeur in under a minute. Available 24/7 across the Greater Toronto Area.</p>
+          <p className="mt-4 max-w-lg text-[#555]">Reserve a chauffeur in under a minute. Available 24/7 across Toronto, Hamilton, Niagara and Southern Ontario.</p>
           <Link
             href="/book"
             className="group mt-10 inline-flex items-center gap-2 rounded-sm bg-primary px-8 py-4 text-sm font-medium text-primary-foreground transition-all duration-300 hover:gap-3 hover:bg-[#2A2A2A]"

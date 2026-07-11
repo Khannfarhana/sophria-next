@@ -124,16 +124,41 @@ export function notifyBookingCreated(bookingId: string) {
   });
 }
 
-/** Admin confirmed → customer. */
+/** Admin confirmed → customer (payment of the full fare is now required). */
 export function notifyBookingConfirmed(bookingId: string) {
   return safe(async () => {
     const c = await loadBookingContext(bookingId);
     if (!c?.customer?.email) return;
     await sendMail({
       to: c.customer.email,
-      subject: `Booking confirmed — ${c.reference}`,
+      subject: `Booking confirmed — payment required — ${c.reference}`,
       template: { name: "booking-confirmed", data: { ...base(c), customerName: c.customer.name, otp: c.otp, ctaUrl: url("/dashboard") } },
     });
+  });
+}
+
+/** Payment received → customer receipt + admin "assign driver" prompt. */
+export function notifyPaymentReceived(bookingId: string, p: { amount: string; paymentRef: string }) {
+  return safe(async () => {
+    const c = await loadBookingContext(bookingId);
+    if (!c) return;
+    const sends: Promise<unknown>[] = [];
+    if (c.customer?.email) {
+      sends.push(sendMail({
+        to: c.customer.email,
+        subject: `Payment received — ${c.reference}`,
+        template: { name: "payment-received", data: { ...base(c), customerName: c.customer.name, amount: p.amount, paymentRef: p.paymentRef, ctaUrl: url("/dashboard") } },
+      }));
+    }
+    const adminEmail = getAdminEmail();
+    if (adminEmail) {
+      sends.push(sendMail({
+        to: adminEmail,
+        subject: `Payment received — assign driver — ${c.reference}`,
+        template: { name: "payment-received-admin", data: { ...base(c), customerName: c.customer?.name ?? "", amount: p.amount, ctaUrl: url("/admin") } },
+      }));
+    }
+    await Promise.all(sends);
   });
 }
 

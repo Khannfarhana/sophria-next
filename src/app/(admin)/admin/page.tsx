@@ -19,6 +19,7 @@ import {
   confirmBookingAction,
   rejectBookingAction,
   assignDriverAction,
+  setDriverCommissionAction,
 } from "@/lib/actions";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import {
@@ -29,6 +30,7 @@ import {
   mockConfirmBooking,
   mockRejectBooking,
   mockAssignDriver,
+  mockSetDriverCommission,
 } from "@/lib/mock-db/actions";
 
 export default function AdminPage() {
@@ -37,6 +39,17 @@ export default function AdminPage() {
       <AdminPortal />
     </ProtectedRoute>
   );
+}
+
+/** Payment state alongside the booking status: green Paid / amber Awaiting payment. */
+function PaymentChip({ b }: { b: { status: string; payment_status: string } }) {
+  if (b.payment_status === "paid") {
+    return <span className="rounded-full bg-[#3fae6b]/15 px-2.5 py-0.5 text-[11px] font-medium text-[#2e8653]">Paid</span>;
+  }
+  if (b.status === "confirmed" && b.payment_status === "pending") {
+    return <span className="rounded-full bg-[#c9a76a]/15 px-2.5 py-0.5 text-[11px] font-medium text-[#8a6d33]">Awaiting payment</span>;
+  }
+  return null;
 }
 
 const REJECT_REASONS = [
@@ -56,7 +69,9 @@ interface AdminBooking {
   dropoff_location: string;
   pickup_datetime: string;
   status: string;
+  payment_status: string;
   fare_estimate: number;
+  driver_payout: number | null;
   passenger_name: string | null;
   passenger_phone: string | null;
   special_requests: string | null;
@@ -88,6 +103,7 @@ interface AdminDriver {
   is_available: boolean;
   is_verified: boolean;
   rating: number;
+  commission_rate: number;
   total_earnings: number;
   created_at: string;
   city_of_residence: string | null;
@@ -123,7 +139,7 @@ function AdminPortal() {
       // Explicit columns — start_otp is not client-readable (column privilege).
       let q = supabase
         .from("bookings")
-        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, passenger_count, luggage_count, fare_estimate, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, updated_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
+        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, passenger_count, luggage_count, fare_estimate, driver_payout, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, updated_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
         .order("created_at", { ascending: false })
         .limit(50);
       if (filter !== "all") q = q.eq("status", filter as Database["public"]["Enums"]["booking_status"]);
@@ -185,6 +201,19 @@ function AdminPortal() {
       toast.success("Updated driver status");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to verify driver");
+    }
+  };
+
+  const saveCommission = async (rate: number) => {
+    if (!reviewDriver) return;
+    try {
+      if (SUPABASE_ENABLED) await setDriverCommissionAction(reviewDriver.id, rate);
+      else await mockSetDriverCommission(reviewDriver.id, rate);
+      qc.invalidateQueries({ queryKey: ["admin-drivers"] });
+      setReviewDriver((d) => d && { ...d, commission_rate: rate });
+      toast.success("Commission updated");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to update commission");
     }
   };
 
@@ -267,7 +296,10 @@ function AdminPortal() {
                     <div className="font-mono text-xs text-ink-soft">{b.reference}</div>
                     <div className="mt-0.5 truncate text-sm font-medium text-foreground">{b.customer?.full_name || b.passenger_name || "—"}</div>
                   </div>
-                  <StatusBadge status={b.status} />
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <StatusBadge status={b.status} />
+                    <PaymentChip b={b} />
+                  </div>
                 </div>
                 <div className="mt-3 space-y-1 text-sm text-ink-muted">
                   <div className="truncate">{b.pickup_location} → {b.dropoff_location}</div>
@@ -275,7 +307,12 @@ function AdminPortal() {
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm">
                   <span className="text-ink-muted">{b.vehicles?.name ?? "—"} · {b.driver?.profile?.full_name ?? "Unassigned"}</span>
-                  <span className="font-medium text-foreground">${Number(b.fare_estimate).toFixed(2)}</span>
+                  <span className="text-right">
+                    <span className="font-medium text-foreground">${Number(b.fare_estimate).toFixed(2)}</span>
+                    {b.driver_payout != null && (
+                      <span className="block text-xs text-ink-soft">pay ${Number(b.driver_payout).toFixed(2)}</span>
+                    )}
+                  </span>
                 </div>
                 {(b.status === "pending" || b.status === "confirmed" || b.status === "driver_assigned" || b.status === "accepted") && (
                   <div className="mt-3 flex gap-2">
@@ -288,6 +325,10 @@ function AdminPortal() {
                           <X className="h-3 w-3" /> Reject
                         </button>
                       </>
+                    ) : b.status === "confirmed" && b.payment_status !== "paid" ? (
+                      <span className="inline-flex flex-1 items-center justify-center rounded-md border border-dashed border-border px-3 py-2 text-xs text-ink-soft">
+                        Awaiting customer payment
+                      </span>
                     ) : (
                       <button onClick={() => setAssignFor(b)} className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground">
                         <UserPlus className="h-3 w-3" /> {b.driver_id ? "Reassign driver" : "Assign driver"}
@@ -331,8 +372,18 @@ function AdminPortal() {
                       <td className="p-3 text-ink-muted">{b.pickup_location} → {b.dropoff_location}</td>
                       <td className="p-3">{b.driver?.profile?.full_name ?? <span className="text-ink-soft">Unassigned</span>}</td>
                       <td className="p-3">{b.vehicles?.name ?? "—"}</td>
-                      <td className="p-3 font-medium">${Number(b.fare_estimate).toFixed(2)}</td>
-                      <td className="p-3"><StatusBadge status={b.status} /></td>
+                      <td className="p-3">
+                        <div className="font-medium">${Number(b.fare_estimate).toFixed(2)}</div>
+                        {b.driver_payout != null && (
+                          <div className="text-xs text-ink-soft">pay ${Number(b.driver_payout).toFixed(2)}</div>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        <div className="flex flex-col items-start gap-1.5">
+                          <StatusBadge status={b.status} />
+                          <PaymentChip b={b} />
+                        </div>
+                      </td>
                       <td className="p-3 text-right">
                         {b.status === "pending" ? (
                           <div className="flex justify-end gap-2">
@@ -349,6 +400,8 @@ function AdminPortal() {
                               <X className="h-3 w-3" /> Reject
                             </button>
                           </div>
+                        ) : b.status === "confirmed" && b.payment_status !== "paid" ? (
+                          <span className="text-xs text-ink-soft">Awaiting payment</span>
                         ) : (b.status === "confirmed" || b.status === "driver_assigned" || b.status === "accepted") ? (
                           <button
                             onClick={() => setAssignFor(b)}
@@ -404,7 +457,7 @@ function AdminPortal() {
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm text-ink-muted">
-                  <span>{d.experience_years}y exp · ★ {Number(d.rating).toFixed(2)}</span>
+                  <span>{d.experience_years}y exp · ★ {Number(d.rating).toFixed(2)} · {Math.round(Number(d.commission_rate ?? 0.2) * 100)}%</span>
                   <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground">
                     {d.is_verified ? "View" : "Review"} <ChevronRight className="h-3.5 w-3.5" />
                   </span>
@@ -426,6 +479,8 @@ function AdminPortal() {
                     <th className="p-3">License</th>
                     <th className="p-3">Exp.</th>
                     <th className="p-3">Rating</th>
+                    <th className="p-3">Commission</th>
+                    <th className="p-3">Earnings</th>
                     <th className="p-3">Status</th>
                     <th className="p-3 text-right">Review</th>
                   </tr>
@@ -444,6 +499,8 @@ function AdminPortal() {
                       <td className="p-3 font-mono text-xs">{d.license_number}</td>
                       <td className="p-3">{d.experience_years}y</td>
                       <td className="p-3">{Number(d.rating).toFixed(2)}</td>
+                      <td className="p-3">{Math.round(Number(d.commission_rate ?? 0.2) * 100)}%</td>
+                      <td className="p-3">${Number(d.total_earnings).toFixed(0)}</td>
                       <td className="p-3">
                         <span className={`rounded-full px-2.5 py-0.5 text-xs ${d.is_verified ? "bg-foreground text-background" : "bg-[#c9a76a]/15 text-[#8a6d33]"}`}>
                           {d.is_verified ? "Verified" : "Pending"}
@@ -458,7 +515,7 @@ function AdminPortal() {
                   ))}
                   {(!drivers || drivers.length === 0) && (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-ink-muted">No drivers yet.</td>
+                      <td colSpan={8} className="p-8 text-center text-ink-muted">No drivers yet.</td>
                     </tr>
                   )}
                 </tbody>
@@ -624,6 +681,7 @@ function AdminPortal() {
         open={!!reviewDriver}
         onClose={() => setReviewDriver(null)}
         onDecision={async (verified) => { await verifyDriver(reviewDriver!.id, verified); }}
+        onCommission={saveCommission}
       />
     </SiteLayout>
   );

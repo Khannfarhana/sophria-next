@@ -20,6 +20,7 @@ export type Database = {
           customer_id: string
           distance_km: number | null
           driver_id: string | null
+          driver_payout: number | null
           dropoff_lat: number | null
           dropoff_lng: number | null
           dropoff_location: string
@@ -55,6 +56,7 @@ export type Database = {
           customer_id: string
           distance_km?: number | null
           driver_id?: string | null
+          driver_payout?: number | null
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_location: string
@@ -90,6 +92,7 @@ export type Database = {
           customer_id?: string
           distance_km?: number | null
           driver_id?: string | null
+          driver_payout?: number | null
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_location?: string
@@ -181,6 +184,7 @@ export type Database = {
       drivers: {
         Row: {
           city_of_residence: string | null
+          commission_rate: number
           created_at: string
           experience_years: number
           id: string
@@ -200,6 +204,7 @@ export type Database = {
         }
         Insert: {
           city_of_residence?: string | null
+          commission_rate?: number
           created_at?: string
           experience_years?: number
           id?: string
@@ -219,6 +224,7 @@ export type Database = {
         }
         Update: {
           city_of_residence?: string | null
+          commission_rate?: number
           created_at?: string
           experience_years?: number
           id?: string

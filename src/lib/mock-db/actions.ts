@@ -10,6 +10,7 @@
  */
 import { readDB, mutateDB, newId, newReference } from "./store";
 import { quote, type TripType } from "@/lib/pricing";
+import { resolvePearsonTariff } from "@/lib/tariff";
 import { toStorageIso } from "@/lib/datetime";
 import type { Booking } from "@/data/data";
 
@@ -42,7 +43,13 @@ export async function mockRidesForDriver(driverId: string) {
   return db.bookings
     .filter((b) => b.driver_id === driverId)
     .sort((a, b) => +new Date(a.pickup_datetime) - +new Date(b.pickup_datetime))
-    .map((b) => ({ ...b, vehicles: b.vehicle_id ? { name: vById.get(b.vehicle_id)?.name ?? null } : null }));
+    .map((b) => {
+      // Match the real driver query: never expose the pickup code or the
+      // customer fare to the driver's client — drivers see their payout only.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { start_otp, otp_attempts, otp_last_attempt_at, fare_estimate, ...rest } = b;
+      return { ...rest, vehicles: b.vehicle_id ? { name: vById.get(b.vehicle_id)?.name ?? null } : null };
+    });
 }
 
 export async function mockAdminBookings(filter = "all") {
@@ -166,6 +173,7 @@ export async function mockCreateBooking(input: {
       distance_km: input.distanceKm ?? null,
       duration_min: input.durationMin ?? null,
       fare_estimate: input.fare,
+      driver_payout: null,
       passenger_name: input.passengerName,
       passenger_phone: input.passengerPhone,
       special_requests: input.notes || null,
@@ -230,10 +238,24 @@ export async function mockUpdateBookingLocation(
   const db = readDB();
   const booking = db.bookings.find((b) => b.id === id);
   const vehicle = booking ? db.vehicles.find((v) => v.id === booking.vehicle_id) : null;
+  const tripType = (booking?.trip_type as TripType) ?? "one_way";
+  // Pearson airport trips follow the official GTAA tariff (mirrors computeServerFare).
+  const tariff =
+    tripType === "airport"
+      ? resolvePearsonTariff({
+          pickup: data.pickup,
+          dropoff: data.dropoff,
+          pickupCoords: data.pickupLat != null && data.pickupLng != null ? { lat: data.pickupLat, lng: data.pickupLng } : undefined,
+          dropoffCoords: data.dropoffLat != null && data.dropoffLng != null ? { lat: data.dropoffLat, lng: data.dropoffLng } : undefined,
+          distanceKm: data.distanceKm,
+        })
+      : null;
   const fare = vehicle
-    ? quote((booking!.trip_type as TripType) ?? "one_way", vehicle, {
+    ? quote(tripType, vehicle, {
         durationHours: booking!.duration_hours ?? undefined,
         distanceKm: data.distanceKm ?? undefined,
+        tariff,
+        passengerCount: booking!.passenger_count,
       })
     : Number(booking?.fare_estimate ?? 0);
 
@@ -252,7 +274,38 @@ export async function mockUpdateBookingLocation(
 }
 
 export async function mockConfirmBooking(id: string) {
+  const booking = readDB().bookings.find((b) => b.id === id);
+  if (booking?.status !== "pending") {
+    throw new Error("Only a pending booking can be confirmed.");
+  }
   patchBooking(id, { status: "confirmed" });
+  return { success: true };
+}
+
+/** Instant fake payment — mirrors the Stripe checkout+webhook flow. */
+export async function mockPayBooking(id: string) {
+  const booking = readDB().bookings.find((b) => b.id === id);
+  if (!booking || booking.status !== "confirmed" || booking.payment_status !== "pending") {
+    throw new Error("This booking is not awaiting payment.");
+  }
+  const stripeId = `pi_mock_${newId().slice(0, 8)}`;
+  mutateDB((db) => {
+    const b = db.bookings.find((x) => x.id === id);
+    if (!b) return;
+    b.payment_status = "paid";
+    b.stripe_payment_id = stripeId;
+    b.updated_at = now();
+    db.payments.push({
+      id: newId(),
+      booking_id: id,
+      amount: Number(b.fare_estimate ?? 0),
+      currency: "CAD",
+      status: "paid",
+      stripe_id: stripeId,
+      created_at: now(),
+      updated_at: now(),
+    });
+  });
   return { success: true };
 }
 
@@ -262,7 +315,22 @@ export async function mockRejectBooking(id: string, reason: string, notes: strin
 }
 
 export async function mockAssignDriver(id: string, driverId: string) {
-  patchBooking(id, { driver_id: driverId, status: "driver_assigned" });
+  const db = readDB();
+  const booking = db.bookings.find((b) => b.id === id);
+  if (
+    !booking ||
+    !["confirmed", "driver_assigned", "accepted"].includes(booking.status) ||
+    booking.payment_status !== "paid"
+  ) {
+    throw new Error("A driver can only be assigned after the customer has paid.");
+  }
+  const driver = db.drivers.find((d) => d.id === driverId);
+  if (!driver) throw new Error("Driver not found");
+  // Payout snapshot: fare × the driver's current commission rate (reassignment
+  // recomputes with the new driver's rate — mirrors assignDriverAction).
+  const payout =
+    Math.round(Number(booking.fare_estimate) * Number(driver.commission_rate ?? 0.2) * 100) / 100;
+  patchBooking(id, { driver_id: driverId, status: "driver_assigned", driver_payout: payout });
   return { success: true };
 }
 
@@ -271,6 +339,21 @@ export async function mockVerifyDriver(driverId: string, verified: boolean) {
     const d = db.drivers.find((x) => x.id === driverId);
     if (d) {
       d.is_verified = verified;
+      d.updated_at = now();
+    }
+  });
+  return { success: true };
+}
+
+export async function mockSetDriverCommission(driverId: string, rate: number) {
+  const r = Number(rate);
+  if (!Number.isFinite(r) || r < 0.05 || r > 1) {
+    throw new Error("Commission must be between 5% and 100%.");
+  }
+  mutateDB((db) => {
+    const d = db.drivers.find((x) => x.id === driverId);
+    if (d) {
+      d.commission_rate = Math.round(r * 10000) / 10000;
       d.updated_at = now();
     }
   });
@@ -304,7 +387,8 @@ export async function mockDeclineRide(id: string) {
   }
   // Back to dispatch: admin already confirmed it, so it returns unassigned
   // to "confirmed" (matches the driver_decline_ride RPC), not "pending".
-  patchBooking(id, { status: "confirmed", driver_id: null });
+  // Clear the payout snapshot too — it belongs to the departing driver.
+  patchBooking(id, { status: "confirmed", driver_id: null, driver_payout: null });
   return { success: true };
 }
 
@@ -341,19 +425,27 @@ export async function mockStartRide(id: string, otp: string) {
   return { success: true };
 }
 
-export async function mockCompleteRide(id: string, fare: number) {
+export async function mockCompleteRide(id: string) {
   const booking = readDB().bookings.find((b) => b.id === id);
   if (booking?.status !== "in_progress") {
     throw new Error("Only a ride in progress can be completed.");
   }
+  // Credit the payout snapshot, not the fare — mirrors completeRideAction
+  // (the old client-passed fare was tamperable and credited 100%).
+  let earned = 0;
   mutateDB((db) => {
     const b = db.bookings.find((x) => x.id === id);
     if (!b) return;
     b.status = "completed";
-    b.payment_status = "paid";
     b.updated_at = now();
     const d = b.driver_id ? db.drivers.find((x) => x.id === b.driver_id) : null;
-    if (d) d.total_earnings = Number(d.total_earnings) + Number(fare || b.fare_estimate || 0);
+    if (d) {
+      earned =
+        b.driver_payout != null
+          ? Number(b.driver_payout)
+          : Math.round(Number(b.fare_estimate ?? 0) * Number(d.commission_rate ?? 0.2) * 100) / 100;
+      d.total_earnings = Number(d.total_earnings) + earned;
+    }
   });
-  return { success: true };
+  return { success: true, earned };
 }
