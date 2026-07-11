@@ -49,7 +49,8 @@ interface DriverRide {
   dropoff_location: string;
   pickup_datetime: string;
   status: string;
-  fare_estimate: number;
+  driver_payout: number | null;
+  tip: number | null;
   passenger_name: string | null;
   passenger_phone: string | null;
   special_requests: string | null;
@@ -96,8 +97,9 @@ function DriverPortal() {
       if (!SUPABASE_ENABLED) return mockRidesForDriver(driver!.id);
       const { data, error } = await supabase
         .from("bookings")
-        // Explicit columns — never expose start_otp to the driver's client.
-        .select("id, reference, customer_id, driver_id, vehicle_id, pickup_location, dropoff_location, pickup_datetime, status, fare_estimate, passenger_name, passenger_phone, special_requests, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
+        // Explicit columns — never expose start_otp OR the customer fare to
+        // the driver's client; drivers see their payout (driver_payout) only.
+        .select("id, reference, customer_id, driver_id, vehicle_id, pickup_location, dropoff_location, pickup_datetime, status, driver_payout, tip, passenger_name, passenger_phone, special_requests, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
         .eq("driver_id", driver!.id)
         .order("pickup_datetime");
       if (error) throw error;
@@ -151,11 +153,11 @@ function DriverPortal() {
 
   const completeRide = async (r: DriverRide) => {
     try {
-      // Earnings are computed server-side from the DB fare — not sent by us.
-      const fare = Number(r.fare_estimate);
-      if (SUPABASE_ENABLED) await completeRideAction(r.id);
-      else await mockCompleteRide(r.id, fare);
-      toast.success(`Ride completed · earned $${(fare * 0.8).toFixed(2)}`);
+      // Earnings are computed server-side from the payout snapshot — not sent by us.
+      const res = SUPABASE_ENABLED ? await completeRideAction(r.id) : await mockCompleteRide(r.id);
+      toast.success(
+        res.earned != null ? `Ride completed · earned $${Number(res.earned).toFixed(2)}` : "Ride completed",
+      );
       qc.invalidateQueries({ queryKey: ["driver-rides"] });
       qc.invalidateQueries({ queryKey: ["driver-self"] });
       setOpenRide(null);
@@ -252,7 +254,6 @@ function DriverPortal() {
                         <tr>
                           <th className="p-3">Date</th>
                           <th className="p-3">Route</th>
-                          <th className="p-3">Fare</th>
                           <th className="p-3">Earned</th>
                         </tr>
                       </thead>
@@ -261,13 +262,19 @@ function DriverPortal() {
                           <tr key={r.id} className="border-b border-border last:border-0 text-foreground">
                             <td className="p-3">{formatDate(r.pickup_datetime)}</td>
                             <td className="p-3 text-ink-muted">{r.pickup_location} → {r.dropoff_location}</td>
-                            <td className="p-3">${Number(r.fare_estimate).toFixed(2)}</td>
-                            <td className="p-3 font-medium">${(Number(r.fare_estimate) * 0.8).toFixed(2)}</td>
+                            <td className="p-3 font-medium">
+                              {r.driver_payout != null
+                                ? `$${(Number(r.driver_payout) + Math.max(0, Number(r.tip ?? 0))).toFixed(2)}`
+                                : "—"}
+                              {Number(r.tip ?? 0) > 0 && (
+                                <span className="ml-1.5 text-xs font-normal text-ink-soft">incl. ${Number(r.tip).toFixed(2)} tip</span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                         {completed.length === 0 && (
                           <tr>
-                            <td colSpan={4} className="p-8 text-center text-ink-muted">No completed rides yet.</td>
+                            <td colSpan={3} className="p-8 text-center text-ink-muted">No completed rides yet.</td>
                           </tr>
                         )}
                       </tbody>
@@ -328,7 +335,15 @@ function RideList({
               </div>
             </div>
             <div className="flex flex-col items-end gap-2 text-foreground">
-              <div className="text-lg font-medium">${Number(r.fare_estimate).toFixed(2)}</div>
+              <div className="text-right">
+                <div className="text-[10px] uppercase tracking-wider text-ink-soft">Your payout</div>
+                <div className="text-lg font-medium">
+                  {r.driver_payout != null ? `$${Number(r.driver_payout).toFixed(2)}` : "—"}
+                </div>
+                {Number(r.tip ?? 0) > 0 && (
+                  <div className="text-xs font-medium text-[#8a6d33]">+ ${Number(r.tip).toFixed(2)} tip</div>
+                )}
+              </div>
               <div className="flex">{children(r)}</div>
             </div>
           </div>
@@ -387,8 +402,13 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
             <div>{formatDateTime(ride.pickup_datetime)}</div>
           </div>
           <div className="text-right">
-            <div className="text-ink-muted text-xs uppercase tracking-wider">Fare</div>
-            <div className="text-lg font-medium">${Number(ride.fare_estimate).toFixed(2)}</div>
+            <div className="text-ink-muted text-xs uppercase tracking-wider">Your payout</div>
+            <div className="text-lg font-medium">
+              {ride.driver_payout != null ? `$${Number(ride.driver_payout).toFixed(2)}` : "—"}
+            </div>
+            {Number(ride.tip ?? 0) > 0 && (
+              <div className="text-xs font-medium text-[#8a6d33]">+ ${Number(ride.tip).toFixed(2)} tip</div>
+            )}
           </div>
         </div>
         <div className="text-sm text-foreground">

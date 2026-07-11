@@ -59,12 +59,12 @@ function emailWrapper(title: string, bodyContentHtml: string): string {
     <div class="container">
       <div class="header">
         <div class="logo">SOPHRIA</div>
-        <div class="tagline">Toronto Chauffeur Service</div>
+        <div class="tagline">Luxury Chauffeur Service · Southern Ontario</div>
       </div>
       <div class="content">${bodyContentHtml}</div>
       <div class="footer">
-        <p style="margin:0 0 10px 0;">SophRia Chauffeur Service · Toronto, ON</p>
-        <p style="margin:0;">Need assistance? Our 24/7 dispatch is at <a href="tel:+14165550188">+1 (416) 555-0188</a>, or reply to this email.</p>
+        <p style="margin:0 0 10px 0;">SophRia Chauffeur Service · Toronto &amp; Southern Ontario</p>
+        <p style="margin:0;">Need assistance? Our 24/7 dispatch is at <a href="tel:+14379672334">+1 (437) 967-2334</a>, or reply to this email.</p>
       </div>
     </div>
   </div>
@@ -98,13 +98,13 @@ function otpBlock(code: string): string {
 /** Plain-text body with a consistent header/footer (improves deliverability). */
 function textWrap(headline: string, lines: string[]): string {
   return [
-    "SOPHRIA — Toronto Chauffeur Service",
-    "----------------------------------",
+    "SOPHRIA — Luxury Chauffeur Service · Southern Ontario",
+    "-----------------------------------------------------",
     headline.toUpperCase(),
     "",
     ...lines,
     "",
-    "Need assistance? Contact our 24/7 dispatch at +1 (416) 555-0188.",
+    "Need assistance? Contact our 24/7 dispatch at +1 (437) 967-2334.",
   ].join("\n");
 }
 
@@ -159,22 +159,80 @@ export const templates: Record<string, MailTemplateFn> = {
     return { html, text };
   },
 
-  /** Customer — booking confirmed by dispatch. */
+  /** Customer — booking confirmed by dispatch; full payment required to
+   *  secure it. When the admin adjusted the fare, the same email carries the
+   *  previous fare and the reason (no separate fare-change email is sent). */
   "booking-confirmed": (d) => {
+    const fareChanged = Boolean(d.fareChangeReason);
     const html = emailWrapper("Booking Confirmed — SophRia", `
       <div class="eyebrow">Reservation Confirmed</div>
       <h2>Your booking is confirmed</h2>
       <p>Hello ${esc(d.customerName || "Valued Guest")},</p>
-      <p>Great news — your reservation is confirmed. A professional chauffeur will be assigned shortly, and we'll notify you with their details.</p>
-      ${detailsTable(bookingRows(d), d.fare ? ["Estimated Fare", d.fare] : undefined)}
+      <p>Great news — your reservation is confirmed. To secure your booking, please complete payment of the full fare. Your chauffeur will be assigned as soon as payment is received.</p>
+      ${fareChanged ? `<div class="banner warn"><strong>Fare updated:</strong> ${esc(d.fareChangeReason)}${d.previousFare ? ` — previously ${esc(d.previousFare)}.` : ""}</div>` : ""}
+      <div class="banner warn">Payment required — your booking is not secured until the fare is paid.</div>
+      ${detailsTable(
+        [...bookingRows(d), ...(fareChanged && d.previousFare ? [["Previous Fare", d.previousFare] as [string, string]] : [])],
+        d.fare ? [fareChanged ? "Updated Fare" : "Total Fare", d.fare] : undefined,
+      )}
       ${otpBlock(d.otp || "")}
-      ${cta(d.ctaUrl || "", "View My Bookings")}
+      ${cta(d.ctaUrl || "", "Pay Now")}
     `);
-    const text = textWrap("Booking confirmed", [
-      `Hello ${d.customerName || "Valued Guest"},`, "", "Your reservation is confirmed. A chauffeur will be assigned shortly.", "",
+    const text = textWrap("Booking confirmed — payment required", [
+      `Hello ${d.customerName || "Valued Guest"},`, "",
+      "Your reservation is confirmed. To secure your booking, please complete payment of the full fare — your chauffeur will be assigned as soon as payment is received.", "",
+      fareChanged ? `Fare updated: ${d.fareChangeReason}${d.previousFare ? ` (previously ${d.previousFare})` : ""}` : "",
       `Reference: ${d.reference}`, `Date & Time: ${d.datetime}`, `Pickup: ${d.pickup}`,
       d.dropoff ? `Drop-off: ${d.dropoff}` : "", d.vehicle ? `Vehicle: ${d.vehicle}` : "",
-      d.fare ? `Estimated Fare: ${d.fare}` : "", d.otp ? `\nPickup code: ${d.otp}` : "",
+      d.fare ? `${fareChanged ? "Updated Fare" : "Total Fare"}: ${d.fare}` : "",
+      d.ctaUrl ? `\nPay now: ${d.ctaUrl}` : "",
+      d.otp ? `\nPickup code: ${d.otp}` : "",
+    ].filter(Boolean));
+    return { html, text };
+  },
+
+  /** Customer — payment received; booking secured (receipt). */
+  "payment-received": (d) => {
+    const html = emailWrapper("Payment Received — SophRia", `
+      <div class="eyebrow">Payment Received</div>
+      <h2>Thank you — your booking is secured</h2>
+      <p>Hello ${esc(d.customerName || "Valued Guest")},</p>
+      <p>We've received your payment and your reservation is now secured. We're assigning your chauffeur and will notify you with their details shortly.</p>
+      ${detailsTable([
+        ...bookingRows(d),
+        ...(d.tip ? [["Driver Tip (100% to your chauffeur)", d.tip] as [string, string]] : []),
+        ...(d.paymentRef ? [["Payment Reference", d.paymentRef] as [string, string]] : []),
+      ], d.amount ? ["Amount Paid", d.amount] : undefined)}
+      ${cta(d.ctaUrl || "", "View My Bookings")}
+    `);
+    const text = textWrap("Payment received", [
+      `Hello ${d.customerName || "Valued Guest"},`, "",
+      "We've received your payment — your reservation is secured. A chauffeur will be assigned shortly.", "",
+      `Reference: ${d.reference}`, `Date & Time: ${d.datetime}`, `Pickup: ${d.pickup}`,
+      d.dropoff ? `Drop-off: ${d.dropoff}` : "", d.vehicle ? `Vehicle: ${d.vehicle}` : "",
+      d.tip ? `Driver Tip: ${d.tip} (100% to your chauffeur)` : "",
+      d.amount ? `Amount Paid: ${d.amount}` : "", d.paymentRef ? `Payment Reference: ${d.paymentRef}` : "",
+    ].filter(Boolean));
+    return { html, text };
+  },
+
+  /** Admin — payment received; booking is ready for driver assignment. */
+  "payment-received-admin": (d) => {
+    const html = emailWrapper("Payment Received — SophRia", `
+      <div class="eyebrow">Action Required</div>
+      <h2>Payment received — assign a driver</h2>
+      <p>Reservation <strong>${esc(d.reference || "")}</strong> from <strong>${esc(d.customerName || "a customer")}</strong> has been paid in full and is ready for driver assignment.</p>
+      ${detailsTable([
+        ["Customer", d.customerName || "—"],
+        ...bookingRows(d),
+        ...(d.tip ? [["Driver Tip", d.tip] as [string, string]] : []),
+      ], d.amount ? ["Amount Paid", d.amount] : undefined)}
+      ${cta(d.ctaUrl || "", "Assign Driver")}
+    `);
+    const text = textWrap("Payment received — assign driver", [
+      `Reservation ${d.reference} from ${d.customerName} has been paid in full and is ready for driver assignment.`, "",
+      `Date & Time: ${d.datetime}`, `Pickup: ${d.pickup}`, d.dropoff ? `Drop-off: ${d.dropoff}` : "",
+      d.amount ? `Amount Paid: ${d.amount}` : "",
     ].filter(Boolean));
     return { html, text };
   },

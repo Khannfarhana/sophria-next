@@ -1,23 +1,64 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteLayout } from "@/components/site/SiteLayout";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Plane } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "Transparent rates for Toronto chauffeur service. Flat airport rates, hourly charter, vehicle-by-vehicle pricing.",
+  description:
+    "Transparent chauffeur rates for Toronto, Hamilton, Niagara and Southern Ontario. Hourly service, airport transfers, wedding, prom, shopping, spa and wine tour packages.",
   openGraph: {
     title: "SophRia Pricing",
-    description: "Transparent CAD rates for chauffeur service.",
+    description: "Transparent CAD rates for luxury limousine & chauffeur services.",
   },
 };
 
+// Marketing rates — kept consistent with the fare engine: hourly = the
+// vehicle's hourly_rate; airport "from" = base_rate + $15 airport fee
+// (see src/lib/pricing.ts and the vehicles table).
 const FLEET_RATES = [
-  { name: "Luxury Sedan", hr: 95, airport: 85 },
-  { name: "Business Class", hr: 120, airport: 110 },
-  { name: "Luxury SUV", hr: 160, airport: 140 },
-  { name: "Stretch Limousine", hr: 250, airport: 220 },
-  { name: "Party Bus", hr: 380, airport: 320 },
+  { name: "Executive Sedan", hr: 85, airport: 110 },
+  { name: "Business Class", hr: 95, airport: 145 },
+  { name: "Luxury SUV", hr: 120, airport: 145 },
+  { name: "Stretch Limousine", hr: 180, airport: 275 },
+  { name: "Executive Sprinter", hr: 220, airport: 335 },
+];
+
+const PACKAGES = [
+  {
+    title: "Wedding Packages",
+    price: "from $695",
+    detail: "Professional chauffeur · decorative ribbons (optional) · complimentary bottled water · red carpet service (upon request) · multiple photo stops. Custom packages available.",
+  },
+  {
+    title: "Prom Packages",
+    price: "from $595",
+    detail: "Professional chauffeur · complimentary bottled water · safety-focused transportation · group pricing available.",
+  },
+  {
+    title: "Luxury Shopping Package",
+    price: "from $95/hr · 3-hour minimum",
+    detail: "Private chauffeur-driven shopping at Yorkdale, CF Toronto Eaton Centre, Square One, Sherway Gardens and Vaughan Mills. Flexible waiting time, assistance with bags, door-to-door service.",
+  },
+  {
+    title: "Daily Spa Tours",
+    price: "from $120/hr · 4-hour minimum",
+    detail: "Relaxed luxury travel to Elmwood Spa, Body Blitz, Spa My Blend (Ritz-Carlton), Thermëa Whitby, Ste. Anne's Grafton and White Oaks Niagara-on-the-Lake. Waiting time during your visit included.",
+  },
+  {
+    title: "Wine & Niagara Tours",
+    price: "from $125/hr · 6-hour minimum",
+    detail: "Chauffeured wine-country and Niagara itineraries, customized to your day.",
+  },
+];
+
+const ADDITIONAL_CHARGES = [
+  "HST (13%) applies to all services.",
+  "Gratuity may be added for larger groups or special events.",
+  "Highway tolls (including Highway 407), parking fees and airport fees are additional where applicable.",
+  "Waiting time beyond the complimentary period is billed at the applicable hourly rate.",
+  "Additional stops may incur extra charges.",
+  "Excessive cleaning or damage to the vehicle may result in additional fees.",
 ];
 
 export default function PricingPage() {
@@ -31,7 +72,8 @@ export default function PricingPage() {
             No surge. <span className="text-[#e7d3a8]">No surprises.</span>
           </h1>
           <p className="mt-5 max-w-xl text-base text-white/70">
-            All rates in Canadian Dollars. Gratuity not included. Tolls, parking and waiting time billed at cost.
+            Luxury limousine &amp; chauffeur services across Toronto, Hamilton, Burlington, Oakville,
+            Mississauga, the Niagara Region and Southern Ontario. All rates in Canadian Dollars.
           </p>
         </div>
       </section>
@@ -44,8 +86,8 @@ export default function PricingPage() {
               <thead className="border-b border-border bg-surface text-left">
                 <tr>
                   <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">Vehicle</th>
-                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">Hourly</th>
-                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">YYZ / YTZ Flat</th>
+                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">Hourly from</th>
+                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">Airport from</th>
                 </tr>
               </thead>
               <tbody>
@@ -62,17 +104,59 @@ export default function PricingPage() {
               </tbody>
             </table>
           </div>
+          <p className="mt-4 text-xs text-ink-soft">
+            Hourly service has a 2-hour minimum booking. Airport transfer pricing starts at $110 and
+            depends on pickup and destination.
+          </p>
         </div>
       </section>
 
-      {/* Notes */}
+      {/* Packages */}
       <section className="bg-surface px-6 py-20">
+        <div className="mx-auto max-w-4xl">
+          <div className="mb-8">
+            <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Signature Packages</div>
+            <h2 className="text-3xl font-light text-foreground">Occasions, taken care of.</h2>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2">
+            {PACKAGES.map((p) => (
+              <div key={p.title} className="rounded-2xl border border-border bg-card p-8">
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="text-lg font-light text-foreground">{p.title}</h3>
+                </div>
+                <div className="mt-1 text-sm font-medium text-foreground">{p.price}</div>
+                <p className="mt-3 text-sm leading-relaxed text-ink-muted">{p.detail}</p>
+              </div>
+            ))}
+            <div className="rounded-2xl border border-border bg-card p-8">
+              <h3 className="text-lg font-light text-foreground">Corporate Transportation</h3>
+              <div className="mt-1 text-sm font-medium text-foreground">accounts available</div>
+              <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+                Airport transfers, executive meetings, conferences, corporate events and client
+                transportation. Corporate accounts and monthly billing are available upon approval.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Airports + adjustments */}
+      <section className="bg-background px-6 py-20">
         <div className="mx-auto max-w-4xl">
           <div className="grid gap-10 md:grid-cols-2">
             <div className="rounded-2xl border border-border bg-card p-8">
-              <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Airport Flat Rates</div>
-              <p className="text-sm leading-relaxed text-ink-muted">
-                Pearson (YYZ) and Billy Bishop (YTZ) transfers from downtown Toronto are billed at the flat rate above. Other GTA pickups are zone-based — confirmed at booking.
+              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.22em] text-ink-muted">
+                <Plane className="h-3.5 w-3.5" /> Airports We Serve
+              </div>
+              <ul className="space-y-2 text-sm leading-relaxed text-ink-muted">
+                <li>Toronto Pearson International (YYZ)</li>
+                <li>Billy Bishop Toronto City (YTZ)</li>
+                <li>John C. Munro Hamilton International (YHM)</li>
+                <li>Buffalo Niagara International (BUF)</li>
+              </ul>
+              <p className="mt-3 text-xs text-ink-soft">Transfers start at $110, depending on pickup and destination. Live flight tracking when flight details are provided.</p>
+              <p className="mt-2 text-xs text-ink-soft">
+                Pearson transfers are priced by the official Toronto Pearson airport tariff (taxes included), scaled by vehicle class. Requested stops $10 per 10 minutes; more than 4 passengers or excess baggage +$15 once per trip; Highway 407 tolls passed through at cost.
               </p>
             </div>
             <div className="rounded-2xl border border-border bg-card p-8">
@@ -82,6 +166,20 @@ export default function PricingPage() {
               </p>
             </div>
           </div>
+
+          {/* Additional charges */}
+          <div className="mt-10 rounded-2xl border border-border bg-card p-8">
+            <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Additional Charges</div>
+            <ul className="grid gap-2 text-sm leading-relaxed text-ink-muted md:grid-cols-2">
+              {ADDITIONAL_CHARGES.map((c) => (
+                <li key={c} className="flex gap-2">
+                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-[#c9a76a]" />
+                  {c}
+                </li>
+              ))}
+            </ul>
+          </div>
+
           <div className="mt-12 text-center">
             <Link
               href="/book"

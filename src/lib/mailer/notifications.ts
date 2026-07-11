@@ -36,6 +36,9 @@ interface BookingContext {
   otp: string;
   tripType: string;
   rejectionReason: string;
+  /** Set when the admin changed the fare — surfaced in the payment-request email. */
+  previousFare: string;
+  fareChangeReason: string;
   passengerName: string;
   customer: { name: string; email: string } | null;
   driver: { name: string; email: string; phone: string } | null;
@@ -46,7 +49,7 @@ async function loadBookingContext(bookingId: string): Promise<BookingContext | n
   const admin = svc();
   const { data: b } = await admin
     .from("bookings")
-    .select("reference, pickup_location, dropoff_location, pickup_datetime, fare_estimate, trip_type, customer_id, driver_id, vehicle_id, start_otp, rejection_reason, rejection_notes, passenger_name")
+    .select("reference, pickup_location, dropoff_location, pickup_datetime, fare_estimate, previous_fare, fare_change_reason, trip_type, customer_id, driver_id, vehicle_id, start_otp, rejection_reason, rejection_notes, passenger_name")
     .eq("id", bookingId)
     .single();
   if (!b) return null;
@@ -77,6 +80,8 @@ async function loadBookingContext(bookingId: string): Promise<BookingContext | n
     otp: b.start_otp ?? "",
     tripType: b.trip_type ?? "one_way",
     rejectionReason: reason,
+    previousFare: b.previous_fare != null ? fmtFare(b.previous_fare) : "",
+    fareChangeReason: b.fare_change_reason ?? "",
     passengerName: b.passenger_name ?? "",
     customer: customerRes.data ? { name: customerRes.data.full_name ?? "Valued Guest", email: customerRes.data.email ?? "" } : null,
     driver,
@@ -124,16 +129,53 @@ export function notifyBookingCreated(bookingId: string) {
   });
 }
 
-/** Admin confirmed → customer. */
+/** Admin confirmed → customer (payment of the full fare is now required).
+ *  Also re-sent when the admin changes the fare of an awaiting-payment
+ *  booking — the template then carries the previous fare + change reason. */
 export function notifyBookingConfirmed(bookingId: string) {
   return safe(async () => {
     const c = await loadBookingContext(bookingId);
     if (!c?.customer?.email) return;
     await sendMail({
       to: c.customer.email,
-      subject: `Booking confirmed — ${c.reference}`,
-      template: { name: "booking-confirmed", data: { ...base(c), customerName: c.customer.name, otp: c.otp, ctaUrl: url("/dashboard") } },
+      subject: `Booking confirmed — payment required — ${c.reference}`,
+      template: {
+        name: "booking-confirmed",
+        data: {
+          ...base(c),
+          customerName: c.customer.name,
+          otp: c.otp,
+          previousFare: c.previousFare,
+          fareChangeReason: c.fareChangeReason,
+          ctaUrl: url("/dashboard"),
+        },
+      },
     });
+  });
+}
+
+/** Payment received → customer receipt + admin "assign driver" prompt. */
+export function notifyPaymentReceived(bookingId: string, p: { amount: string; paymentRef: string; tip?: string }) {
+  return safe(async () => {
+    const c = await loadBookingContext(bookingId);
+    if (!c) return;
+    const sends: Promise<unknown>[] = [];
+    if (c.customer?.email) {
+      sends.push(sendMail({
+        to: c.customer.email,
+        subject: `Payment received — ${c.reference}`,
+        template: { name: "payment-received", data: { ...base(c), customerName: c.customer.name, amount: p.amount, tip: p.tip ?? "", paymentRef: p.paymentRef, ctaUrl: url("/dashboard") } },
+      }));
+    }
+    const adminEmail = getAdminEmail();
+    if (adminEmail) {
+      sends.push(sendMail({
+        to: adminEmail,
+        subject: `Payment received — assign driver — ${c.reference}`,
+        template: { name: "payment-received-admin", data: { ...base(c), customerName: c.customer?.name ?? "", amount: p.amount, tip: p.tip ?? "", ctaUrl: url("/admin") } },
+      }));
+    }
+    await Promise.all(sends);
   });
 }
 

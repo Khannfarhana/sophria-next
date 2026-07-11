@@ -73,7 +73,7 @@ const ID = {
  *  profiles
  * ================================================================== */
 export const profiles: Profile[] = [
-  { id: ID.admin, full_name: "SophRia Operations", email: "ops@sophria.example", phone: "+1 (416) 555-0188", created_at: NOW, updated_at: NOW },
+  { id: ID.admin, full_name: "SophRia Operations", email: "ops@sophria.example", phone: "+1 (437) 967-2334", created_at: NOW, updated_at: NOW },
   { id: ID.customer1, full_name: "Jordan Avery", email: "jordan.avery@example.com", phone: "+1 (416) 555-0123", created_at: NOW, updated_at: NOW },
   { id: ID.customer2, full_name: "Priya Nair", email: "priya.nair@example.com", phone: "+1 (647) 555-0456", created_at: NOW, updated_at: NOW },
   { id: ID.driverUser1, full_name: "Marcus Bennett", email: "marcus.bennett@example.com", phone: "+1 (416) 555-0777", created_at: NOW, updated_at: NOW },
@@ -103,12 +103,12 @@ export const user_roles: UserRole[] = [
 export const vehicles: Vehicle[] = [
   {
     id: ID.vSedan,
-    name: "Luxury Sedan",
+    name: "Executive Sedan",
     type: "sedan",
     capacity: 3,
     luggage: 2,
     base_rate: 95,
-    hourly_rate: 75,
+    hourly_rate: 85,
     features: ["Mercedes E-Class / Cadillac CT6", "Leather interior", "Bottled water", "Phone chargers"],
     description: "Refined executive sedan for airport transfers, corporate travel, and private city rides.",
     image_url: "/vehicles/sedan.jpg",
@@ -137,8 +137,8 @@ export const vehicles: Vehicle[] = [
     type: "suv",
     capacity: 6,
     luggage: 5,
-    base_rate: 145,
-    hourly_rate: 110,
+    base_rate: 130,
+    hourly_rate: 120,
     features: ["Cadillac Escalade / GMC Yukon", "Seats up to 6", "Ample luggage", "Winter-ready"],
     description: "Spacious luxury SUV for family transfers, group travel, and extra luggage capacity.",
     image_url: "/vehicles/suv.jpg",
@@ -186,9 +186,9 @@ const driverExtras = {
   languages_spoken: null, time_availability: null, referral_name: null, photo_url: null,
 };
 export const drivers: Driver[] = [
-  { id: ID.driver1, user_id: ID.driverUser1, license_number: "ON-DR-44821", experience_years: 8, rating: 4.9, total_earnings: 18250, is_available: true, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
-  { id: ID.driver2, user_id: ID.driverUser2, license_number: "ON-DR-77310", experience_years: 5, rating: 4.8, total_earnings: 12940, is_available: false, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
-  { id: ID.driver3, user_id: ID.driverUser3, license_number: "ON-DR-90155", experience_years: 3, rating: 0, total_earnings: 0, is_available: false, is_verified: false, created_at: NOW, updated_at: NOW, ...driverExtras },
+  { id: ID.driver1, user_id: ID.driverUser1, license_number: "ON-DR-44821", experience_years: 8, rating: 4.9, total_earnings: 18250, commission_rate: 0.2, is_available: true, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
+  { id: ID.driver2, user_id: ID.driverUser2, license_number: "ON-DR-77310", experience_years: 5, rating: 4.8, total_earnings: 12940, commission_rate: 0.2, is_available: false, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
+  { id: ID.driver3, user_id: ID.driverUser3, license_number: "ON-DR-90155", experience_years: 3, rating: 0, total_earnings: 0, commission_rate: 0.2, is_available: false, is_verified: false, created_at: NOW, updated_at: NOW, ...driverExtras },
 ];
 
 /* ================================================================== *
@@ -222,6 +222,10 @@ export const bookings: Booking[] = [
     passenger_count: 1,
     luggage_count: 2,
     fare_estimate: 95,
+    tip: 0,
+    previous_fare: null,
+    fare_change_reason: null,
+    driver_payout: null,
     passenger_name: "Jordan Avery",
     passenger_phone: "+1 (416) 555-0123",
     special_requests: "Meet at the lobby.",
@@ -254,6 +258,10 @@ export const bookings: Booking[] = [
     passenger_count: 2,
     luggage_count: 3,
     fare_estimate: 145,
+    tip: 0,
+    previous_fare: null,
+    fare_change_reason: null,
+    driver_payout: null,
     passenger_name: "Priya Nair",
     passenger_phone: "+1 (647) 555-0456",
     special_requests: "Flight from Vancouver — please track.",
@@ -286,6 +294,11 @@ export const bookings: Booking[] = [
     passenger_count: 4,
     luggage_count: 2,
     fare_estimate: 440,
+    tip: 0,
+    previous_fare: null,
+    fare_change_reason: null,
+    driver_payout: 88, // 440 × 0.2 — snapshot from assignment
+
     passenger_name: "Jordan Avery",
     passenger_phone: "+1 (416) 555-0123",
     special_requests: "Multi-stop: showroom visits.",
@@ -293,8 +306,8 @@ export const bookings: Booking[] = [
     otp_attempts: 0,
     otp_last_attempt_at: null,
     status: "driver_assigned",
-    payment_status: "pending",
-    stripe_payment_id: null,
+    payment_status: "paid",
+    stripe_payment_id: "pi_mock_6c17",
     rejection_reason: null,
     rejection_notes: null,
     created_at: NOW,
@@ -318,6 +331,11 @@ export const bookings: Booking[] = [
     passenger_count: 6,
     luggage_count: 0,
     fare_estimate: 260,
+    tip: 0,
+    previous_fare: null,
+    fare_change_reason: null,
+    driver_payout: 52, // 260 × 0.2 — snapshot from assignment
+
     passenger_name: "Priya Nair",
     passenger_phone: "+1 (647) 555-0456",
     special_requests: "Wedding party.",
@@ -350,6 +368,10 @@ export const bookings: Booking[] = [
     passenger_count: 1,
     luggage_count: 1,
     fare_estimate: 95,
+    tip: 0,
+    previous_fare: null,
+    fare_change_reason: null,
+    driver_payout: null,
     passenger_name: "Jordan Avery",
     passenger_phone: "+1 (416) 555-0123",
     special_requests: null,
@@ -370,6 +392,7 @@ export const bookings: Booking[] = [
  *  payments
  * ================================================================== */
 export const payments: Payment[] = [
+  { id: "00000000-0000-4000-a100-000000000003", booking_id: ID.b3, amount: 440, currency: "CAD", status: "paid", stripe_id: "pi_mock_6c17", created_at: NOW, updated_at: NOW },
   { id: "00000000-0000-4000-a100-000000000001", booking_id: ID.b4, amount: 260, currency: "CAD", status: "paid", stripe_id: "pi_mock_3a91", created_at: iso("2026-06-20T18:30:00-04:00"), updated_at: iso("2026-06-20T18:30:00-04:00") },
   { id: "00000000-0000-4000-a100-000000000002", booking_id: ID.b5, amount: 95, currency: "CAD", status: "refunded", stripe_id: "pi_mock_8b22", created_at: iso("2026-06-22T09:05:00-04:00"), updated_at: iso("2026-06-24T09:00:00-04:00") },
 ];
@@ -392,11 +415,14 @@ export interface Service {
 }
 
 export const services: Service[] = [
-  { slug: "airport-transfers", title: "Airport Transfers", blurb: "Stress-free Pearson & Billy Bishop pickups with live flight tracking, professional greet service, and complimentary wait time.", icon: "Plane", from_price: 95, sort_order: 1, is_active: true },
-  { slug: "city-to-city", title: "City-to-City Transfers", blurb: "Reliable long-distance transfers — Toronto to Niagara, Muskoka, and beyond — with fixed pricing and premium comfort.", icon: "Route", from_price: 220, sort_order: 2, is_active: true },
-  { slug: "hourly", title: "Hourly Car Service", blurb: "A dedicated chauffeur on standby for meetings, retail trips, events, and multi-stop itineraries.", icon: "Clock", from_price: 95, sort_order: 3, is_active: true },
-  { slug: "limousine", title: "Limousine Service", blurb: "Traditional elegance for weddings, corporate events, proms, and VIP celebrations.", icon: "Sparkles", from_price: 260, sort_order: 4, is_active: true },
-  { slug: "corporate", title: "Corporate Travel", blurb: "One polished booking experience for executives, business events, and VIP airport coordination.", icon: "Briefcase", from_price: 130, sort_order: 5, is_active: true },
+  { slug: "airport-transfers", title: "Airport Transfers", blurb: "Stress-free Pearson, Billy Bishop, Hamilton and Buffalo pickups with live flight tracking, professional greet service, and complimentary wait time.", icon: "Plane", from_price: 110, sort_order: 1, is_active: true },
+  { slug: "corporate", title: "Corporate Transportation", blurb: "Executive meetings, conferences, corporate events and client transportation. Corporate accounts and monthly billing upon approval.", icon: "Briefcase", from_price: 95, sort_order: 2, is_active: true },
+  { slug: "wedding", title: "Wedding Packages", blurb: "Professional chauffeur, optional decorative ribbons, red carpet on request and multiple photo stops. Custom packages available.", icon: "Heart", from_price: 695, sort_order: 3, is_active: true },
+  { slug: "prom", title: "Prom Packages", blurb: "Safety-focused transportation with a professional chauffeur. Group pricing available.", icon: "GraduationCap", from_price: 595, sort_order: 4, is_active: true },
+  { slug: "shopping", title: "Luxury Shopping Package", blurb: "Private chauffeur-driven shopping at Yorkdale, Eaton Centre, Square One, Sherway Gardens and Vaughan Mills. 3-hour minimum.", icon: "ShoppingBag", from_price: 95, sort_order: 5, is_active: true },
+  { slug: "spa-tours", title: "Daily Spa Tours", blurb: "Quiet luxury travel to top spa destinations across Southern Ontario, with waiting time during your visit. 4-hour minimum.", icon: "Flower2", from_price: 120, sort_order: 6, is_active: true },
+  { slug: "wine-tours", title: "Wine & Niagara Tours", blurb: "Chauffeured wine-country and Niagara itineraries, customized to your day. 6-hour minimum.", icon: "Wine", from_price: 125, sort_order: 7, is_active: true },
+  { slug: "hourly", title: "Hourly Car Service", blurb: "A dedicated chauffeur on standby for meetings, retail trips, events, and multi-stop itineraries. 2-hour minimum.", icon: "Clock", from_price: 85, sort_order: 8, is_active: true },
 ];
 
 /** Small extras advertised alongside services. */
@@ -413,9 +439,10 @@ export interface ServiceArea {
   is_featured: boolean;
 }
 
-/** GTA-focused coverage (plan decision: Toronto / GTA). */
+/** Toronto, GTA, Hamilton, Niagara & Southern Ontario coverage. */
 export const serviceAreas: ServiceArea[] = [
   { slug: "toronto", name: "Toronto", region: "GTA", is_featured: true },
+  { slug: "hamilton", name: "Hamilton", region: "Southern Ontario", is_featured: true },
   { slug: "mississauga", name: "Mississauga", region: "GTA", is_featured: true },
   { slug: "brampton", name: "Brampton", region: "GTA", is_featured: true },
   { slug: "vaughan", name: "Vaughan", region: "GTA", is_featured: true },

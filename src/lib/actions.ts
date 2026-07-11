@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import type { Session } from "next-auth";
 import { quote, type TripType } from "@/lib/pricing";
+import { resolvePearsonTariff } from "@/lib/tariff";
 import { getDirections } from "@/lib/mapbox";
 import { toStorageIso } from "@/lib/datetime";
 import {
@@ -19,6 +20,7 @@ import {
   notifyBookingCancelled,
   notifyDriverApplication,
 } from "@/lib/mailer/notifications";
+import { expireOpenCheckoutSessions } from "@/lib/payments";
 
 /** Service-role client — bypasses RLS. Only ever used inside "use server"
  * actions, scoped to the caller's own rows / after an in-code auth check. */
@@ -44,11 +46,14 @@ async function computeServerFare(
     pickup?: { lng: number; lat: number } | null;
     dropoff?: { lng: number; lat: number } | null;
     fallbackDistanceKm?: number | null;
+    pickupText?: string | null;
+    dropoffText?: string | null;
+    passengerCount?: number | null;
   },
 ): Promise<{ fare: number; distanceKm: number | null; durationMin: number | null }> {
   const { data: vehicle } = await admin
     .from("vehicles")
-    .select("base_rate, hourly_rate")
+    .select("base_rate, hourly_rate, type")
     .eq("id", opts.vehicleId)
     .single();
   if (!vehicle) throw new Error("Vehicle not found");
@@ -60,9 +65,23 @@ async function computeServerFare(
     if (dir) { distanceKm = dir.distanceKm; durationMin = dir.durationMin; }
   }
 
+  // Pearson airport trips are priced by the official GTAA tariff.
+  const tariff =
+    opts.tripType === "airport"
+      ? resolvePearsonTariff({
+          pickup: opts.pickupText,
+          dropoff: opts.dropoffText,
+          pickupCoords: opts.pickup ?? undefined,
+          dropoffCoords: opts.dropoff ?? undefined,
+          distanceKm,
+        })
+      : null;
+
   const fare = quote(opts.tripType, vehicle, {
     durationHours: opts.durationHours ?? undefined,
     distanceKm: distanceKm ?? undefined,
+    tariff,
+    passengerCount: opts.passengerCount,
   });
   return { fare, distanceKm, durationMin };
 }
@@ -137,6 +156,9 @@ export async function createBookingAction(data: {
     pickup: data.pickupLng != null && data.pickupLat != null ? { lng: data.pickupLng, lat: data.pickupLat } : null,
     dropoff: data.dropoffLng != null && data.dropoffLat != null ? { lng: data.dropoffLng, lat: data.dropoffLat } : null,
     fallbackDistanceKm: data.distanceKm,
+    pickupText: data.pickup,
+    dropoffText: data.dropoff,
+    passengerCount: data.passengerCount,
   });
 
   const { data: booking, error } = await supabase
@@ -269,7 +291,7 @@ export async function updateBookingLocationAction(
   // and editability, then recompute the fare — never trust a client amount.
   const { data: booking } = await admin
     .from("bookings")
-    .select("customer_id, vehicle_id, trip_type, duration_hours, status")
+    .select("customer_id, vehicle_id, trip_type, duration_hours, status, passenger_count")
     .eq("id", bookingId)
     .single();
   if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
@@ -284,6 +306,9 @@ export async function updateBookingLocationAction(
     pickup: data.pickupLng != null && data.pickupLat != null ? { lng: data.pickupLng, lat: data.pickupLat } : null,
     dropoff: data.dropoffLng != null && data.dropoffLat != null ? { lng: data.dropoffLng, lat: data.dropoffLat } : null,
     fallbackDistanceKm: data.distanceKm,
+    pickupText: data.pickup,
+    dropoffText: data.dropoff,
+    passengerCount: booking.passenger_count,
   });
 
   const { error } = await supabase
@@ -445,17 +470,79 @@ export async function submitDriverApplicationAction(data: {
   return { success: true };
 }
 
+export async function updateBookingFareAction(bookingId: string, fare: number, reason: string) {
+  const session = await requireSession("admin");
+  const supabase = getSupabaseServerClient(session);
+
+  const newFare = Math.round(Number(fare) * 100) / 100;
+  if (!Number.isFinite(newFare) || newFare <= 0) {
+    throw new Error("Enter a valid fare amount.");
+  }
+  if (!reason?.trim()) {
+    throw new Error("A reason for the fare change is required.");
+  }
+
+  // Capture the current fare for the customer email.
+  const { data: booking } = await supabase
+    .from("bookings")
+    .select("fare_estimate")
+    .eq("id", bookingId)
+    .single();
+  if (!booking) throw new Error("Booking not found");
+  const oldFare = Number(booking.fare_estimate);
+
+  // Fares are only adjustable before the customer has paid (pre-assignment,
+  // so the driver-payout snapshot can never go stale either). The change and
+  // its reason are stored on the booking and communicated inside the
+  // payment-request email — never as a separate fare email.
+  const { data, error } = await supabase
+    .from("bookings")
+    .update({ fare_estimate: newFare, previous_fare: oldFare, fare_change_reason: reason.trim() })
+    .eq("id", bookingId)
+    .in("status", ["pending", "confirmed"])
+    .eq("payment_status", "pending")
+    .select("id, status");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data || data.length === 0) {
+    throw new Error("The fare can only be changed before the booking is paid.");
+  }
+
+  // Pending: silent — the fare change rides along in the payment-request
+  // email when the admin confirms. Already confirmed (awaiting payment):
+  // re-send the payment request with the updated fare + reason, and kill any
+  // checkout session opened at the old amount.
+  if (data[0].status === "confirmed") {
+    after(() => {
+      expireOpenCheckoutSessions(bookingId);
+      notifyBookingConfirmed(bookingId);
+    });
+  }
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+
 export async function confirmBookingAction(bookingId: string) {
   const session = await requireSession("admin");
   const supabase = getSupabaseServerClient(session);
 
-  const { error } = await supabase
+  // Guarded update: only a pending booking can be confirmed (prevents
+  // double-confirm/double-email and confirming a cancelled booking).
+  const { data, error } = await supabase
     .from("bookings")
     .update({ status: "confirmed" as any })
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .eq("status", "pending")
+    .select("id");
 
   if (error) {
     throw new Error(error.message);
+  }
+  if (!data || data.length === 0) {
+    throw new Error("Only a pending booking can be confirmed.");
   }
 
   after(() => notifyBookingConfirmed(bookingId));
@@ -486,20 +573,84 @@ export async function rejectBookingAction(bookingId: string, reason: string, not
   return { success: true };
 }
 
-export async function assignDriverAction(bookingId: string, driverId: string) {
+export async function assignDriverAction(
+  bookingId: string,
+  driverId: string,
+  payoutOverride?: number | null,
+) {
   const session = await requireSession("admin");
   const supabase = getSupabaseServerClient(session);
 
-  const { error } = await supabase
+  // Snapshot the payout for THIS ride: the admin can override it at assign
+  // time; otherwise it defaults to fare × the driver's commission rate. Safe
+  // from staleness: fares are only editable while pending/confirmed, and this
+  // update flips the booking to driver_assigned. Reassignment re-runs this
+  // path (fresh default or a new override).
+  let payout: number;
+  if (payoutOverride != null) {
+    payout = Math.round(Number(payoutOverride) * 100) / 100;
+    if (!Number.isFinite(payout) || payout < 0) {
+      throw new Error("Enter a valid driver payout.");
+    }
+  } else {
+    const { data: drv, error: drvErr } = await supabase
+      .from("drivers")
+      .select("commission_rate")
+      .eq("id", driverId)
+      .single();
+    if (drvErr || !drv) throw new Error("Driver not found");
+
+    const { data: bk, error: bkErr } = await supabase
+      .from("bookings")
+      .select("fare_estimate")
+      .eq("id", bookingId)
+      .single();
+    if (bkErr || !bk) throw new Error("Booking not found");
+
+    payout = Math.round(Number(bk.fare_estimate) * Number(drv.commission_rate ?? 0.2) * 100) / 100;
+  }
+
+  // Payment wall: a driver can be assigned (or reassigned, pre-ride) only
+  // once the customer has paid the full fare.
+  const { data, error } = await supabase
     .from("bookings")
-    .update({ driver_id: driverId, status: "driver_assigned" as any })
-    .eq("id", bookingId);
+    .update({ driver_id: driverId, status: "driver_assigned" as any, driver_payout: payout })
+    .eq("id", bookingId)
+    .in("status", ["confirmed", "driver_assigned", "accepted"])
+    .eq("payment_status", "paid")
+    .select("id");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data || data.length === 0) {
+    throw new Error("A driver can only be assigned after the customer has paid.");
+  }
+
+  after(() => notifyDriverAssigned(bookingId));
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function setDriverCommissionAction(driverId: string, rate: number) {
+  await requireSession("admin");
+
+  const r = Number(rate);
+  if (!Number.isFinite(r) || r < 0.05 || r > 1) {
+    throw new Error("Commission must be between 5% and 100%.");
+  }
+
+  // commission_rate is a privileged column (revoked from authenticated +
+  // escalation trigger), so write it via the service role after the admin check.
+  const { error } = await getServiceClient()
+    .from("drivers")
+    .update({ commission_rate: Math.round(r * 10000) / 10000 })
+    .eq("id", driverId);
 
   if (error) {
     throw new Error(error.message);
   }
 
-  after(() => notifyDriverAssigned(bookingId));
   revalidatePath("/admin");
   return { success: true };
 }
@@ -584,7 +735,7 @@ export async function completeRideAction(rideId: string) {
   // Retrieve driver ID
   const { data: driver, error: driverErr } = await supabase
     .from("drivers")
-    .select("id, total_earnings")
+    .select("id, total_earnings, commission_rate")
     .eq("user_id", userId)
     .single();
 
@@ -592,15 +743,14 @@ export async function completeRideAction(rideId: string) {
     throw new Error("Driver profile not found");
   }
 
-  // Complete only an in-progress ride, and read its fare from the DB in the
+  // Complete only an in-progress ride, and read its payout from the DB in the
   // same statement — the client no longer supplies the fare (was tamperable).
-  // payment_status stays "pending" — payment collection isn't wired yet.
   const { data: updated, error: bookingErr } = await supabase
     .from("bookings")
     .update({ status: "completed" })
     .eq("id", rideId)
     .eq("status", "in_progress")
-    .select("id, fare_estimate");
+    .select("id, fare_estimate, driver_payout, tip");
 
   if (bookingErr) {
     throw new Error(bookingErr.message);
@@ -609,10 +759,18 @@ export async function completeRideAction(rideId: string) {
     throw new Error("Only a ride in progress can be completed.");
   }
 
-  // Earnings from the server-side fare (80%). total_earnings is a privileged
-  // column revoked from authenticated, so credit it via the service role.
-  const earningsIncrease = Number(updated[0].fare_estimate ?? 0) * 0.8;
-  const newEarnings = Number(driver.total_earnings ?? 0) + earningsIncrease;
+  // Credit the payout snapshot taken at assignment (fare × commission rate at
+  // the time); legacy rows without a snapshot fall back to the driver's
+  // current rate. The customer's tip goes to the driver in full, on top.
+  // total_earnings is a privileged column revoked from authenticated, so
+  // credit it via the service role.
+  const row = updated[0];
+  const payout =
+    row.driver_payout != null
+      ? Number(row.driver_payout)
+      : Math.round(Number(row.fare_estimate ?? 0) * Number(driver.commission_rate ?? 0.2) * 100) / 100;
+  const earned = Math.round((payout + Math.max(0, Number(row.tip ?? 0))) * 100) / 100;
+  const newEarnings = Number(driver.total_earnings ?? 0) + earned;
 
   const { error: driverUpdateErr } = await getServiceClient()
     .from("drivers")
@@ -625,5 +783,5 @@ export async function completeRideAction(rideId: string) {
 
   after(() => notifyRideCompleted(rideId));
   revalidatePath("/driver");
-  return { success: true };
+  return { success: true, earned };
 }

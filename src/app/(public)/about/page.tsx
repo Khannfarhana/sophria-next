@@ -3,10 +3,10 @@ import { SiteLayout } from "@/components/site/SiteLayout";
 
 export const metadata: Metadata = {
   title: "About",
-  description: "SophRia is Toronto's discreet luxury chauffeur service. Learn about our story, values, and team.",
+  description: "SophRia is a discreet luxury chauffeur service for Toronto and Southern Ontario. Learn about our story, values, and team.",
   openGraph: {
     title: "About SophRia",
-    description: "Toronto's discreet luxury chauffeur service.",
+    description: "Discreet luxury chauffeur service across Toronto and Southern Ontario.",
   },
 };
 

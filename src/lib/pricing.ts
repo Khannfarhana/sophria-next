@@ -4,12 +4,14 @@
  * is wired in — see docs/torontocitylimo-replication-plan.md §5.
  */
 
+import { applyVehicleMultiplier, EXTRA_PASSENGER_SURCHARGE } from "@/lib/tariff";
+
 export type TripType = "one_way" | "hourly" | "airport";
 
 export const TRIP_TYPES: { value: TripType; label: string; hint: string }[] = [
   { value: "one_way", label: "One-way", hint: "Point to point" },
   { value: "hourly", label: "By the hour", hint: "Dedicated chauffeur" },
-  { value: "airport", label: "Airport", hint: "Pearson / Billy Bishop" },
+  { value: "airport", label: "Airport", hint: "Pearson / Billy Bishop / Hamilton / Buffalo" },
 ];
 
 export const HOURLY_MIN_HOURS = 2;
@@ -24,6 +26,8 @@ const AIRPORT_FREE_KM = 20;
 export interface QuotableVehicle {
   base_rate: number | string;
   hourly_rate?: number | string | null;
+  /** vehicle_type enum — needed to scale Pearson tariffs by class. */
+  type?: string | null;
 }
 
 export function hourlyRateFor(v: QuotableVehicle): number {
@@ -37,6 +41,14 @@ export interface QuoteParams {
   durationHours?: number;
   /** Driving distance in km (from Mapbox Directions). Omit for a flat estimate. */
   distanceKm?: number;
+  /**
+   * Published Pearson (sedan) tariff for this airport trip, resolved by the
+   * caller via resolvePearsonTariff() in src/lib/tariff.ts. When set, the
+   * airport fare is tariff × vehicle-class multiplier instead of the formula.
+   */
+  tariff?: number | null;
+  /** Booked passenger count — >4 adds the once-per-trip tariff surcharge. */
+  passengerCount?: number | null;
 }
 
 /** Returns an estimated fare in CAD for the given trip type + vehicle. */
@@ -55,6 +67,12 @@ export function quote(
       return hourlyRateFor(vehicle) * hrs;
     }
     case "airport": {
+      // Pearson trips follow the official GTAA tariff (tax-inclusive),
+      // scaled to the vehicle class.
+      if (params.tariff != null) {
+        const surcharge = Number(params.passengerCount) > 4 ? EXTRA_PASSENGER_SURCHARGE : 0;
+        return applyVehicleMultiplier(params.tariff, vehicle.type) + surcharge;
+      }
       const extraKm = Math.max(0, km - AIRPORT_FREE_KM);
       return Math.round(base + AIRPORT_FEE + extraKm * PER_KM);
     }

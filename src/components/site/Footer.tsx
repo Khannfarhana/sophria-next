@@ -9,7 +9,10 @@ export function Footer() {
           <div className="col-span-2">
             <div className="font-display text-3xl tracking-wide">SophRia</div>
             <p className="mt-4 max-w-sm text-sm text-white/60">
-              Toronto's premier chauffeur and limousine service. Discreet. Punctual. Effortless.
+              Luxury limousine &amp; chauffeur services. Discreet. Punctual. Effortless.
+            </p>
+            <p className="mt-2 max-w-sm text-xs text-white/45">
+              Serving Toronto, Hamilton, Burlington, Oakville, Mississauga, Niagara Region &amp; Southern Ontario.
             </p>
             <div className="mt-6 flex gap-4">
               {[Instagram, Facebook, Twitter, Linkedin].map((Icon, i) => (
@@ -34,9 +37,9 @@ export function Footer() {
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-white/50 mb-4">Contact</div>
             <ul className="space-y-2 text-sm text-white/70">
-              <li>Toronto, Ontario, Canada</li>
-              <li>+1 (416) 555-0100</li>
-              <li>hello@sophria.com</li>
+              <li>Toronto &amp; Southern Ontario, Canada</li>
+              <li><a href="tel:+14379672334" className="hover:text-white">+1 (437) 967-2334</a></li>
+              <li><a href="mailto:hello@sophria.com" className="hover:text-white">hello@sophria.com</a></li>
               <li><Link href="/faq" className="hover:text-white">FAQ</Link></li>
             </ul>
           </div>

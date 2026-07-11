@@ -16,20 +16,23 @@ const SECTIONS = [
     title: "Booking",
     items: [
       { q: "How far in advance should I book?", a: "We recommend 24 hours for guaranteed availability. Same-day bookings are accepted subject to fleet availability." },
-      { q: "Can I book multiple stops?", a: "Yes — multi-stop trips are supported on hourly charter bookings." },
+      { q: "Can I book multiple stops?", a: "Yes — multi-stop trips are supported on hourly charter bookings. Additional stops on point-to-point trips may incur extra charges." },
+      { q: "Where do you operate?", a: "We serve Toronto, Hamilton, Burlington, Oakville, Mississauga, the Niagara Region and Southern Ontario." },
+      { q: "Which airports do you serve?", a: "Toronto Pearson (YYZ), Billy Bishop (YTZ), John C. Munro Hamilton (YHM) and Buffalo Niagara (BUF). Airport transfers start at $110 depending on pickup and destination. Pearson trips are priced by the official Toronto Pearson airport tariff (taxes included), scaled by vehicle class." },
     ],
   },
   {
     title: "Payment",
     items: [
-      { q: "Which payment methods do you accept?", a: "All major credit and debit cards in CAD via Stripe. Corporate invoicing available on request." },
-      { q: "When am I charged?", a: "Your card is authorized at booking and charged after the trip is completed." },
+      { q: "Which payment methods do you accept?", a: "All major credit and debit cards in CAD via Stripe. Corporate accounts with monthly billing are available upon approval." },
+      { q: "When am I charged?", a: "Once dispatch confirms your booking, you'll receive a secure payment link — the full fare is paid online to secure your booking before a chauffeur is assigned." },
+      { q: "What extra charges can apply?", a: "HST (13%) applies to all services. Highway tolls (including Highway 407), parking and airport fees are additional where applicable. Waiting time beyond the complimentary period is billed at the applicable hourly rate, and gratuity may be added for larger groups or special events." },
     ],
   },
   {
     title: "Cancellation",
     items: [
-      { q: "What is your cancellation policy?", a: "Free cancellation up to 4 hours before pickup for standard bookings. Events and wedding bookings have separate terms." },
+      { q: "What is your cancellation policy?", a: "Cancellations more than 24 hours before pickup receive a full refund; 12–24 hours before pickup, a 50% refund; less than 12 hours, no refund. Weddings, proms and other special-event bookings have separate terms — contact dispatch for details." },
     ],
   },
   {
@@ -42,7 +45,7 @@ const SECTIONS = [
   {
     title: "Fleet",
     items: [
-      { q: "What vehicles are available?", a: "Luxury sedans, business class sedans, SUVs, stretch limousines and party buses. See the Fleet page for details." },
+      { q: "What vehicles are available?", a: "Executive sedans, business class sedans, luxury SUVs, stretch limousines and executive sprinters. See the Fleet page for details." },
       { q: "Are child seats available?", a: "Yes — please note your requirements in the booking notes." },
     ],
   },

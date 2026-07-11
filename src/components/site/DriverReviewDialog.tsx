@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Check, X, FileText, ExternalLink, ShieldCheck, Star } from "lucide-react";
+import { Loader2, X, FileText, ExternalLink, ShieldCheck, Star, Percent } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useSupabase } from "@/hooks/use-supabase";
 import { formatDate } from "@/lib/datetime";
@@ -14,6 +14,7 @@ export interface ReviewDriver {
   is_available: boolean;
   is_verified: boolean;
   rating: number;
+  commission_rate: number;
   created_at: string;
   city_of_residence: string | null;
   province: string | null;
@@ -37,17 +38,23 @@ export function DriverReviewDialog({
   open,
   onClose,
   onDecision,
+  onCommission,
 }: {
   driver: ReviewDriver | null;
   open: boolean;
   onClose: () => void;
   onDecision: (verified: boolean) => Promise<void>;
+  onCommission: (rate: number) => Promise<void>;
 }) {
   const supabase = useSupabase();
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [docs, setDocs] = useState<{ label: string; url: string | null }[]>([]);
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState(false);
+  // Commission input, derived from the stored rate unless the admin has an
+  // in-flight edit for THIS driver (keying by id resets it per driver).
+  const [rateEdit, setRateEdit] = useState<{ id: string; value: string } | null>(null);
+  const [savingRate, setSavingRate] = useState(false);
 
   const d = driver;
 
@@ -98,6 +105,23 @@ export function DriverReviewDialog({
     finally { setActing(false); }
   };
 
+  const storedPct = Math.round(Number(d.commission_rate ?? 0.2) * 100);
+  const ratePct = rateEdit?.id === d.id ? rateEdit.value : String(storedPct);
+  const pctNum = Number(ratePct);
+  const rateValid = ratePct !== "" && Number.isFinite(pctNum) && pctNum >= 5 && pctNum <= 100;
+  const rateDirty = rateValid && pctNum !== storedPct;
+
+  const saveRate = async () => {
+    if (!rateDirty) return;
+    setSavingRate(true);
+    try {
+      await onCommission(pctNum / 100);
+      setRateEdit(null); // fall back to the (now updated) stored rate
+    } finally {
+      setSavingRate(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg gap-0 overflow-hidden border-white/10 bg-[#0d0d0e] p-0 text-white">
@@ -134,6 +158,36 @@ export function DriverReviewDialog({
                 <div className="mt-0.5 break-words text-sm">{v}</div>
               </div>
             ))}
+          </div>
+
+          {/* Compensation — the driver's cut of each fare; payouts are
+              snapshotted per ride at assignment, so changing this only
+              affects future assignments. */}
+          <div className="border-t border-white/10 px-6 py-4">
+            <div className="mb-3 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-white/45">
+              <Percent className="h-3 w-3" /> Compensation
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2">
+                <input
+                  value={ratePct}
+                  onChange={(e) => setRateEdit({ id: d.id, value: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
+                  inputMode="numeric"
+                  className="w-12 bg-transparent text-center text-sm text-white focus:outline-none"
+                  aria-label="Commission percentage"
+                />
+                <span className="text-sm text-white/50">% of fare</span>
+              </div>
+              <button
+                onClick={saveRate}
+                disabled={!rateDirty || savingRate}
+                className="inline-flex items-center gap-1.5 rounded-sm bg-[#e7d3a8] px-4 py-2 text-sm font-medium text-[#0d0d0e] transition hover:bg-[#f0e2c0] disabled:opacity-50"
+              >
+                {savingRate && <Loader2 className="h-4 w-4 animate-spin" />} Save
+              </button>
+            </div>
+            {!rateValid && <p className="mt-2 text-xs text-red-400">Enter a value between 5 and 100.</p>}
+            <p className="mt-2 text-xs text-white/40">Applies to future ride assignments only — already-assigned rides keep their locked payout.</p>
           </div>
 
           {/* Documents */}

@@ -18,6 +18,7 @@ import { RideMap } from "@/components/site/RideMap";
 import { getDirections, type Place } from "@/lib/mapbox";
 import { formatDateTime } from "@/lib/datetime";
 import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { resolvePearsonTariff } from "@/lib/tariff";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { queries as mockDb } from "@/data/data";
 import { mockCreateBooking } from "@/lib/mock-db/actions";
@@ -156,7 +157,19 @@ function BookFlow() {
   }, [s.pickupCoords, s.dropoffCoords, s.tripType]);
 
   const selected = vehicles?.find((v) => v.id === s.vehicleId);
-  const fare = quote(s.tripType, selected, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined });
+  // Pearson airport trips use the official GTAA tariff — resolved here so the
+  // shown estimate matches the server's authoritative fare.
+  const pearsonTariff =
+    s.tripType === "airport"
+      ? resolvePearsonTariff({
+          pickup: s.pickup,
+          dropoff: s.dropoff,
+          pickupCoords: s.pickupCoords ?? undefined,
+          dropoffCoords: s.dropoffCoords ?? undefined,
+          distanceKm: s.distanceKm,
+        })
+      : null;
+  const fare = quote(s.tripType, selected, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff });
 
   const confirm = async () => {
     if (!user || !s.vehicleId) return;
@@ -242,7 +255,7 @@ function BookFlow() {
     <div class="ref"><div><div class="lbl">Booking reference</div><div class="num">${esc(reference)}</div></div><div class="badge">${esc(tripTypeLabel(s.tripType))}</div></div>
     <table>${rowsHtml}</table>
     <div class="total"><div class="lbl">Estimated fare</div><div class="amt">$${fare.toFixed(2)} CAD</div></div>
-    <div class="foot">This is an estimate, not a paid invoice. A SophRia coordinator will confirm your reservation and finalize payment. Thank you for choosing SophRia — Toronto's premier chauffeur service.</div>
+    <div class="foot">This is an estimate, not a paid invoice. Fares are subject to 13% HST; tolls, parking and waiting time are extra where applicable. Once dispatch confirms your reservation you'll receive a secure payment link. Thank you for choosing SophRia — luxury limousine &amp; chauffeur services across Toronto &amp; Southern Ontario.</div>
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print()},350)}<\/script>
 </body></html>`;
@@ -400,7 +413,7 @@ function BookFlow() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="text-base font-medium text-foreground">${quote(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined }).toFixed(0)}</div>
+                        <div className="text-base font-medium text-foreground">${quote(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff }).toFixed(0)}</div>
                         <div className="text-xs text-ink-soft">{s.tripType === "hourly" ? `CAD · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD est."}</div>
                       </div>
                       {s.vehicleId === v.id && (
@@ -458,8 +471,17 @@ function BookFlow() {
                   </div>
                   <div className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4 text-sm text-ink-muted">
                     <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
-                    <span>Stripe payment coming soon. Complete your reservation and we&apos;ll contact you to finalize payment.</span>
+                    <span>Once dispatch confirms your reservation, you&apos;ll receive a secure payment link to complete your booking online.</span>
                   </div>
+                  {pearsonTariff != null ? (
+                    <p className="text-xs text-ink-soft">
+                      Priced by the official Toronto Pearson airport tariff (taxes included). Highway 407 tolls at cost, requested stops $10 per 10 minutes, and a $15 surcharge for more than 4 passengers or excess baggage may apply.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-ink-soft">
+                      Fares are subject to 13% HST. Highway tolls (incl. 407), parking, airport fees, waiting time beyond the complimentary period and additional stops are extra where applicable.
+                    </p>
+                  )}
                 </div>
                 <Nav onBack={() => setStep(4)} onNext={confirm} nextLabel="Confirm Booking" />
               </Step>
