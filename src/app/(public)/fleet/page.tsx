@@ -10,7 +10,7 @@ import { queries as mockDb } from "@/data/data";
 
 export const metadata: Metadata = {
   title: "Fleet",
-  description: "Mercedes, BMW, Cadillac. Sedans, SUVs, limousines and party buses for any occasion in Toronto.",
+  description: "Mercedes, BMW, Cadillac. Sedans, SUVs, limousines and sprinters for any occasion across Toronto and Southern Ontario.",
   openGraph: {
     title: "SophRia Fleet",
     description: "Late-model luxury vehicles for any occasion.",

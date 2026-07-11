@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, CalendarClock, Car } from "lucide-react";
@@ -9,10 +9,12 @@ import { formatDateTime } from "@/lib/datetime";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { BookingDetailDialog, type BookingRow } from "@/components/site/BookingDetailDialog";
+import { PaymentRequiredDialog } from "@/components/site/PaymentRequiredDialog";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
 import { StatusBadge } from "@/components/site/StatusBadge";
 import { cancelBookingAction } from "@/lib/actions";
+import { verifyCheckoutSessionAction } from "@/lib/payment-actions";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { mockBookingsForCustomer, mockCancelBooking } from "@/lib/mock-db/actions";
 
@@ -29,6 +31,15 @@ function Dashboard() {
   const supabase = useSupabase();
   const qc = useQueryClient();
   const [selected, setSelected] = useState<BookingRow | null>(null);
+  const [payFor, setPayFor] = useState<BookingRow | null>(null);
+  // Auto-open the payment popup once per page load; after dismissal the
+  // per-card "Pay now" banner is the persistent affordance. Captured once
+  // (lazy init) so a return-from-Stripe load (?payment=...) shows only the
+  // outcome toast, not the popup on top of it.
+  const [autoPromptDismissed, setAutoPromptDismissed] = useState(false);
+  const [suppressAutoPrompt] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("payment"),
+  );
 
   const { data: bookings, isLoading } = useQuery({
     queryKey: ["my-bookings", user?.id],
@@ -64,6 +75,50 @@ function Dashboard() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to cancel booking");
     }
+  };
+
+  // Handle the return from Stripe Checkout (?payment=success|cancelled).
+  // window.location.search instead of useSearchParams — this fully-client
+  // page has no Suspense boundary for it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    if (!payment) return;
+    window.history.replaceState(null, "", "/dashboard");
+
+    if (payment === "cancelled") {
+      toast.info("Payment was cancelled — you can pay any time from your bookings.");
+      return;
+    }
+    if (payment !== "success") return;
+
+    const sessionId = params.get("session_id");
+    if (SUPABASE_ENABLED && sessionId) {
+      // Verify server-side so payment lands even if the webhook is slow/absent.
+      verifyCheckoutSessionAction(sessionId)
+        .then(({ paid }) => {
+          if (paid) toast.success("Payment received — thank you! Your booking is secured.");
+          else toast.info("Payment is processing — this page will update shortly.");
+        })
+        .catch(() => toast.info("Payment is processing — this page will update shortly."))
+        .finally(() => qc.invalidateQueries({ queryKey: ["my-bookings"] }));
+    } else {
+      toast.success("Payment received — thank you!");
+      qc.invalidateQueries({ queryKey: ["my-bookings"] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-open the payment popup for the first confirmed-but-unpaid booking
+  // (derived state, not an effect).
+  const autoPrompt =
+    !autoPromptDismissed && !suppressAutoPrompt && bookings
+      ? bookings.find((b: BookingRow) => b.status === "confirmed" && b.payment_status === "pending") ?? null
+      : null;
+  const payBooking = payFor ?? autoPrompt;
+  const closePayDialog = () => {
+    setPayFor(null);
+    setAutoPromptDismissed(true);
   };
 
   return (
@@ -126,7 +181,14 @@ function Dashboard() {
                             </span>
                           </div>
                         </div>
-                        <StatusBadge status={b.status} />
+                        <div className="flex shrink-0 flex-col items-end gap-1.5">
+                          <StatusBadge status={b.status} />
+                          {b.payment_status === "paid" && (
+                            <span className="rounded-full bg-[#3fae6b]/15 px-2.5 py-0.5 text-[11px] font-medium text-[#2e8653]">
+                              Paid
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Route */}
@@ -152,6 +214,18 @@ function Dashboard() {
                         <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-ink-soft">
                           Reason: {b.rejection_reason.replace(/_/g, " ")}
                           {b.rejection_notes ? ` — ${b.rejection_notes}` : ""}
+                        </div>
+                      )}
+
+                      {b.status === "confirmed" && b.payment_status === "pending" && (
+                        <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-[#c9a76a]/40 bg-[#c9a76a]/10 px-3 py-2">
+                          <span className="text-xs text-foreground">Payment required to secure this booking</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setPayFor(b); }}
+                            className="shrink-0 rounded-sm bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-[#2A2A2A] cursor-pointer"
+                          >
+                            Pay now
+                          </button>
                         </div>
                       )}
 
@@ -196,6 +270,16 @@ function Dashboard() {
         open={!!selected}
         onClose={() => setSelected(null)}
         onUpdated={() => qc.invalidateQueries({ queryKey: ["my-bookings"] })}
+      />
+
+      <PaymentRequiredDialog
+        booking={payBooking}
+        open={!!payBooking}
+        onClose={closePayDialog}
+        onPaid={() => {
+          closePayDialog();
+          qc.invalidateQueries({ queryKey: ["my-bookings"] });
+        }}
       />
     </SiteLayout>
   );

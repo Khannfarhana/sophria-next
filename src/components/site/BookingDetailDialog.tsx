@@ -16,6 +16,7 @@ import { StatusBadge } from "@/components/site/StatusBadge";
 import { getDirections, type Place } from "@/lib/mapbox";
 import { formatDateTime } from "@/lib/datetime";
 import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { resolvePearsonTariff } from "@/lib/tariff";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { updateBookingLocationAction, getBookingDriverAction, getBookingOtpAction } from "@/lib/actions";
@@ -30,6 +31,7 @@ export interface BookingRow {
   id: string;
   reference: string;
   status: string;
+  payment_status?: string;
   trip_type: string;
   pickup_location: string;
   dropoff_location: string;
@@ -129,10 +131,23 @@ export function BookingDetailDialog({
 
   if (!b) return null;
 
-  const vehicleRates = b.vehicles?.base_rate != null ? { base_rate: b.vehicles.base_rate, hourly_rate: b.vehicles.hourly_rate ?? null } : null;
+  const vehicleRates = b.vehicles?.base_rate != null
+    ? { base_rate: b.vehicles.base_rate, hourly_rate: b.vehicles.hourly_rate ?? null, type: b.vehicles.type ?? null }
+    : null;
+  // Pearson airport trips are priced by the official GTAA tariff.
+  const editTariff =
+    editing && tripType === "airport"
+      ? resolvePearsonTariff({
+          pickup,
+          dropoff,
+          pickupCoords: pickupCoords ?? undefined,
+          dropoffCoords: dropoffCoords ?? undefined,
+          distanceKm,
+        })
+      : null;
   // Live fare: re-quote from distance when we have vehicle rates, else keep stored fare.
   const liveFare = editing && vehicleRates
-    ? quote(tripType, vehicleRates, { durationHours: b.duration_hours ?? HOURLY_MIN_HOURS, distanceKm: distanceKm ?? undefined })
+    ? quote(tripType, vehicleRates, { durationHours: b.duration_hours ?? HOURLY_MIN_HOURS, distanceKm: distanceKm ?? undefined, tariff: editTariff })
     : Number(b.fare_estimate);
 
   const save = async () => {

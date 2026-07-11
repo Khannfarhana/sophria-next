@@ -1,18 +1,15 @@
 /**
  * Central site configuration — contact details, hours, service positioning.
- * NOTE: contact values below are PLACEHOLDERS. Swap with real SophRia details.
  */
 export const SITE = {
   name: "SophRia",
-  tagline: "Toronto's premier chauffeur service.",
-  // --- Contact (placeholders) ---
-  phone: "+1 (416) 555-0188",
-  phoneHref: "tel:+14165550188",
-  phoneAlt: "+1 (647) 555-0042",
-  phoneAltHref: "tel:+16475550042",
-  email: "concierge@sophria.example",
-  emailHref: "mailto:concierge@sophria.example",
-  whatsapp: "+1 (416) 555-0188",
+  tagline: "Luxury limousine & chauffeur services.",
+  // --- Contact ---
+  phone: "+1 (437) 967-2334",
+  phoneHref: "tel:+14379672334",
+  email: "hello@sophria.com",
+  emailHref: "mailto:hello@sophria.com",
+  whatsapp: "+1 (437) 967-2334",
   address: {
     line1: "100 Front Street West",
     line2: "Toronto, ON M5J 1E3",
@@ -20,6 +17,6 @@ export const SITE = {
   },
   hours: "24/7 — round-the-clock dispatch",
   // --- Positioning ---
-  region: "Greater Toronto Area",
+  region: "Toronto, Hamilton, Burlington, Oakville, Mississauga, Niagara Region & Southern Ontario",
   established: 2018,
 } as const;

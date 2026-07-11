@@ -106,15 +106,15 @@ export default function ContactPage() {
               <div className="space-y-5 text-sm">
                 <div className="flex gap-3">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <div className="text-ink-muted">Toronto, Ontario<br />Canada</div>
+                  <div className="text-ink-muted">Toronto &amp; Southern Ontario<br />Canada</div>
                 </div>
                 <div className="flex gap-3">
                   <Phone className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <span className="text-ink-muted">+1 (416) 555-0100</span>
+                  <a href="tel:+14379672334" className="text-ink-muted hover:text-foreground">+1 (437) 967-2334</a>
                 </div>
                 <div className="flex gap-3">
                   <Mail className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <span className="text-ink-muted">hello@sophria.com</span>
+                  <a href="mailto:hello@sophria.com" className="text-ink-muted hover:text-foreground">hello@sophria.com</a>
                 </div>
               </div>
               <div className="mt-5 border-t border-border pt-5 text-xs text-ink-soft">
