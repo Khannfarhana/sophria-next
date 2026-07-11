@@ -173,7 +173,10 @@ export async function mockCreateBooking(input: {
       distance_km: input.distanceKm ?? null,
       duration_min: input.durationMin ?? null,
       fare_estimate: input.fare,
+      previous_fare: null,
+      fare_change_reason: null,
       driver_payout: null,
+      tip: 0,
       passenger_name: input.passengerName,
       passenger_phone: input.passengerPhone,
       special_requests: input.notes || null,
@@ -273,6 +276,30 @@ export async function mockUpdateBookingLocation(
   return { success: true, fare };
 }
 
+export async function mockUpdateBookingFare(id: string, fare: number, reason: string) {
+  const newFare = Math.round(Number(fare) * 100) / 100;
+  if (!Number.isFinite(newFare) || newFare <= 0) {
+    throw new Error("Enter a valid fare amount.");
+  }
+  if (!reason?.trim()) {
+    throw new Error("A reason for the fare change is required.");
+  }
+  const booking = readDB().bookings.find((b) => b.id === id);
+  if (
+    !booking ||
+    !["pending", "confirmed"].includes(booking.status) ||
+    booking.payment_status !== "pending"
+  ) {
+    throw new Error("The fare can only be changed before the booking is paid.");
+  }
+  patchBooking(id, {
+    fare_estimate: newFare,
+    previous_fare: Number(booking.fare_estimate),
+    fare_change_reason: reason.trim(),
+  });
+  return { success: true };
+}
+
 export async function mockConfirmBooking(id: string) {
   const booking = readDB().bookings.find((b) => b.id === id);
   if (booking?.status !== "pending") {
@@ -283,7 +310,12 @@ export async function mockConfirmBooking(id: string) {
 }
 
 /** Instant fake payment — mirrors the Stripe checkout+webhook flow. */
-export async function mockPayBooking(id: string) {
+export async function mockPayBooking(id: string, tipDollars?: number) {
+  // Tip safety: never negative (a negative "tip" would discount the fare).
+  const tip = Math.round(Number(tipDollars ?? 0) * 100) / 100;
+  if (!Number.isFinite(tip) || tip < 0) {
+    throw new Error("Tip must be a positive amount.");
+  }
   const booking = readDB().bookings.find((b) => b.id === id);
   if (!booking || booking.status !== "confirmed" || booking.payment_status !== "pending") {
     throw new Error("This booking is not awaiting payment.");
@@ -294,11 +326,12 @@ export async function mockPayBooking(id: string) {
     if (!b) return;
     b.payment_status = "paid";
     b.stripe_payment_id = stripeId;
+    b.tip = tip;
     b.updated_at = now();
     db.payments.push({
       id: newId(),
       booking_id: id,
-      amount: Number(b.fare_estimate ?? 0),
+      amount: Number(b.fare_estimate ?? 0) + tip,
       currency: "CAD",
       status: "paid",
       stripe_id: stripeId,
@@ -314,7 +347,7 @@ export async function mockRejectBooking(id: string, reason: string, notes: strin
   return { success: true };
 }
 
-export async function mockAssignDriver(id: string, driverId: string) {
+export async function mockAssignDriver(id: string, driverId: string, payoutOverride?: number | null) {
   const db = readDB();
   const booking = db.bookings.find((b) => b.id === id);
   if (
@@ -326,10 +359,18 @@ export async function mockAssignDriver(id: string, driverId: string) {
   }
   const driver = db.drivers.find((d) => d.id === driverId);
   if (!driver) throw new Error("Driver not found");
-  // Payout snapshot: fare × the driver's current commission rate (reassignment
-  // recomputes with the new driver's rate — mirrors assignDriverAction).
-  const payout =
-    Math.round(Number(booking.fare_estimate) * Number(driver.commission_rate ?? 0.2) * 100) / 100;
+  // Payout snapshot for THIS ride: admin override, or fare × the driver's
+  // current commission rate (mirrors assignDriverAction).
+  let payout: number;
+  if (payoutOverride != null) {
+    payout = Math.round(Number(payoutOverride) * 100) / 100;
+    if (!Number.isFinite(payout) || payout < 0) {
+      throw new Error("Enter a valid driver payout.");
+    }
+  } else {
+    payout =
+      Math.round(Number(booking.fare_estimate) * Number(driver.commission_rate ?? 0.2) * 100) / 100;
+  }
   patchBooking(id, { driver_id: driverId, status: "driver_assigned", driver_payout: payout });
   return { success: true };
 }
@@ -430,8 +471,8 @@ export async function mockCompleteRide(id: string) {
   if (booking?.status !== "in_progress") {
     throw new Error("Only a ride in progress can be completed.");
   }
-  // Credit the payout snapshot, not the fare — mirrors completeRideAction
-  // (the old client-passed fare was tamperable and credited 100%).
+  // Credit the payout snapshot plus the customer's tip (100% to the driver)
+  // — mirrors completeRideAction.
   let earned = 0;
   mutateDB((db) => {
     const b = db.bookings.find((x) => x.id === id);
@@ -440,10 +481,11 @@ export async function mockCompleteRide(id: string) {
     b.updated_at = now();
     const d = b.driver_id ? db.drivers.find((x) => x.id === b.driver_id) : null;
     if (d) {
-      earned =
+      const payout =
         b.driver_payout != null
           ? Number(b.driver_payout)
           : Math.round(Number(b.fare_estimate ?? 0) * Number(d.commission_rate ?? 0.2) * 100) / 100;
+      earned = Math.round((payout + Math.max(0, Number(b.tip ?? 0))) * 100) / 100;
       d.total_earnings = Number(d.total_earnings) + earned;
     }
   });

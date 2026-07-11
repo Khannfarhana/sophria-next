@@ -10,7 +10,7 @@ import { AdminTabs } from "@/components/site/AdminTabs";
 import { DriverReviewDialog } from "@/components/site/DriverReviewDialog";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Check, X, UserPlus, Star, ChevronRight } from "lucide-react";
+import { Check, X, UserPlus, Star, ChevronRight, Pencil } from "lucide-react";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { formatDateTime } from "@/lib/datetime";
 import type { Database } from "@/integrations/supabase/types";
@@ -20,6 +20,7 @@ import {
   rejectBookingAction,
   assignDriverAction,
   setDriverCommissionAction,
+  updateBookingFareAction,
 } from "@/lib/actions";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import {
@@ -31,6 +32,7 @@ import {
   mockRejectBooking,
   mockAssignDriver,
   mockSetDriverCommission,
+  mockUpdateBookingFare,
 } from "@/lib/mock-db/actions";
 
 export default function AdminPage() {
@@ -72,6 +74,7 @@ interface AdminBooking {
   payment_status: string;
   fare_estimate: number;
   driver_payout: number | null;
+  tip: number;
   passenger_name: string | null;
   passenger_phone: string | null;
   special_requests: string | null;
@@ -129,7 +132,17 @@ function AdminPortal() {
   const [rejReason, setRejReason] = useState<string>("no_drivers");
   const [rejNotes, setRejNotes] = useState<string>("");
   const [assignFor, setAssignFor] = useState<AdminBooking | null>(null);
+  // Payout-config step inside the assign dialog: which driver was picked,
+  // plus linked %/$ inputs (editing one recomputes the other from the fare).
+  const [payoutDriver, setPayoutDriver] = useState<AdminDriver | null>(null);
+  const [payoutPct, setPayoutPct] = useState("");
+  const [payoutAmt, setPayoutAmt] = useState("");
+  const [assigning, setAssigning] = useState(false);
   const [reviewDriver, setReviewDriver] = useState<AdminDriver | null>(null);
+  const [fareFor, setFareFor] = useState<AdminBooking | null>(null);
+  const [fareValue, setFareValue] = useState("");
+  const [fareReason, setFareReason] = useState("");
+  const [savingFare, setSavingFare] = useState(false);
 
   const { data: bookings } = useQuery({
     queryKey: ["admin-bookings", filter],
@@ -139,7 +152,7 @@ function AdminPortal() {
       // Explicit columns — start_otp is not client-readable (column privilege).
       let q = supabase
         .from("bookings")
-        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, passenger_count, luggage_count, fare_estimate, driver_payout, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, updated_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
+        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, passenger_count, luggage_count, fare_estimate, driver_payout, tip, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, updated_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
         .order("created_at", { ascending: false })
         .limit(50);
       if (filter !== "all") q = q.eq("status", filter as Database["public"]["Enums"]["booking_status"]);
@@ -243,16 +256,89 @@ function AdminPortal() {
     }
   };
 
-  const assignDriver = async (driverId: string) => {
-    if (!assignFor) return;
+  const openFareEditor = (b: AdminBooking) => {
+    setFareFor(b);
+    setFareValue(Number(b.fare_estimate).toFixed(2));
+    setFareReason("");
+  };
+
+  const submitFare = async () => {
+    if (!fareFor) return;
+    const amount = Number(fareValue);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a valid fare amount");
+      return;
+    }
+    if (!fareReason.trim()) {
+      toast.error("Add a reason — it's included in the customer's email");
+      return;
+    }
+    setSavingFare(true);
     try {
-      if (SUPABASE_ENABLED) await assignDriverAction(assignFor.id, driverId);
-      else await mockAssignDriver(assignFor.id, driverId);
-      toast.success(`Driver assigned to ${assignFor.reference}`);
-      setAssignFor(null);
+      if (SUPABASE_ENABLED) await updateBookingFareAction(fareFor.id, amount, fareReason.trim());
+      else await mockUpdateBookingFare(fareFor.id, amount, fareReason.trim());
+      toast.success(
+        fareFor.status === "confirmed"
+          ? `Fare updated for ${fareFor.reference} — payment request re-sent`
+          : `Fare updated for ${fareFor.reference} — included when you confirm`,
+      );
+      setFareFor(null);
+      qc.invalidateQueries({ queryKey: ["admin-bookings"] });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to update fare");
+    } finally {
+      setSavingFare(false);
+    }
+  };
+
+  const openPayoutConfig = (d: AdminDriver) => {
+    if (!assignFor) return;
+    const fare = Number(assignFor.fare_estimate);
+    const pct = Math.round(Number(d.commission_rate ?? 0.2) * 100);
+    setPayoutDriver(d);
+    setPayoutPct(String(pct));
+    setPayoutAmt(((fare * pct) / 100).toFixed(2));
+  };
+
+  const onPayoutPct = (v: string) => {
+    const clean = v.replace(/[^\d.]/g, "").slice(0, 5);
+    setPayoutPct(clean);
+    const fare = Number(assignFor?.fare_estimate ?? 0);
+    const pct = Number(clean);
+    if (Number.isFinite(pct) && fare > 0) setPayoutAmt(((fare * pct) / 100).toFixed(2));
+  };
+
+  const onPayoutAmt = (v: string) => {
+    const clean = v.replace(/[^\d.]/g, "").slice(0, 8);
+    setPayoutAmt(clean);
+    const fare = Number(assignFor?.fare_estimate ?? 0);
+    const amt = Number(clean);
+    if (Number.isFinite(amt) && fare > 0) setPayoutPct(((amt / fare) * 100).toFixed(1).replace(/\.0$/, ""));
+  };
+
+  const closeAssignDialog = () => {
+    setAssignFor(null);
+    setPayoutDriver(null);
+  };
+
+  const assignDriver = async () => {
+    if (!assignFor || !payoutDriver) return;
+    const payout = Number(payoutAmt);
+    if (!Number.isFinite(payout) || payout < 0) {
+      toast.error("Enter a valid driver payout");
+      return;
+    }
+    setAssigning(true);
+    try {
+      if (SUPABASE_ENABLED) await assignDriverAction(assignFor.id, payoutDriver.id, payout);
+      else await mockAssignDriver(assignFor.id, payoutDriver.id, payout);
+      toast.success(`Driver assigned to ${assignFor.reference} — payout $${payout.toFixed(2)}`);
+      closeAssignDialog();
       qc.invalidateQueries({ queryKey: ["admin-bookings"] });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to assign driver");
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -308,7 +394,17 @@ function AdminPortal() {
                 <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm">
                   <span className="text-ink-muted">{b.vehicles?.name ?? "—"} · {b.driver?.profile?.full_name ?? "Unassigned"}</span>
                   <span className="text-right">
-                    <span className="font-medium text-foreground">${Number(b.fare_estimate).toFixed(2)}</span>
+                    {["pending", "confirmed"].includes(b.status) && b.payment_status === "pending" ? (
+                      <button
+                        onClick={() => openFareEditor(b)}
+                        className="inline-flex items-center gap-1.5 font-medium text-foreground cursor-pointer"
+                      >
+                        ${Number(b.fare_estimate).toFixed(2)}
+                        <Pencil className="h-3 w-3 text-ink-soft" />
+                      </button>
+                    ) : (
+                      <span className="font-medium text-foreground">${Number(b.fare_estimate).toFixed(2)}</span>
+                    )}
                     {b.driver_payout != null && (
                       <span className="block text-xs text-ink-soft">pay ${Number(b.driver_payout).toFixed(2)}</span>
                     )}
@@ -373,9 +469,23 @@ function AdminPortal() {
                       <td className="p-3">{b.driver?.profile?.full_name ?? <span className="text-ink-soft">Unassigned</span>}</td>
                       <td className="p-3">{b.vehicles?.name ?? "—"}</td>
                       <td className="p-3">
-                        <div className="font-medium">${Number(b.fare_estimate).toFixed(2)}</div>
+                        {["pending", "confirmed"].includes(b.status) && b.payment_status === "pending" ? (
+                          <button
+                            onClick={() => openFareEditor(b)}
+                            title="Change fare"
+                            className="group/fare inline-flex items-center gap-1.5 font-medium text-foreground hover:text-[#8a6d33] cursor-pointer"
+                          >
+                            ${Number(b.fare_estimate).toFixed(2)}
+                            <Pencil className="h-3 w-3 text-ink-soft group-hover/fare:text-[#8a6d33]" />
+                          </button>
+                        ) : (
+                          <div className="font-medium">${Number(b.fare_estimate).toFixed(2)}</div>
+                        )}
                         {b.driver_payout != null && (
                           <div className="text-xs text-ink-soft">pay ${Number(b.driver_payout).toFixed(2)}</div>
+                        )}
+                        {Number(b.tip ?? 0) > 0 && (
+                          <div className="text-xs text-[#8a6d33]">tip ${Number(b.tip).toFixed(2)}</div>
                         )}
                       </td>
                       <td className="p-3">
@@ -618,59 +728,202 @@ function AdminPortal() {
         </DialogContent>
       </Dialog>
 
+      {/* Change fare dialog */}
+      <Dialog open={!!fareFor} onOpenChange={(o) => !o && setFareFor(null)}>
+        <DialogContent className="bg-background border border-border">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Change fare — {fareFor?.reference}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-xs text-ink-muted">
+              {fareFor?.pickup_location} → {fareFor?.dropoff_location}
+            </div>
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wider text-ink-muted font-medium">
+                New fare (current ${fareFor ? Number(fareFor.fare_estimate).toFixed(2) : "—"})
+              </label>
+              <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+                <span className="text-sm text-ink-muted">$</span>
+                <input
+                  value={fareValue}
+                  onChange={(e) => setFareValue(e.target.value.replace(/[^\d.]/g, ""))}
+                  inputMode="decimal"
+                  className="w-full bg-transparent text-sm text-foreground focus:outline-none"
+                  aria-label="New fare in CAD"
+                />
+                <span className="text-xs text-ink-soft">CAD</span>
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wider text-ink-muted font-medium">Reason (sent to the customer)</label>
+              <textarea
+                value={fareReason}
+                onChange={(e) => setFareReason(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-border bg-background p-2 text-sm text-foreground focus:border-foreground"
+                placeholder="e.g. Route updated to include a second pickup; extra waiting time at request…"
+              />
+            </div>
+            <p className="text-xs text-ink-soft">
+              No separate email is sent — the change and this reason appear in the payment-request email. Awaiting-payment bookings get that email again immediately (and any open payment page is cancelled); pending bookings see it when you confirm.
+            </p>
+          </div>
+          <DialogFooter className="gap-2 mt-4">
+            <button
+              onClick={() => setFareFor(null)}
+              className="rounded-md border border-border bg-background text-foreground px-4 py-2 text-sm hover:bg-accent cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submitFare}
+              disabled={savingFare}
+              className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-[#2A2A2A] disabled:opacity-60 cursor-pointer"
+            >
+              {savingFare ? "Saving…" : "Update fare & notify"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Assign driver dialog */}
-      <Dialog open={!!assignFor} onOpenChange={(o) => !o && setAssignFor(null)}>
+      <Dialog open={!!assignFor} onOpenChange={(o) => !o && closeAssignDialog()}>
         <DialogContent className="max-w-2xl bg-background border border-border">
           <DialogHeader>
-            <DialogTitle className="text-foreground">Assign driver — {assignFor?.reference}</DialogTitle>
+            <DialogTitle className="text-foreground">
+              {payoutDriver ? `Driver payout — ${assignFor?.reference}` : `Assign driver — ${assignFor?.reference}`}
+            </DialogTitle>
           </DialogHeader>
           <div className="text-xs text-ink-muted">
             Pickup: {assignFor?.pickup_location} · {assignFor && formatDateTime(assignFor.pickup_datetime)}
           </div>
-          <div className="mt-4 max-h-[55vh] overflow-y-auto rounded-md border border-border">
-            {availableDrivers.length === 0 ? (
-              <div className="p-8 text-center text-sm text-ink-muted">No verified, available drivers right now.</div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {availableDrivers.map((d) => {
-                  const isCurrent = d.id === assignFor?.driver_id;
-                  return (
-                    <li key={d.id} className="flex items-center justify-between gap-3 p-3 hover:bg-muted/30">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-muted text-sm font-medium text-foreground">
-                          {(d.profile?.full_name ?? "D").slice(0, 1).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-foreground">{d.profile?.full_name ?? "Driver"}</div>
-                          <div className="flex items-center gap-2 text-xs text-ink-muted">
-                            <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{Number(d.rating).toFixed(2)}</span>
-                            <span>· {d.experience_years}y exp</span>
-                            <span>· {d.is_available ? "Online" : "Offline"}</span>
+
+          {payoutDriver ? (
+            /* Step 2 — configure this ride's payout, then assign */
+            <div className="mt-4 space-y-4">
+              <div className="flex items-center gap-3 rounded-md border border-border p-3">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-muted text-sm font-medium text-foreground">
+                  {(payoutDriver.profile?.full_name ?? "D").slice(0, 1).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-foreground">{payoutDriver.profile?.full_name ?? "Driver"}</div>
+                  <div className="flex items-center gap-2 text-xs text-ink-muted">
+                    <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{Number(payoutDriver.rating).toFixed(2)}</span>
+                    <span>· {payoutDriver.experience_years}y exp</span>
+                    <span>· default {Math.round(Number(payoutDriver.commission_rate ?? 0.2) * 100)}%</span>
+                  </div>
+                </div>
+                <div className="ml-auto shrink-0 text-right">
+                  <div className="text-[10px] uppercase tracking-wider text-ink-soft">Customer fare</div>
+                  <div className="text-sm font-medium text-foreground">${Number(assignFor?.fare_estimate ?? 0).toFixed(2)}</div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs uppercase tracking-wider text-ink-muted font-medium">Commission</label>
+                  <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+                    <input
+                      value={payoutPct}
+                      onChange={(e) => onPayoutPct(e.target.value)}
+                      inputMode="decimal"
+                      className="w-full bg-transparent text-sm text-foreground focus:outline-none"
+                      aria-label="Commission percentage for this ride"
+                    />
+                    <span className="text-xs text-ink-soft">% of fare</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs uppercase tracking-wider text-ink-muted font-medium">Driver payout</label>
+                  <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+                    <span className="text-sm text-ink-muted">$</span>
+                    <input
+                      value={payoutAmt}
+                      onChange={(e) => onPayoutAmt(e.target.value)}
+                      inputMode="decimal"
+                      className="w-full bg-transparent text-sm text-foreground focus:outline-none"
+                      aria-label="Driver payout in CAD for this ride"
+                    />
+                    <span className="text-xs text-ink-soft">CAD</span>
+                  </div>
+                </div>
+              </div>
+
+              {Number(payoutAmt) > Number(assignFor?.fare_estimate ?? 0) && (
+                <p className="text-xs font-medium text-[#8a6d33]">Heads up — this payout exceeds the customer fare.</p>
+              )}
+              <p className="text-xs text-ink-soft">
+                Applies to this ride only and is locked in when you assign. The driver&apos;s default commission is unchanged — edit that from their profile in Drivers &amp; applications.
+              </p>
+            </div>
+          ) : (
+            /* Step 1 — pick a driver */
+            <div className="mt-4 max-h-[55vh] overflow-y-auto rounded-md border border-border">
+              {availableDrivers.length === 0 ? (
+                <div className="p-8 text-center text-sm text-ink-muted">No verified, available drivers right now.</div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {availableDrivers.map((d) => {
+                    const isCurrent = d.id === assignFor?.driver_id;
+                    return (
+                      <li key={d.id} className="flex items-center justify-between gap-3 p-3 hover:bg-muted/30">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-muted text-sm font-medium text-foreground">
+                            {(d.profile?.full_name ?? "D").slice(0, 1).toUpperCase()}
                           </div>
-                          {d.profile?.email && <div className="mt-0.5 truncate text-xs text-ink-soft">{d.profile.email}</div>}
-                          <div className="truncate font-mono text-xs text-ink-soft">Lic · {d.license_number}</div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-foreground">{d.profile?.full_name ?? "Driver"}</div>
+                            <div className="flex items-center gap-2 text-xs text-ink-muted">
+                              <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{Number(d.rating).toFixed(2)}</span>
+                              <span>· {d.experience_years}y exp</span>
+                              <span>· {Math.round(Number(d.commission_rate ?? 0.2) * 100)}%</span>
+                              <span>· {d.is_available ? "Online" : "Offline"}</span>
+                            </div>
+                            {d.profile?.email && <div className="mt-0.5 truncate text-xs text-ink-soft">{d.profile.email}</div>}
+                            <div className="truncate font-mono text-xs text-ink-soft">Lic · {d.license_number}</div>
+                          </div>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => assignDriver(d.id)}
-                        disabled={isCurrent}
-                        className="shrink-0 rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium transition hover:bg-[#2A2A2A] disabled:opacity-50 cursor-pointer"
-                      >
-                        {isCurrent ? "Current" : "Assign"}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                        <button
+                          onClick={() => openPayoutConfig(d)}
+                          disabled={isCurrent}
+                          className="shrink-0 rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium transition hover:bg-[#2A2A2A] disabled:opacity-50 cursor-pointer"
+                        >
+                          {isCurrent ? "Current" : "Assign"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="mt-4 gap-2">
+            {payoutDriver ? (
+              <>
+                <button
+                  onClick={() => setPayoutDriver(null)}
+                  disabled={assigning}
+                  className="rounded-md border border-border bg-background text-foreground px-4 py-2 text-sm hover:bg-accent disabled:opacity-60 cursor-pointer"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={assignDriver}
+                  disabled={assigning}
+                  className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-[#2A2A2A] disabled:opacity-60 cursor-pointer"
+                >
+                  {assigning ? "Assigning…" : `Assign · payout $${(Number(payoutAmt) || 0).toFixed(2)}`}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={closeAssignDialog}
+                className="rounded-md border border-border bg-background text-foreground px-4 py-2 text-sm hover:bg-accent cursor-pointer"
+              >
+                Close
+              </button>
             )}
-          </div>
-          <DialogFooter className="mt-4">
-            <button
-              onClick={() => setAssignFor(null)}
-              className="rounded-md border border-border bg-background text-foreground px-4 py-2 text-sm hover:bg-accent cursor-pointer"
-            >
-              Close
-            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

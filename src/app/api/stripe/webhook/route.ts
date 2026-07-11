@@ -38,6 +38,7 @@ export async function POST(request: Request) {
             typeof s.payment_intent === "string" ? s.payment_intent : s.payment_intent?.id ?? s.id,
           amountCents: s.amount_total ?? 0,
           currency: s.currency ?? "cad",
+          tipCents: Math.max(0, Number(s.metadata?.tip_cents ?? 0) || 0),
         });
       }
       break;
