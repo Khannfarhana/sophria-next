@@ -1,3 +1,5 @@
+import { SITE } from "../site-config";
+
 export interface TemplateResult {
   html: string;
   text: string;
@@ -64,7 +66,7 @@ function emailWrapper(title: string, bodyContentHtml: string): string {
       <div class="content">${bodyContentHtml}</div>
       <div class="footer">
         <p style="margin:0 0 10px 0;">SophRia Chauffeur Service · Toronto &amp; Southern Ontario</p>
-        <p style="margin:0;">Need assistance? Our 24/7 dispatch is at <a href="tel:+14379672334">+1 (437) 967-2334</a>, or reply to this email.</p>
+        <p style="margin:0;">Need assistance? Our 24/7 dispatch is at <a href="${SITE.phoneHref}">${SITE.phone}</a>, or reply to this email.</p>
       </div>
     </div>
   </div>
@@ -104,7 +106,7 @@ function textWrap(headline: string, lines: string[]): string {
     "",
     ...lines,
     "",
-    "Need assistance? Contact our 24/7 dispatch at +1 (437) 967-2334.",
+    `Need assistance? Contact our 24/7 dispatch at ${SITE.phone}.`,
   ].join("\n");
 }
 

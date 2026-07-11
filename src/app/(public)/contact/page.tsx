@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { MAPBOX_TOKEN } from "@/lib/mapbox";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { Mail, Phone, MapPin } from "lucide-react";
+import { SITE } from "@/lib/site-config";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Required").max(100),
@@ -39,7 +40,7 @@ export default function ContactPage() {
         <div className="mx-auto max-w-7xl">
           <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">Contact</div>
           <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
-            We're <span className="text-[#e7d3a8]">listening.</span>
+            We&apos;re <span className="text-[#e7d3a8]">listening.</span>
           </h1>
           <p className="mt-5 max-w-xl text-base text-white/70">
             Available 24/7. Bookings answered within 30 minutes.
@@ -106,15 +107,19 @@ export default function ContactPage() {
               <div className="space-y-5 text-sm">
                 <div className="flex gap-3">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <div className="text-ink-muted">Toronto &amp; Southern Ontario<br />Canada</div>
+                  <div className="text-ink-muted">
+                    {SITE.address.line1}<br />
+                    {SITE.address.line2}<br />
+                    {SITE.address.city}, Canada
+                  </div>
                 </div>
                 <div className="flex gap-3">
                   <Phone className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <a href="tel:+14379672334" className="text-ink-muted hover:text-foreground">+1 (437) 967-2334</a>
+                  <a href={SITE.phoneHref} className="text-ink-muted hover:text-foreground">{SITE.phone}</a>
                 </div>
                 <div className="flex gap-3">
                   <Mail className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <a href="mailto:hello@sophria.com" className="text-ink-muted hover:text-foreground">hello@sophria.com</a>
+                  <a href={SITE.emailHref} className="text-ink-muted hover:text-foreground">{SITE.email}</a>
                 </div>
               </div>
               <div className="mt-5 border-t border-border pt-5 text-xs text-ink-soft">
