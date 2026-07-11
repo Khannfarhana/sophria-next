@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Instagram, Facebook, Twitter, Linkedin } from "lucide-react";
+import { SITE } from "@/lib/site-config";
 
 export function Footer() {
   return (
@@ -37,9 +38,13 @@ export function Footer() {
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-white/50 mb-4">Contact</div>
             <ul className="space-y-2 text-sm text-white/70">
-              <li>Toronto &amp; Southern Ontario, Canada</li>
-              <li><a href="tel:+14379672334" className="hover:text-white">+1 (437) 967-2334</a></li>
-              <li><a href="mailto:hello@sophria.com" className="hover:text-white">hello@sophria.com</a></li>
+              <li>
+                {SITE.address.line1}<br />
+                {SITE.address.line2}<br />
+                {SITE.address.city}, Canada
+              </li>
+              <li><a href={SITE.phoneHref} className="hover:text-white">{SITE.phone}</a></li>
+              <li><a href={SITE.emailHref} className="hover:text-white">{SITE.email}</a></li>
               <li><Link href="/faq" className="hover:text-white">FAQ</Link></li>
             </ul>
           </div>
