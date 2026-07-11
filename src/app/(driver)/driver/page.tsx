@@ -50,6 +50,7 @@ interface DriverRide {
   pickup_datetime: string;
   status: string;
   driver_payout: number | null;
+  tip: number | null;
   passenger_name: string | null;
   passenger_phone: string | null;
   special_requests: string | null;
@@ -98,7 +99,7 @@ function DriverPortal() {
         .from("bookings")
         // Explicit columns — never expose start_otp OR the customer fare to
         // the driver's client; drivers see their payout (driver_payout) only.
-        .select("id, reference, customer_id, driver_id, vehicle_id, pickup_location, dropoff_location, pickup_datetime, status, driver_payout, passenger_name, passenger_phone, special_requests, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
+        .select("id, reference, customer_id, driver_id, vehicle_id, pickup_location, dropoff_location, pickup_datetime, status, driver_payout, tip, passenger_name, passenger_phone, special_requests, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
         .eq("driver_id", driver!.id)
         .order("pickup_datetime");
       if (error) throw error;
@@ -261,7 +262,14 @@ function DriverPortal() {
                           <tr key={r.id} className="border-b border-border last:border-0 text-foreground">
                             <td className="p-3">{formatDate(r.pickup_datetime)}</td>
                             <td className="p-3 text-ink-muted">{r.pickup_location} → {r.dropoff_location}</td>
-                            <td className="p-3 font-medium">{r.driver_payout != null ? `$${Number(r.driver_payout).toFixed(2)}` : "—"}</td>
+                            <td className="p-3 font-medium">
+                              {r.driver_payout != null
+                                ? `$${(Number(r.driver_payout) + Math.max(0, Number(r.tip ?? 0))).toFixed(2)}`
+                                : "—"}
+                              {Number(r.tip ?? 0) > 0 && (
+                                <span className="ml-1.5 text-xs font-normal text-ink-soft">incl. ${Number(r.tip).toFixed(2)} tip</span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                         {completed.length === 0 && (
@@ -332,6 +340,9 @@ function RideList({
                 <div className="text-lg font-medium">
                   {r.driver_payout != null ? `$${Number(r.driver_payout).toFixed(2)}` : "—"}
                 </div>
+                {Number(r.tip ?? 0) > 0 && (
+                  <div className="text-xs font-medium text-[#8a6d33]">+ ${Number(r.tip).toFixed(2)} tip</div>
+                )}
               </div>
               <div className="flex">{children(r)}</div>
             </div>
@@ -395,6 +406,9 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
             <div className="text-lg font-medium">
               {ride.driver_payout != null ? `$${Number(ride.driver_payout).toFixed(2)}` : "—"}
             </div>
+            {Number(ride.tip ?? 0) > 0 && (
+              <div className="text-xs font-medium text-[#8a6d33]">+ ${Number(ride.tip).toFixed(2)} tip</div>
+            )}
           </div>
         </div>
         <div className="text-sm text-foreground">

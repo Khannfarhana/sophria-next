@@ -27,6 +27,7 @@ export type Database = {
           duration_hours: number | null
           duration_min: number | null
           fare_estimate: number
+          fare_change_reason: string | null
           flight_number: string | null
           id: string
           luggage_count: number | null
@@ -41,6 +42,7 @@ export type Database = {
           trip_type: string
           pickup_datetime: string
           pickup_location: string
+          previous_fare: number | null
           reference: string
           rejection_notes: string | null
           rejection_reason: string | null
@@ -48,6 +50,7 @@ export type Database = {
           start_otp: string | null
           status: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id: string | null
+          tip: number
           updated_at: string
           vehicle_id: string | null
         }
@@ -63,6 +66,7 @@ export type Database = {
           duration_hours?: number | null
           duration_min?: number | null
           fare_estimate?: number
+          fare_change_reason?: string | null
           flight_number?: string | null
           id?: string
           luggage_count?: number | null
@@ -77,6 +81,7 @@ export type Database = {
           pickup_datetime: string
           trip_type?: string
           pickup_location: string
+          previous_fare?: number | null
           reference?: string
           rejection_notes?: string | null
           rejection_reason?: string | null
@@ -84,6 +89,7 @@ export type Database = {
           start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null
+          tip?: number
           updated_at?: string
           vehicle_id?: string | null
         }
@@ -99,6 +105,7 @@ export type Database = {
           duration_hours?: number | null
           duration_min?: number | null
           fare_estimate?: number
+          fare_change_reason?: string | null
           flight_number?: string | null
           id?: string
           luggage_count?: number | null
@@ -113,6 +120,7 @@ export type Database = {
           pickup_datetime?: string
           trip_type?: string
           pickup_location?: string
+          previous_fare?: number | null
           reference?: string
           rejection_notes?: string | null
           rejection_reason?: string | null
@@ -120,6 +128,7 @@ export type Database = {
           start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null
+          tip?: number
           updated_at?: string
           vehicle_id?: string | null
         }

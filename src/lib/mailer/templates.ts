@@ -159,24 +159,32 @@ export const templates: Record<string, MailTemplateFn> = {
     return { html, text };
   },
 
-  /** Customer — booking confirmed by dispatch; full payment required to secure it. */
+  /** Customer — booking confirmed by dispatch; full payment required to
+   *  secure it. When the admin adjusted the fare, the same email carries the
+   *  previous fare and the reason (no separate fare-change email is sent). */
   "booking-confirmed": (d) => {
+    const fareChanged = Boolean(d.fareChangeReason);
     const html = emailWrapper("Booking Confirmed — SophRia", `
       <div class="eyebrow">Reservation Confirmed</div>
       <h2>Your booking is confirmed</h2>
       <p>Hello ${esc(d.customerName || "Valued Guest")},</p>
       <p>Great news — your reservation is confirmed. To secure your booking, please complete payment of the full fare. Your chauffeur will be assigned as soon as payment is received.</p>
+      ${fareChanged ? `<div class="banner warn"><strong>Fare updated:</strong> ${esc(d.fareChangeReason)}${d.previousFare ? ` — previously ${esc(d.previousFare)}.` : ""}</div>` : ""}
       <div class="banner warn">Payment required — your booking is not secured until the fare is paid.</div>
-      ${detailsTable(bookingRows(d), d.fare ? ["Total Fare", d.fare] : undefined)}
+      ${detailsTable(
+        [...bookingRows(d), ...(fareChanged && d.previousFare ? [["Previous Fare", d.previousFare] as [string, string]] : [])],
+        d.fare ? [fareChanged ? "Updated Fare" : "Total Fare", d.fare] : undefined,
+      )}
       ${otpBlock(d.otp || "")}
       ${cta(d.ctaUrl || "", "Pay Now")}
     `);
     const text = textWrap("Booking confirmed — payment required", [
       `Hello ${d.customerName || "Valued Guest"},`, "",
       "Your reservation is confirmed. To secure your booking, please complete payment of the full fare — your chauffeur will be assigned as soon as payment is received.", "",
+      fareChanged ? `Fare updated: ${d.fareChangeReason}${d.previousFare ? ` (previously ${d.previousFare})` : ""}` : "",
       `Reference: ${d.reference}`, `Date & Time: ${d.datetime}`, `Pickup: ${d.pickup}`,
       d.dropoff ? `Drop-off: ${d.dropoff}` : "", d.vehicle ? `Vehicle: ${d.vehicle}` : "",
-      d.fare ? `Total Fare: ${d.fare}` : "",
+      d.fare ? `${fareChanged ? "Updated Fare" : "Total Fare"}: ${d.fare}` : "",
       d.ctaUrl ? `\nPay now: ${d.ctaUrl}` : "",
       d.otp ? `\nPickup code: ${d.otp}` : "",
     ].filter(Boolean));
@@ -190,7 +198,11 @@ export const templates: Record<string, MailTemplateFn> = {
       <h2>Thank you — your booking is secured</h2>
       <p>Hello ${esc(d.customerName || "Valued Guest")},</p>
       <p>We've received your payment and your reservation is now secured. We're assigning your chauffeur and will notify you with their details shortly.</p>
-      ${detailsTable([...bookingRows(d), ...(d.paymentRef ? [["Payment Reference", d.paymentRef] as [string, string]] : [])], d.amount ? ["Amount Paid", d.amount] : undefined)}
+      ${detailsTable([
+        ...bookingRows(d),
+        ...(d.tip ? [["Driver Tip (100% to your chauffeur)", d.tip] as [string, string]] : []),
+        ...(d.paymentRef ? [["Payment Reference", d.paymentRef] as [string, string]] : []),
+      ], d.amount ? ["Amount Paid", d.amount] : undefined)}
       ${cta(d.ctaUrl || "", "View My Bookings")}
     `);
     const text = textWrap("Payment received", [
@@ -198,6 +210,7 @@ export const templates: Record<string, MailTemplateFn> = {
       "We've received your payment — your reservation is secured. A chauffeur will be assigned shortly.", "",
       `Reference: ${d.reference}`, `Date & Time: ${d.datetime}`, `Pickup: ${d.pickup}`,
       d.dropoff ? `Drop-off: ${d.dropoff}` : "", d.vehicle ? `Vehicle: ${d.vehicle}` : "",
+      d.tip ? `Driver Tip: ${d.tip} (100% to your chauffeur)` : "",
       d.amount ? `Amount Paid: ${d.amount}` : "", d.paymentRef ? `Payment Reference: ${d.paymentRef}` : "",
     ].filter(Boolean));
     return { html, text };
@@ -209,7 +222,11 @@ export const templates: Record<string, MailTemplateFn> = {
       <div class="eyebrow">Action Required</div>
       <h2>Payment received — assign a driver</h2>
       <p>Reservation <strong>${esc(d.reference || "")}</strong> from <strong>${esc(d.customerName || "a customer")}</strong> has been paid in full and is ready for driver assignment.</p>
-      ${detailsTable([["Customer", d.customerName || "—"], ...bookingRows(d)], d.amount ? ["Amount Paid", d.amount] : undefined)}
+      ${detailsTable([
+        ["Customer", d.customerName || "—"],
+        ...bookingRows(d),
+        ...(d.tip ? [["Driver Tip", d.tip] as [string, string]] : []),
+      ], d.amount ? ["Amount Paid", d.amount] : undefined)}
       ${cta(d.ctaUrl || "", "Assign Driver")}
     `);
     const text = textWrap("Payment received — assign driver", [

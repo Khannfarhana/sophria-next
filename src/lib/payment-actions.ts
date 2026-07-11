@@ -28,13 +28,27 @@ async function requireSession(): Promise<Session> {
 
 /**
  * Create (or re-use, via the idempotency key) a hosted Checkout session for
- * the full fare of the caller's own confirmed-but-unpaid booking, and return
- * its URL for a client-side redirect. Created on demand — hosted sessions
- * expire after 24h, so emails link to /dashboard, never to a session URL.
+ * the full fare of the caller's own confirmed-but-unpaid booking — plus an
+ * optional driver tip — and return its URL for a client-side redirect.
+ * Created on demand — hosted sessions expire after 24h, so emails link to
+ * /dashboard, never to a session URL.
  */
-export async function createCheckoutSessionAction(bookingId: string): Promise<{ url: string }> {
+export async function createCheckoutSessionAction(
+  bookingId: string,
+  tipDollars?: number,
+): Promise<{ url: string }> {
   const session = await requireSession();
   const admin = getServiceClient();
+
+  // Tip safety: server-side clamp — never negative (a negative "tip" would
+  // discount the fare), whole cents, sane upper bound.
+  const tipCents = Math.round(Number(tipDollars ?? 0) * 100);
+  if (!Number.isFinite(tipCents) || tipCents < 0) {
+    throw new Error("Tip must be a positive amount.");
+  }
+  if (tipCents > 100000) {
+    throw new Error("Tip is too large — please contact dispatch.");
+  }
 
   const { data: booking } = await admin
     .from("bookings")
@@ -68,16 +82,33 @@ export async function createCheckoutSessionAction(bookingId: string): Promise<{ 
             },
           },
         },
+        ...(tipCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "cad",
+                  unit_amount: tipCents,
+                  product_data: {
+                    name: "Driver tip",
+                    description: "100% goes to your chauffeur",
+                  },
+                },
+              },
+            ]
+          : []),
       ],
-      metadata: { booking_id: booking.id },
-      payment_intent_data: { metadata: { booking_id: booking.id } },
+      // tip_cents rides in server-created metadata — markBookingPaid reads it
+      // back from Stripe, never from the client.
+      metadata: { booking_id: booking.id, tip_cents: String(tipCents) },
+      payment_intent_data: { metadata: { booking_id: booking.id, tip_cents: String(tipCents) } },
       success_url: `${appUrl}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/dashboard?payment=cancelled`,
     },
     // Repeat clicks (double-click, two tabs) get the SAME session back instead
-    // of minting parallel payable sessions; a fare edit changes the key and
-    // therefore mints a fresh session at the new amount.
-    { idempotencyKey: `checkout:${booking.id}:${amountCents}` },
+    // of minting parallel payable sessions; a fare edit or a different tip
+    // changes the key and therefore mints a fresh session at the new total.
+    { idempotencyKey: `checkout:${booking.id}:${amountCents}:${tipCents}` },
   );
   if (!checkout.url) throw new Error("Stripe did not return a checkout URL");
   return { url: checkout.url };
@@ -114,6 +145,7 @@ export async function verifyCheckoutSessionAction(sessionId: string): Promise<{ 
         : checkout.payment_intent?.id ?? checkout.id,
     amountCents: checkout.amount_total ?? 0,
     currency: checkout.currency ?? "cad",
+    tipCents: Math.max(0, Number(checkout.metadata?.tip_cents ?? 0) || 0),
   });
   return { paid: true };
 }
