@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useSupabase } from "@/hooks/use-supabase";
 import { formatDate } from "@/lib/datetime";
 import { DEFAULT_DRIVER_PAYOUT_RATE } from "@/lib/pricing";
+import { DOC_LABELS } from "@/lib/driver-docs";
 
 export interface ReviewDriver {
   id: string;
@@ -24,15 +25,16 @@ export interface ReviewDriver {
   time_availability: string | null;
   referral_name: string | null;
   photo_url: string | null;
+  licence_class: string | null;
+  limo_plate: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  vehicle_year: number | null;
+  vehicle_class: string | null;
+  terms_accepted_at: string | null;
+  terms_version: string | null;
   profile: { full_name: string | null; email: string | null; phone: string | null } | null;
 }
-
-const DOC_LABELS: Record<string, string> = {
-  license_doc: "Driver's License",
-  background: "Background Check Consent",
-  drivers_license: "Driver's License",
-  insurance: "Insurance Certificate",
-};
 
 export function DriverReviewDialog({
   driver,
@@ -95,9 +97,19 @@ export function DriverReviewDialog({
     ["Languages", d.languages_spoken ?? "—"],
     ["Availability", d.time_availability ?? "—"],
     ["Experience", `${d.experience_years} years`],
-    ["License #", d.license_number],
+    ["Licence #", d.license_number],
+    ["Licence class", d.licence_class ?? "—"],
+    // Applicants bring their own vehicle (migration 20260716150000) — the plate
+    // and class are what the approver is actually vetting.
+    ["Vehicle", [d.vehicle_year, d.vehicle_make, d.vehicle_model].filter(Boolean).join(" ") || "—"],
+    ["Vehicle class", d.vehicle_class ?? "—"],
+    ["Limo plate", d.limo_plate ?? "—"],
     ...(d.referral_name ? ([["Referral", d.referral_name]] as [string, string][]) : []),
     ["Applied", formatDate(d.created_at)],
+    [
+      "Terms accepted",
+      d.terms_accepted_at ? `${formatDate(d.terms_accepted_at)} (${d.terms_version ?? "unversioned"})` : "— not recorded",
+    ],
   ];
 
   const decide = async (verified: boolean) => {

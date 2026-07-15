@@ -184,6 +184,10 @@ export const vehicles: Vehicle[] = [
 const driverExtras = {
   city_of_residence: null, province: null, work_authorization: null,
   languages_spoken: null, time_availability: null, referral_name: null, photo_url: null,
+  // Applicant vehicle + terms acceptance (migration 20260716150000). Null on
+  // seeds: these predate the partner-network model and were never collected.
+  licence_class: null, limo_plate: null, vehicle_make: null, vehicle_model: null,
+  vehicle_year: null, vehicle_class: null, terms_accepted_at: null, terms_version: null,
 };
 
 /** Cancellation audit columns — null until a booking is actually cancelled. */

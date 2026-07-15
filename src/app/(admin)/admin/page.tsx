@@ -117,6 +117,15 @@ interface AdminDriver {
   time_availability: string | null;
   referral_name: string | null;
   photo_url: string | null;
+  // Applicant-supplied vehicle + terms acceptance (migration 20260716150000).
+  licence_class: string | null;
+  limo_plate: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  vehicle_year: number | null;
+  vehicle_class: string | null;
+  terms_accepted_at: string | null;
+  terms_version: string | null;
   profile: {
     id: string;
     full_name: string | null;

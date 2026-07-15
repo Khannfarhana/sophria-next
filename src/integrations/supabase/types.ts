@@ -227,15 +227,23 @@ export type Database = {
           is_available: boolean
           is_verified: boolean
           languages_spoken: string | null
+          licence_class: string | null
           license_number: string
+          limo_plate: string | null
           province: string | null
           rating: number
           photo_url: string | null
           referral_name: string | null
+          terms_accepted_at: string | null
+          terms_version: string | null
           time_availability: string | null
           total_earnings: number
           updated_at: string
           user_id: string
+          vehicle_class: string | null
+          vehicle_make: string | null
+          vehicle_model: string | null
+          vehicle_year: number | null
           work_authorization: string | null
         }
         Insert: {
@@ -247,15 +255,23 @@ export type Database = {
           is_available?: boolean
           is_verified?: boolean
           languages_spoken?: string | null
+          licence_class?: string | null
           license_number: string
+          limo_plate?: string | null
           province?: string | null
           rating?: number
           photo_url?: string | null
           referral_name?: string | null
+          terms_accepted_at?: string | null
+          terms_version?: string | null
           time_availability?: string | null
           total_earnings?: number
           updated_at?: string
           user_id: string
+          vehicle_class?: string | null
+          vehicle_make?: string | null
+          vehicle_model?: string | null
+          vehicle_year?: number | null
           work_authorization?: string | null
         }
         Update: {
@@ -267,15 +283,23 @@ export type Database = {
           is_available?: boolean
           is_verified?: boolean
           languages_spoken?: string | null
+          licence_class?: string | null
           license_number?: string
+          limo_plate?: string | null
           province?: string | null
           rating?: number
           photo_url?: string | null
           referral_name?: string | null
+          terms_accepted_at?: string | null
+          terms_version?: string | null
           time_availability?: string | null
           total_earnings?: number
           updated_at?: string
           user_id?: string
+          vehicle_class?: string | null
+          vehicle_make?: string | null
+          vehicle_model?: string | null
+          vehicle_year?: number | null
           work_authorization?: string | null
         }
         Relationships: []

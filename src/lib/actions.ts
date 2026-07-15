@@ -29,6 +29,8 @@ import {
 } from "@/lib/mailer/notifications";
 import { expireOpenCheckoutSessions, refundBookingPayment } from "@/lib/payments";
 import { refundQuote } from "@/lib/cancellation";
+import { driverApplicationSchema, missingDocKeys, CHAUFFEUR_TERMS_VERSION } from "@/lib/driver-application";
+import { DOC_LABELS } from "@/lib/driver-docs";
 
 /** Service-role client — bypasses RLS. Only ever used inside "use server"
  * actions, scoped to the caller's own rows / after an in-code auth check. */
@@ -484,18 +486,13 @@ export async function verifyDriverAction(driverId: string, verified: boolean) {
  * applicant is NOT granted the driver role — this creates a PENDING record only.
  * Runs via the service role so it works before the user is a driver, and so the
  * applicant can't set privileged fields (is_verified stays false).
+ *
+ * Everything is re-validated here. A server action is a public HTTP endpoint:
+ * this previously trusted its typed argument completely and wrote it straight
+ * to the DB, so any signed-in caller could bypass every rule the form enforced.
  */
 export async function submitDriverApplicationAction(data: {
-  fullName: string;
-  phone: string;
-  license: string;
-  experience: number;
-  city: string;
-  province: string;
-  workAuthorization: string;
-  languages: string;
-  referral: string | null;
-  availability: string;
+  application: unknown;
   photoPath: string | null;
   docs: { docType: string; path: string }[];
 }) {
@@ -503,19 +500,58 @@ export async function submitDriverApplicationAction(data: {
   const admin = getServiceClient();
   const userId = session.user.id;
 
+  const parsed = driverApplicationSchema.safeParse(data.application);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? "Your application is incomplete.");
+  }
+  const app = parsed.data;
+
+  if (!data.photoPath) throw new Error("A driver photo is required.");
+
+  // "Nothing is optional, this part is all mandatory" — enforce it server-side
+  // too, not just in the form.
+  const provided = data.docs.filter((d) => d.path).map((d) => d.docType);
+  const missing = missingDocKeys(provided);
+  if (missing.length > 0) {
+    const names = missing.map((k) => DOC_LABELS[k] ?? k);
+    throw new Error(`Missing required document${missing.length > 1 ? "s" : ""}: ${names.join(", ")}.`);
+  }
+
+  // Never overwrite an application that has already been reviewed: the upsert
+  // below is keyed on user_id, so without this an approved driver could re-post
+  // and reset their own record.
+  const { data: existing } = await admin
+    .from("drivers")
+    .select("id, is_verified")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existing?.is_verified) {
+    throw new Error("You're already an approved chauffeur.");
+  }
+
   const { data: driver, error } = await admin
     .from("drivers")
     .upsert({
       user_id: userId,
-      license_number: data.license,
-      experience_years: data.experience,
-      city_of_residence: data.city,
-      province: data.province,
-      work_authorization: data.workAuthorization,
-      languages_spoken: data.languages,
-      time_availability: data.availability,
-      referral_name: data.referral || null,
+      license_number: app.license,
+      licence_class: app.licenceClass,
+      experience_years: app.experience,
+      city_of_residence: app.city,
+      province: app.province,
+      work_authorization: app.workAuthorization,
+      languages_spoken: app.languages,
+      time_availability: app.availability,
+      referral_name: app.referral || null,
       photo_url: data.photoPath,
+      vehicle_class: app.vehicleClass,
+      vehicle_make: app.vehicleMake,
+      vehicle_model: app.vehicleModel,
+      vehicle_year: app.vehicleYear,
+      limo_plate: app.limoPlate,
+      // Stamped server-side from the server's clock — a client-supplied
+      // acceptance timestamp would be worth nothing as a legal record.
+      terms_accepted_at: new Date().toISOString(),
+      terms_version: CHAUFFEUR_TERMS_VERSION,
       is_verified: false,
       is_available: false,
     }, { onConflict: "user_id" })
@@ -523,13 +559,20 @@ export async function submitDriverApplicationAction(data: {
     .single();
   if (error) throw new Error(error.message);
 
-  await admin.from("profiles").update({ full_name: data.fullName, phone: data.phone }).eq("id", userId);
+  await admin.from("profiles").update({ full_name: app.fullName, phone: app.phone }).eq("id", userId);
 
-  for (const d of data.docs) {
-    if (d.path) await admin.from("driver_documents").insert({ driver_id: driver.id, doc_type: d.docType, file_url: d.path });
+  // Re-applying replaces the previous document set rather than stacking a
+  // second copy of every file under the same driver.
+  await admin.from("driver_documents").delete().eq("driver_id", driver.id);
+  const rows = data.docs
+    .filter((d) => d.path)
+    .map((d) => ({ driver_id: driver.id, doc_type: d.docType, file_url: d.path }));
+  if (rows.length > 0) {
+    const { error: docErr } = await admin.from("driver_documents").insert(rows);
+    if (docErr) throw new Error(docErr.message);
   }
 
-  after(() => notifyDriverApplication(data.fullName || "there", session.user.email ?? ""));
+  after(() => notifyDriverApplication(app.fullName || "there", session.user.email ?? ""));
   revalidatePath("/admin");
   return { success: true };
 }

@@ -2,66 +2,59 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { z } from "zod";
 import { toast } from "sonner";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
 import { submitDriverApplicationAction } from "@/lib/actions";
 import { formatDate } from "@/lib/datetime";
-import { Check, Upload, Camera, ArrowLeft, ArrowRight, Loader2, X, Clock, ShieldCheck } from "lucide-react";
+import {
+  driverApplicationSchema,
+  stepSchemas,
+  FORM_STEPS,
+  PROVINCES,
+  WORK_AUTH,
+  AVAILABILITY,
+  LICENCE_CLASSES,
+  VEHICLE_CLASSES,
+  MIN_EXPERIENCE_YEARS,
+} from "@/lib/driver-application";
+import {
+  DRIVER_DOCS,
+  VEHICLE_PHOTOS,
+  DOC_LABELS,
+  ACCEPTED_DOC_MIME,
+  ACCEPTED_IMAGE_MIME,
+  validateUpload,
+} from "@/lib/driver-docs";
+import { Check, Upload, Camera, ImageIcon, ArrowLeft, ArrowRight, Loader2, X, Clock, ShieldCheck } from "lucide-react";
 
 type Application = { is_verified: boolean; is_available: boolean; created_at: string; license_number: string };
 
-const schema = z.object({
-  fullName: z.string().trim().min(1, "Full name is required").max(100),
-  email: z.string().trim().email("Enter a valid email").max(255),
-  phone: z.string().trim().min(7, "Enter a valid phone number").max(40),
-  city: z.string().trim().min(1, "City of residence is required").max(100),
-  province: z.string().trim().min(1, "Select your province/state"),
-  workAuthorization: z.string().trim().min(1, "Select your work authorization"),
-  languages: z.string().trim().min(1, "Languages spoken is required").max(200),
-  availability: z.string().trim().min(1, "Select your availability"),
-  referral: z.string().trim().max(100).optional(),
-  license: z.string().trim().min(3, "License number is required").max(60),
-  experience: z.coerce.number().min(0).max(60),
-});
-
-const step1Schema = schema.pick({
-  fullName: true, email: true, phone: true, city: true,
-  province: true, workAuthorization: true, languages: true, availability: true,
-});
-const step2Schema = schema.pick({ license: true, experience: true });
-
-const FORM_STEPS = ["Personal", "Professional", "Photo & Docs"];
 const STATUS_STEPS = ["Submitted", "Under Review", "Approved"];
+const LAST_STEP = FORM_STEPS.length;
 
-const PROVINCES = [
-  "Ontario", "Quebec", "British Columbia", "Alberta", "Manitoba", "Saskatchewan",
-  "Nova Scotia", "New Brunswick", "Newfoundland and Labrador", "Prince Edward Island",
-  "Northwest Territories", "Yukon", "Nunavut",
-];
-const WORK_AUTH = ["Canadian Citizen", "Permanent Resident", "Valid Work Permit", "Other"];
-const AVAILABILITY = ["Full-time", "Part-time", "Weekends only", "Evenings only", "Flexible"];
+const emptyForm = {
+  fullName: "", email: "", phone: "", city: "", province: "", workAuthorization: "",
+  languages: "", availability: "", referral: "",
+  license: "", licenceClass: "", experience: "",
+  vehicleClass: "", vehicleMake: "", vehicleModel: "", vehicleYear: "", limoPlate: "",
+};
 
-// Driver-only onboarding — no vehicle documents collected.
-const DOCS = [
-  { k: "license_doc", l: "Driver's License" },
-  { k: "background", l: "Background Check Consent" },
-];
+/** Every upload slot on step 4 — paperwork first, then the four vehicle angles. */
+const ALL_DOCS = [...DRIVER_DOCS, ...VEHICLE_PHOTOS];
 
 export default function BecomeChauffeurPage() {
   const { user } = useAuth();
   const supabase = useSupabase();
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({
-    fullName: "", email: "", phone: "", city: "", province: "", workAuthorization: "",
-    languages: "", availability: "", referral: "", license: "", experience: "0",
-  });
+  const [form, setForm] = useState(emptyForm);
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>("");
-  const [files, setFiles] = useState<Record<string, File | null>>({ license_doc: null, background: null });
+  const [files, setFiles] = useState<Record<string, File | null>>({});
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   // undefined = still checking · null = no application · object = already applied
   const [application, setApplication] = useState<Application | null | undefined>(undefined);
 
@@ -78,6 +71,9 @@ export default function BecomeChauffeurPage() {
     return () => { cancelled = true; };
   }, [user, supabase]);
 
+  // Object URLs are revoked on replace/remove; this covers unmount.
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
+
   const inputCls = "w-full rounded-xl border bg-input px-4 py-3 text-sm text-foreground transition focus:border-foreground focus:outline-none";
   const selectCls = (value: string) => `${inputCls} cursor-pointer ${value ? "text-foreground" : "text-ink-soft"}`;
 
@@ -89,75 +85,134 @@ export default function BecomeChauffeurPage() {
   );
 
   const onPhoto = (f: File | null) => {
+    if (f) {
+      const err = validateUpload(f, ACCEPTED_IMAGE_MIME);
+      if (err) { toast.error(err); return; }
+    }
     setPhoto(f);
     setPhotoPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return f ? URL.createObjectURL(f) : ""; });
   };
 
+  const onDoc = (key: string, f: File | null) => {
+    if (f) {
+      const allowed = key.startsWith("vehicle_photo_") ? ACCEPTED_IMAGE_MIME : ACCEPTED_DOC_MIME;
+      const err = validateUpload(f, allowed);
+      if (err) { toast.error(err); return; }
+    }
+    setFiles((prev) => ({ ...prev, [key]: f }));
+  };
+
   const next = () => {
-    if (step === 1) {
-      const r = step1Schema.safeParse(form);
+    const schema = stepSchemas[step - 1];
+    if (schema) {
+      const r = schema.safeParse(form);
       if (!r.success) { toast.error(r.error.issues[0].message); return; }
     }
-    if (step === 2) {
-      const r = step2Schema.safeParse(form);
-      if (!r.success) { toast.error(r.error.issues[0].message); return; }
-    }
-    setStep((s) => Math.min(s + 1, 3));
+    setStep((s) => Math.min(s + 1, LAST_STEP));
   };
 
   const onSubmit = async () => {
     if (!user) { toast.error("Please sign in to apply."); return; }
-    const parsed = schema.safeParse(form);
+
+    const parsed = driverApplicationSchema.safeParse({ ...form, termsAccepted });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     if (!photo) { toast.error("Please add a driver photo."); return; }
 
+    const missing = ALL_DOCS.filter((d) => !files[d.key]);
+    if (missing.length > 0) {
+      toast.error(`Still needed: ${missing.map((d) => d.label).join(", ")}`);
+      return;
+    }
+
     setSubmitting(true);
+    const queue: { key: string; file: File }[] = [
+      { key: "photo", file: photo },
+      ...ALL_DOCS.map((d) => ({ key: d.key, file: files[d.key]! })),
+    ];
+    setProgress({ done: 0, total: queue.length });
+
     try {
       // Storage keys can't contain spaces/special chars — sanitize filenames.
       const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const uploadTo = async (folder: string, file: File): Promise<string | null> => {
-        const path = `${user.id}/${folder}-${Date.now()}-${safeName(file.name)}`;
-        const { error } = await supabase.storage.from("driver-documents").upload(path, file, { upsert: true });
-        if (error) { console.warn(`${folder} upload failed`, error); return null; }
-        return path;
-      };
+      const stamp = Date.now();
 
       // Uploads run under the applicant's own account (path-based storage RLS).
-      const photoPath = await uploadTo("photo", photo);
-      const docs: { docType: string; path: string }[] = [];
-      for (const [docType, file] of Object.entries(files)) {
-        if (!file) continue;
-        const path = await uploadTo(docType, file);
-        if (path) docs.push({ docType, path });
-      }
+      // These THROW on failure. They used to return null and only console.warn,
+      // which meant a failed photo upload still submitted the application with
+      // photo_url: null and showed the applicant a success toast.
+      const uploadTo = async (key: string, file: File): Promise<{ key: string; path: string }> => {
+        const path = `${user.id}/${key}-${stamp}-${safeName(file.name)}`;
+        const { error } = await supabase.storage
+          .from("driver-documents")
+          .upload(path, file, { upsert: true, contentType: file.type || undefined });
+        if (error) {
+          throw new Error(`Couldn't upload ${DOC_LABELS[key] ?? key}: ${error.message}`);
+        }
+        setProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
+        return { key, path };
+      };
+
+      const uploaded = await Promise.all(queue.map((q) => uploadTo(q.key, q.file)));
+      const photoPath = uploaded.find((u) => u.key === "photo")!.path;
+      const docs = uploaded
+        .filter((u) => u.key !== "photo")
+        .map((u) => ({ docType: u.key, path: u.path }));
 
       // Create the PENDING application (server-side, service role). This does NOT
       // grant the driver role — an admin does that when they approve.
-      await submitDriverApplicationAction({
-        fullName: parsed.data.fullName,
-        phone: parsed.data.phone,
-        license: parsed.data.license,
-        experience: parsed.data.experience,
-        city: parsed.data.city,
-        province: parsed.data.province,
-        workAuthorization: parsed.data.workAuthorization,
-        languages: parsed.data.languages,
-        referral: parsed.data.referral || null,
-        availability: parsed.data.availability,
-        photoPath,
-        docs,
-      });
+      await submitDriverApplicationAction({ application: parsed.data, photoPath, docs });
 
       // Flip straight to the status view.
-      setApplication({ is_verified: false, is_available: false, created_at: new Date().toISOString(), license_number: parsed.data.license });
+      setApplication({
+        is_verified: false,
+        is_available: false,
+        created_at: new Date().toISOString(),
+        license_number: parsed.data.license,
+      });
       toast.success("Application submitted. We'll review and respond shortly.");
     } catch (err: unknown) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : "Failed to submit");
     } finally {
       setSubmitting(false);
+      setProgress(null);
     }
   };
+
+  const docRow = (d: { key: string; label: string; hint: string }) => {
+    const f = files[d.key];
+    const isVehiclePhoto = d.key.startsWith("vehicle_photo_");
+    return (
+      <label
+        key={d.key}
+        className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border bg-surface px-5 py-4 transition-colors ${
+          f ? "border-foreground/40" : "border-border hover:border-foreground/30"
+        }`}
+      >
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">
+            {d.label} <span className="text-ink-soft">*</span>
+          </div>
+          <div className="mt-0.5 truncate text-xs text-ink-soft">{f ? f.name : d.hint}</div>
+        </div>
+        <div
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
+            f ? "border-foreground bg-foreground text-background" : "border-border text-ink-muted"
+          }`}
+        >
+          {f ? <Check className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
+        </div>
+        <input
+          type="file"
+          accept={isVehiclePhoto ? "image/*" : "image/*,application/pdf"}
+          className="hidden"
+          onChange={(e) => onDoc(d.key, e.target.files?.[0] ?? null)}
+        />
+      </label>
+    );
+  };
+
+  const uploadedCount = ALL_DOCS.filter((d) => files[d.key]).length;
 
   return (
     <SiteLayout>
@@ -169,7 +224,8 @@ export default function BecomeChauffeurPage() {
             Become a <span className="text-[#e7d3a8]">chauffeur.</span>
           </h1>
           <p className="mt-5 max-w-xl text-base text-white/70">
-            Join Toronto&apos;s most discerning private fleet. Vetted professionals only.
+            Join Toronto&apos;s most discerning private fleet. Vetted professionals only — a full Ontario G licence with
+            {" "}{MIN_EXPERIENCE_YEARS}+ years, a luxury sedan or SUV on a limousine plate, and commercial coverage.
           </p>
         </div>
       </section>
@@ -239,12 +295,12 @@ export default function BecomeChauffeurPage() {
               {/* Step indicator */}
               <div>
                 <div className="flex items-center gap-1.5">
-                  {[1, 2, 3].map((n) => (
-                    <div key={n} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${n <= step ? "bg-foreground" : "bg-border"}`} />
+                  {FORM_STEPS.map((_, i) => (
+                    <div key={i} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${i + 1 <= step ? "bg-foreground" : "bg-border"}`} />
                   ))}
                 </div>
                 <div className="mt-2.5 flex items-center justify-between">
-                  <span className="text-xs text-ink-soft">Step {step} of 3</span>
+                  <span className="text-xs text-ink-soft">Step {step} of {LAST_STEP}</span>
                   <span className="text-xs font-medium text-ink-muted">{FORM_STEPS[step - 1]}</span>
                 </div>
               </div>
@@ -290,54 +346,119 @@ export default function BecomeChauffeurPage() {
                   <>
                     <div className="mb-6 text-xs uppercase tracking-[0.22em] text-ink-muted">Professional Details</div>
                     <div className="grid gap-5 md:grid-cols-2">
-                      {field("Driver's License Number *", <input className={inputCls} value={form.license} onChange={(e) => setForm({ ...form, license: e.target.value })} required />)}
-                      {field("Years of Experience *", <input type="number" min={0} max={60} className={inputCls} value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} required />)}
+                      {field("Driver's Licence Number *", <input className={inputCls} value={form.license} onChange={(e) => setForm({ ...form, license: e.target.value })} required />)}
+                      {field("Licence Class *",
+                        <select className={selectCls(form.licenceClass)} value={form.licenceClass} onChange={(e) => setForm({ ...form, licenceClass: e.target.value })} required>
+                          <option value="" disabled>Select your class</option>
+                          {LICENCE_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      )}
+                      <div className="md:col-span-2">
+                        {field(`Years of Experience * (minimum ${MIN_EXPERIENCE_YEARS})`,
+                          <input type="number" min={MIN_EXPERIENCE_YEARS} max={60} className={inputCls} value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} placeholder={String(MIN_EXPERIENCE_YEARS)} required />
+                        )}
+                      </div>
                     </div>
+                    <p className="mt-5 text-xs text-ink-soft">
+                      A full Ontario G licence held for at least {MIN_EXPERIENCE_YEARS} years is required, along with a
+                      licence to operate as a vehicle-for-hire driver and a clean driver&apos;s abstract.
+                    </p>
                   </>
                 )}
 
-                {/* Step 3 — Photo & Documents */}
+                {/* Step 3 — Vehicle */}
                 {step === 3 && (
+                  <>
+                    <div className="mb-6 text-xs uppercase tracking-[0.22em] text-ink-muted">Your Vehicle</div>
+                    <div className="grid gap-5 md:grid-cols-2">
+                      {field("Vehicle Class *",
+                        <select className={selectCls(form.vehicleClass)} value={form.vehicleClass} onChange={(e) => setForm({ ...form, vehicleClass: e.target.value })} required>
+                          <option value="" disabled>Select a class</option>
+                          {VEHICLE_CLASSES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                        </select>
+                      )}
+                      {field("Limousine Plate *", <input className={inputCls} value={form.limoPlate} onChange={(e) => setForm({ ...form, limoPlate: e.target.value.toUpperCase() })} placeholder="e.g. LIMO 123" required />)}
+                      {field("Make *", <input className={inputCls} value={form.vehicleMake} onChange={(e) => setForm({ ...form, vehicleMake: e.target.value })} placeholder="Cadillac" required />)}
+                      {field("Model *", <input className={inputCls} value={form.vehicleModel} onChange={(e) => setForm({ ...form, vehicleModel: e.target.value })} placeholder="Escalade" required />)}
+                      {field("Year *", <input type="number" min={1980} max={2027} className={inputCls} value={form.vehicleYear} onChange={(e) => setForm({ ...form, vehicleYear: e.target.value })} placeholder="2023" required />)}
+                    </div>
+                    <p className="mt-5 text-xs text-ink-soft">
+                      Your vehicle must be a late-model luxury sedan or SUV carrying a limousine plate, with commercial
+                      insurance in good standing and a valid safety certificate.
+                    </p>
+                  </>
+                )}
+
+                {/* Step 4 — Photo & Documents */}
+                {step === 4 && (
                   <>
                     <div className="mb-6 text-xs uppercase tracking-[0.22em] text-ink-muted">Driver Photo *</div>
                     <div className="flex flex-col items-center gap-3">
-                      <label className="group relative flex h-32 w-32 cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-border bg-surface transition-colors hover:border-foreground/40">
+                      <div className="relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-border bg-surface">
                         {photoPreview ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={photoPreview} alt="Driver" className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex flex-col items-center gap-1 text-ink-soft">
                             <Camera className="h-6 w-6" />
-                            <span className="text-[11px]">Add photo</span>
+                            <span className="text-[11px]">No photo yet</span>
                           </div>
                         )}
-                        <input type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => onPhoto(e.target.files?.[0] ?? null)} />
-                      </label>
-                      {photo ? (
-                        <button type="button" onClick={() => onPhoto(null)} className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-foreground">
-                          <X className="h-3.5 w-3.5" /> Remove photo
-                        </button>
-                      ) : (
-                        <p className="text-xs text-ink-soft">A clear, front-facing headshot. Tap to take or upload.</p>
-                      )}
+                      </div>
+
+                      {/* Two explicit inputs. A single input with capture="user"
+                          forces the selfie camera on mobile and removes the
+                          library option entirely — the client asked for both. */}
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-border px-4 py-2 text-xs text-foreground transition hover:bg-muted">
+                          <Camera className="h-3.5 w-3.5" /> Take photo
+                          <input type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => onPhoto(e.target.files?.[0] ?? null)} />
+                        </label>
+                        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-border px-4 py-2 text-xs text-foreground transition hover:bg-muted">
+                          <ImageIcon className="h-3.5 w-3.5" /> Upload from photos or files
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => onPhoto(e.target.files?.[0] ?? null)} />
+                        </label>
+                        {photo && (
+                          <button type="button" onClick={() => onPhoto(null)} className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-foreground">
+                            <X className="h-3.5 w-3.5" /> Remove
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-ink-soft">A clear, front-facing headshot.</p>
                     </div>
 
                     <div className="mt-8 border-t border-border pt-7">
-                      <div className="mb-5 text-xs uppercase tracking-[0.22em] text-ink-muted">Documents (optional)</div>
-                      <div className="space-y-3">
-                        {DOCS.map((d) => (
-                          <label key={d.k} className="flex cursor-pointer items-center justify-between rounded-xl border border-border bg-surface px-5 py-4 transition-colors hover:border-foreground/30">
-                            <div>
-                              <div className="text-sm font-medium text-foreground">{d.l}</div>
-                              <div className="mt-0.5 text-xs text-ink-soft">{files[d.k] ? files[d.k]!.name : "PDF or image — click to upload"}</div>
-                            </div>
-                            <div className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${files[d.k] ? "border-foreground bg-foreground text-background" : "border-border text-ink-muted"}`}>
-                              {files[d.k] ? <Check className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
-                            </div>
-                            <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => setFiles({ ...files, [d.k]: e.target.files?.[0] ?? null })} />
-                          </label>
-                        ))}
+                      <div className="mb-1 flex items-center justify-between">
+                        <div className="text-xs uppercase tracking-[0.22em] text-ink-muted">Documents — all required</div>
+                        <span className="text-xs text-ink-soft">{uploadedCount}/{ALL_DOCS.length}</span>
                       </div>
+                      <p className="mb-5 text-xs text-ink-soft">Images or PDF, up to 10 MB each.</p>
+                      <div className="space-y-3">{DRIVER_DOCS.map(docRow)}</div>
+
+                      <div className="mb-4 mt-8 text-xs uppercase tracking-[0.22em] text-ink-muted">
+                        Vehicle Photos — all four sides
+                      </div>
+                      <div className="space-y-3">{VEHICLE_PHOTOS.map(docRow)}</div>
+                    </div>
+
+                    <div className="mt-8 border-t border-border pt-7">
+                      <label className="flex cursor-pointer items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={termsAccepted}
+                          onChange={(e) => setTermsAccepted(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#0d0d0e]"
+                        />
+                        <span className="text-xs leading-relaxed text-ink-muted">
+                          I confirm the information and documents above are accurate and mine, and I accept the{" "}
+                          <Link href="/chauffeur-terms" target="_blank" className="font-medium text-foreground underline underline-offset-2">
+                            Chauffeur Terms
+                          </Link>
+                          . I understand I drive as an independent contractor, that I am responsible for my vehicle,
+                          insurance and licensing at all times, and that SophRia may verify these documents and decline
+                          or end the arrangement if they lapse.
+                        </span>
+                      </label>
                     </div>
                   </>
                 )}
@@ -345,17 +466,22 @@ export default function BecomeChauffeurPage() {
                 {/* Nav */}
                 <div className="mt-8 flex items-center justify-between gap-3">
                   {step > 1 ? (
-                    <button type="button" onClick={() => setStep((s) => s - 1)} className="inline-flex items-center gap-2 rounded-sm border border-border px-5 py-3 text-sm text-foreground transition hover:bg-muted">
+                    <button type="button" onClick={() => setStep((s) => s - 1)} disabled={submitting} className="inline-flex items-center gap-2 rounded-sm border border-border px-5 py-3 text-sm text-foreground transition hover:bg-muted disabled:opacity-60">
                       <ArrowLeft className="h-4 w-4" /> Back
                     </button>
                   ) : <span />}
-                  {step < 3 ? (
+                  {step < LAST_STEP ? (
                     <button type="button" onClick={next} className="inline-flex items-center gap-2 rounded-sm bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]">
                       Continue <ArrowRight className="h-4 w-4" />
                     </button>
                   ) : (
                     <button type="button" onClick={onSubmit} disabled={submitting} className="inline-flex items-center gap-2 rounded-sm bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A] disabled:opacity-60">
-                      {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Submitting…</> : "Submit Application"}
+                      {submitting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          {progress ? `Uploading ${progress.done}/${progress.total}…` : "Submitting…"}
+                        </>
+                      ) : "Submit Application"}
                     </button>
                   )}
                 </div>
