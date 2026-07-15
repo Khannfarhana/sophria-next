@@ -1,6 +1,6 @@
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
-import { markBookingPaid } from "@/lib/payments";
+import { settleCheckoutSession } from "@/lib/payment-actions";
 
 // Raw-body signature verification needs the Node runtime.
 export const runtime = "nodejs";
@@ -28,19 +28,14 @@ export async function POST(request: Request) {
     case "checkout.session.completed":
     case "checkout.session.async_payment_succeeded": {
       const s = event.data.object as Stripe.Checkout.Session;
-      const bookingId = s.metadata?.booking_id;
       // No booking_id (e.g. `stripe trigger` fixtures) → 200 no-op so
       // Stripe doesn't retry. A DB failure throws → 5xx → Stripe retries.
-      if (bookingId && s.payment_status === "paid") {
-        await markBookingPaid({
-          bookingId,
-          paymentIntentId:
-            typeof s.payment_intent === "string" ? s.payment_intent : s.payment_intent?.id ?? s.id,
-          amountCents: s.amount_total ?? 0,
-          currency: s.currency ?? "cad",
-          tipCents: Math.max(0, Number(s.metadata?.tip_cents ?? 0) || 0),
-        });
-      }
+      //
+      // The payment_status === "paid" gate that used to live here is gone on
+      // purpose: a manual-capture session stays "unpaid" until capture, so that
+      // check silently dropped every held booking. settleCheckoutSession reads
+      // the PaymentIntent instead and routes to authorized-vs-paid itself.
+      if (s.metadata?.booking_id) await settleCheckoutSession(s);
       break;
     }
     default:

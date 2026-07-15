@@ -57,6 +57,9 @@ export type Database = {
           rejection_reason: string | null
           special_requests: string | null
           stops: Json
+          authorized_at: string | null
+          captured_at: string | null
+          auth_expires_at: string | null
           start_otp: string | null
           status: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id: string | null
@@ -106,6 +109,9 @@ export type Database = {
           rejection_reason?: string | null
           special_requests?: string | null
           stops?: Json
+          authorized_at?: string | null
+          captured_at?: string | null
+          auth_expires_at?: string | null
           start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null
@@ -155,6 +161,9 @@ export type Database = {
           rejection_reason?: string | null
           special_requests?: string | null
           stops?: Json
+          authorized_at?: string | null
+          captured_at?: string | null
+          auth_expires_at?: string | null
           start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null
@@ -473,7 +482,7 @@ export type Database = {
         | "cancelled"
         | "rejected"
       doc_status: "pending" | "approved" | "rejected"
-      payment_status: "pending" | "paid" | "refunded" | "failed"
+      payment_status: "pending" | "authorized" | "paid" | "refunded" | "failed"
       vehicle_type: "sedan" | "business" | "suv" | "limousine" | "party_bus"
     }
     CompositeTypes: {
@@ -614,7 +623,7 @@ export const Constants = {
         "rejected",
       ],
       doc_status: ["pending", "approved", "rejected"],
-      payment_status: ["pending", "paid", "refunded", "failed"],
+      payment_status: ["pending", "authorized", "paid", "refunded", "failed"],
       vehicle_type: ["sedan", "business", "suv", "limousine", "party_bus"],
     },
   },

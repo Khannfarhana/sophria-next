@@ -9,7 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, pickupInstant } from "@/lib/datetime";
+import { canHoldUntil } from "@/lib/payment-window";
 import { DEFAULT_TIP_RATE, round2, suggestedTip } from "@/lib/pricing";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { createCheckoutSessionAction } from "@/lib/payment-actions";
@@ -42,6 +43,11 @@ export function PaymentRequiredDialog({
 
   const b = booking;
   if (!b) return null;
+
+  // Whether this booking's funds will be held rather than taken. Mirrors the
+  // server's decision (createCheckoutSessionAction) so the button doesn't
+  // promise the wrong thing; the server is authoritative either way.
+  const willHold = canHoldUntil(pickupInstant(b.pickup_datetime).getTime());
 
   // fare_estimate is the pre-tax subtotal; HST is charged on top of it.
   const fare = Number(b.fare_estimate);
@@ -189,7 +195,9 @@ export function PaymentRequiredDialog({
           <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
             <div>
               <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Total</div>
-              <div className="mt-0.5 text-xs text-white/50">Pay in full to secure your chauffeur</div>
+              <div className="mt-0.5 text-xs text-white/50">
+                {willHold ? "Held now, charged after your ride" : "Charged now to secure your chauffeur"}
+              </div>
             </div>
             <div className="shrink-0 font-display text-3xl text-[#e7d3a8]">
               ${total.toFixed(2)}
@@ -206,7 +214,7 @@ export function PaymentRequiredDialog({
             className="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-[#e7d3a8] px-4 py-3 text-sm font-medium text-[#0d0d0e] transition hover:bg-[#f0e2c0] disabled:opacity-60 cursor-pointer"
           >
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-            Pay ${total.toFixed(2)} now
+            {willHold ? `Hold $${total.toFixed(2)}` : `Pay $${total.toFixed(2)} now`}
           </button>
           <button
             onClick={onClose}

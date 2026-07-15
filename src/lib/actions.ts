@@ -27,7 +27,12 @@ import {
   notifyBookingCancelled,
   notifyDriverApplication,
 } from "@/lib/mailer/notifications";
-import { expireOpenCheckoutSessions, refundBookingPayment } from "@/lib/payments";
+import {
+  expireOpenCheckoutSessions,
+  refundBookingPayment,
+  captureBookingPayment,
+  releaseBookingHold,
+} from "@/lib/payments";
 import { refundQuote } from "@/lib/cancellation";
 import { driverApplicationSchema, missingDocKeys, CHAUFFEUR_TERMS_VERSION } from "@/lib/driver-application";
 import { DOC_LABELS } from "@/lib/driver-docs";
@@ -398,6 +403,8 @@ export async function cancelBookingAction(bookingId: string) {
   const now = Date.now();
   const quote = refundQuote(booking, now);
   const wasPaid = booking.payment_status === "paid";
+  const wasHeld = booking.payment_status === "authorized";
+  const hadFunds = wasPaid || wasHeld;
 
   const { data: claimed, error } = await admin
     .from("bookings")
@@ -405,7 +412,7 @@ export async function cancelBookingAction(bookingId: string) {
       status: "cancelled" as const,
       cancelled_at: new Date(now).toISOString(),
       cancellation_penalty_rate: quote.rate,
-      cancellation_penalty: wasPaid ? quote.penalty : 0,
+      cancellation_penalty: hadFunds ? quote.penalty : 0,
       refund_amount: 0,
     })
     .eq("id", bookingId)
@@ -417,10 +424,27 @@ export async function cancelBookingAction(bookingId: string) {
     throw new Error("This ride can no longer be cancelled.");
   }
 
-  // Unpaid bookings have nothing to return; the penalty is recorded but not
-  // collected, since we never held the money.
+  // Three cases:
+  //
+  //   held  — nothing was ever charged, so there is nothing to refund. Capture
+  //           just the fee (Stripe releases the untaken balance automatically),
+  //           or cancel the intent outright when the cancellation is free. The
+  //           customer never waits 5-10 days for their own money back.
+  //   paid  — money is already taken (booking was beyond the hold window), so
+  //           refund the balance.
+  //   neither — the penalty is recorded but uncollected; we never held funds.
   let refunded = 0;
-  if (wasPaid && quote.refund > 0) {
+  if (wasHeld) {
+    if (quote.penalty > 0) {
+      await captureBookingPayment({
+        bookingId,
+        paymentIntentId: booking.stripe_payment_id,
+        amountCents: Math.round(quote.penalty * 100),
+      });
+    } else {
+      await releaseBookingHold(bookingId, booking.stripe_payment_id);
+    }
+  } else if (wasPaid && quote.refund > 0) {
     await refundBookingPayment({
       bookingId,
       paymentIntentId: booking.stripe_payment_id,
@@ -433,7 +457,14 @@ export async function cancelBookingAction(bookingId: string) {
   after(() => notifyBookingCancelled(bookingId));
   revalidatePath("/dashboard");
   revalidatePath("/admin");
-  return { success: true, penalty: wasPaid ? quote.penalty : 0, refund: refunded, rate: quote.rate };
+  return {
+    success: true,
+    penalty: hadFunds ? quote.penalty : 0,
+    refund: refunded,
+    /** True when the balance was released from a hold rather than refunded. */
+    released: wasHeld,
+    rate: quote.rate,
+  };
 }
 
 export async function updateDriverAvailabilityAction(isAvailable: boolean) {
@@ -744,21 +775,23 @@ export async function assignDriverAction(
     payout = Math.round(Number(bk.fare_estimate) * Number(drv.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100) / 100;
   }
 
-  // Payment wall: a driver can be assigned (or reassigned, pre-ride) only
-  // once the customer has paid the full fare.
+  // Payment wall: a driver can be assigned (or reassigned, pre-ride) only once
+  // the customer's funds are secured. 'authorized' counts — the money is held
+  // on the card and is captured when the ride completes. Requiring 'paid' here
+  // would make every held booking undispatchable.
   const { data, error } = await supabase
     .from("bookings")
     .update({ driver_id: driverId, status: "driver_assigned" as any, driver_payout: payout })
     .eq("id", bookingId)
     .in("status", ["confirmed", "driver_assigned", "accepted"])
-    .eq("payment_status", "paid")
+    .in("payment_status", ["authorized", "paid"])
     .select("id");
 
   if (error) {
     throw new Error(error.message);
   }
   if (!data || data.length === 0) {
-    throw new Error("A driver can only be assigned after the customer has paid.");
+    throw new Error("A driver can only be assigned once the customer's payment is secured.");
   }
 
   after(() => notifyDriverAssigned(bookingId));
@@ -879,18 +912,37 @@ export async function completeRideAction(rideId: string) {
 
   // Complete only an in-progress ride, and read its payout from the DB in the
   // same statement — the client no longer supplies the fare (was tamperable).
+  // The guarded update is also what makes the capture below safe to run once:
+  // only one caller can move the ride out of in_progress.
   const { data: updated, error: bookingErr } = await supabase
     .from("bookings")
     .update({ status: "completed" })
     .eq("id", rideId)
     .eq("status", "in_progress")
-    .select("id, fare_estimate, driver_payout, tip");
+    .select("id, fare_estimate, driver_payout, tip, payment_status, stripe_payment_id");
 
   if (bookingErr) {
     throw new Error(bookingErr.message);
   }
   if (!updated || updated.length === 0) {
     throw new Error("Only a ride in progress can be completed.");
+  }
+
+  // "After completing the ride we must charge" — take the funds held at booking.
+  //
+  // Deliberately after the status flip and non-fatal: the ride DID happen, and
+  // the driver must still be credited. A capture failure here (an authorization
+  // that lapsed before the ride) is an accounts problem to chase, not a reason
+  // to tell the chauffeur their completed ride didn't complete.
+  if (updated[0].payment_status === "authorized") {
+    try {
+      await captureBookingPayment({
+        bookingId: rideId,
+        paymentIntentId: updated[0].stripe_payment_id,
+      });
+    } catch (err) {
+      console.error(`[actions] capture failed for completed ride ${rideId}:`, err);
+    }
   }
 
   // Credit the payout snapshot taken at assignment (fare × commission rate at
