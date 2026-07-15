@@ -40,7 +40,7 @@ export default function ContactPage() {
         <div className="mx-auto max-w-7xl">
           <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">Contact</div>
           <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
-            We're <span className="text-[#e7d3a8]">listening.</span>
+            We&apos;re <span className="text-[#e7d3a8]">listening.</span>
           </h1>
           <p className="mt-5 max-w-xl text-base text-white/70">
             Available 24/7. Bookings answered within 30 minutes.

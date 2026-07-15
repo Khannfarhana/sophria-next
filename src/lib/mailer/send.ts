@@ -1,10 +1,20 @@
-import { getTransporter } from './transport';
-import { getSMTPConfig } from './config';
+import 'server-only';
+import { Resend } from 'resend';
+import { getResendConfig } from './config';
 import { templates } from './templates';
 import { MailOptions, MailResult } from './types';
 
+let resendInstance: Resend | null = null;
+
+function getResendClient(): Resend {
+  if (resendInstance) return resendInstance;
+  const config = getResendConfig();
+  resendInstance = new Resend(config.apiKey);
+  return resendInstance;
+}
+
 /**
- * Sends an email using Nodemailer based on environment variable configuration.
+ * Sends an email using the Resend SDK based on environment variable configuration.
  * Resolves templates if a template name is provided.
  * Catches all errors and returns a MailResult object.
  *
@@ -13,11 +23,11 @@ import { MailOptions, MailResult } from './types';
 export async function sendMail(options: MailOptions): Promise<MailResult> {
   try {
     // 1. Load config to retrieve the default "from" address
-    const config = getSMTPConfig();
+    const config = getResendConfig();
     const defaultFrom = config.from;
 
-    // 2. Instantiate/retrieve transporter
-    const transporter = getTransporter();
+    // 2. Instantiate/retrieve Resend client
+    const resend = getResendClient();
 
     // 3. Resolve template if specified
     let html = options.html;
@@ -37,28 +47,43 @@ export async function sendMail(options: MailOptions): Promise<MailResult> {
       text = rendered.text;
     }
 
-    // 4. Construct email payload
+    // 4. Adapt attachments to Resend SDK format (filename and content Buffer/base64 string)
+    const attachments = options.attachments?.map(att => ({
+      filename: att.filename,
+      content: att.content,
+    }));
+
+    // 5. Construct email payload
     const mailPayload = {
       from: options.from || defaultFrom,
       to: options.to,
       subject: options.subject,
-      html,
-      text,
+      html: html || '',
+      text: text,
       replyTo: options.replyTo,
       cc: options.cc,
       bcc: options.bcc,
-      attachments: options.attachments,
+      attachments,
     };
 
-    // 5. Send email
-    const info = await transporter.sendMail(mailPayload);
+    // 6. Send email via Resend SDK
+    const response = await resend.emails.send(mailPayload);
+
+    if (!response || response.error) {
+      const errorMsg = response?.error?.message || 'Unknown Resend SDK error';
+      console.error('[Mailer Error] Resend SDK returned error:', response?.error || 'No response returned');
+      return {
+        success: false,
+        error: errorMsg,
+      };
+    }
 
     return {
       success: true,
-      messageId: info.messageId,
+      messageId: response.data?.id,
     };
   } catch (error: unknown) {
-    console.error('[Mailer Error] Failed to send email:', error);
+    console.error('[Mailer Error] Failed to send email via Resend SDK:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),

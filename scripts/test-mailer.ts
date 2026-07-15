@@ -1,5 +1,16 @@
 import fs from 'fs';
 import path from 'path';
+import Module from 'module';
+
+// Intercept and bypass the 'server-only' import when executing as a standalone script
+const originalLoad = (Module as any)._load;
+(Module as any)._load = function (request: string, parent: any, isMain: boolean) {
+  if (request === 'server-only') {
+    return {};
+  }
+  return originalLoad(request, parent, isMain);
+};
+
 import { sendMail } from '../src/lib/mailer';
 
 // Load .env manually to populate process.env for this standalone script execution
@@ -26,33 +37,27 @@ function loadEnv() {
 
 async function run() {
   loadEnv();
-  
-  const host = process.env.SMTP_HOST;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
 
-  if (!host || !user || !pass) {
-    console.error('\nError: SMTP variables are not configured in your .env file.');
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.SMTP_FROM;
+
+  if (!apiKey || !from) {
+    console.error('\nError: Resend variables are not configured in your .env file.');
     console.error('Please configure the following in .env:');
-    console.error('- SMTP_HOST');
-    console.error('- SMTP_PORT');
-    console.error('- SMTP_USER');
-    console.error('- SMTP_PASS');
+    console.error('- RESEND_API_KEY');
     console.error('- SMTP_FROM');
     process.exit(1);
   }
 
-  console.log('Loaded SMTP Configuration:');
-  console.log(`- Host: ${host}`);
-  console.log(`- Port: ${process.env.SMTP_PORT}`);
-  console.log(`- User: ${user}`);
-  console.log(`- From: ${process.env.SMTP_FROM}`);
+  console.log('Loaded Resend Configuration:');
+  console.log(`- API Key: ${apiKey.substring(0, 6)}...`);
+  console.log(`- From: ${from}`);
   console.log('----------------------------------------');
 
-  const recipient = process.argv[2] || user;
+  const recipient = process.argv[2] || process.env.ADMIN_EMAIL || 'delivered@resend.dev';
 
   console.log('Sending test email using booking-confirmation template to:', recipient);
-  
+
   const result = await sendMail({
     to: recipient,
     subject: 'SophRia - Standalone Chauffeur Mailer Test',

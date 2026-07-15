@@ -39,7 +39,7 @@ export function Footer() {
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-white/50 mb-4">Contact</div>
             <ul className="space-y-2 text-sm text-white/70">
-              <li className="not-italic">
+              <li>
                 <address className="not-italic leading-relaxed">
                   {SITE.address.line1}
                   <br />

@@ -19,15 +19,28 @@ export const SITE = {
   tagline: "Luxury limousine & chauffeur services.",
 
   // --- Contact ---
-  phone: "+1 (437) 967-2334",
+  phone: "437-967-2334",
   phoneHref: "tel:+14379672334",
   email: "hello@sophria.ca",
   emailHref: "mailto:hello@sophria.ca",
-  whatsapp: "+1 (437) 967-2334",
+  whatsapp: "437-967-2334",
   whatsappHref: "https://wa.me/14379672334",
+  /**
+   * ⚠ CONFIRM WITH THE CLIENT. Three addresses are in play:
+   *   - 6030 Bathurst St, Unit 104, North York M2R 1Z9 — set here on 11 Jul
+   *     ("updated address and phone no").
+   *   - 1 de Boers Drive, Unit 716, North York M3J 0G6 — what the client sent
+   *     on 13 Jul AND again on 14 Jul, i.e. after that commit. Used below,
+   *     because it is the most recent instruction we have.
+   *   - Scarborough — mentioned on 15 Jul as the address given to Stripe for
+   *     business verification.
+   * Whichever is the real registered address should also match Stripe, or
+   * verification and the receipts will disagree.
+   */
   address: {
     line1: "1 de Boers Drive, Unit 716",
     line2: "North York, ON M3J 0G6",
+    city: "Toronto",
     country: "Canada",
     full: "1 de Boers Drive, Unit 716, North York, ON M3J 0G6, Canada",
   },

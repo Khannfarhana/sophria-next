@@ -4,31 +4,23 @@ This document describes how to configure, test, and use the SophRia email notifi
 
 ---
 
-## 1. SMTP Setup & Environment Configuration
+## 1. Resend Setup & Environment Configuration
 
-Email sending is handled by `nodemailer` and configured entirely via environment variables.
-
-### Port Selection
-* **Port 587 (STARTTLS):** Often blocked/timed out (`ETIMEDOUT`) by residential ISPs, cloud providers (like AWS, GCP), or office network firewalls.
-* **Port 465 (SSL/TLS):** **Recommended.** Most environments leave Port 465 open. 
+Email sending is handled by the official `resend` SDK and configured entirely via environment variables.
 
 ### Configuration Variables (`.env`)
 Add or update the following keys in your root `.env` file:
 
 ```env
-# SMTP Mailer Settings
-SMTP_HOST="smtp.gmail.com"
-SMTP_PORT="465"
-SMTP_USER="your-email@gmail.com"
-SMTP_PASS="your-16-character-app-password" # WITHOUT SPACES
-SMTP_FROM="SophRia <your-email@gmail.com>"
+# Resend Email Configuration
+RESEND_API_KEY="re_your_resend_api_key"
+SMTP_FROM="Sophria <no-reply@yourdomain.com>"
 ```
 
 > [!IMPORTANT]
-> When using a Gmail account:
-> 1. **2-Step Verification** must be **enabled** on your Google Account.
-> 2. You must generate a **16-character App Password** (under Google Account -> Security -> App Passwords).
-> 3. Enter the App Password in `SMTP_PASS` **without spaces** (e.g. `snvztvktoddswjum` instead of `snvz tvkt odds wjum`).
+> When using Resend:
+> 1. `RESEND_API_KEY` must be your Resend API Key (starts with `re_`).
+> 2. Ensure the `SMTP_FROM` address corresponds to a domain verified in your Resend Dashboard.
 
 ---
 
@@ -83,13 +75,14 @@ Available templates:
 * `'generic'`: Accepts `heading` and `body` placeholders for custom messaging.
 
 ### Standalone Command Line Testing
-A test script is provided in the repository to check SMTP credentials and send test emails.
+A test script is provided in the repository to check SMTP credentials and send test emails. Because of the `server-only` import in the mailer configuration, you must run it with the `react-server` condition. We have configured an npm script for convenience:
 
-* **Send to Default SMTP User:**
+* **Using npm script (Recommended):**
   ```bash
-  npx tsx scripts/test-mailer.ts
+  npm run test-mail recipient@domain.com
   ```
-* **Send to a Custom Recipient:**
+
+* **Using direct command:**
   ```bash
-  npx tsx scripts/test-mailer.ts recipient@domain.com
+  npx tsx --conditions=react-server scripts/test-mailer.ts recipient@domain.com
   ```
