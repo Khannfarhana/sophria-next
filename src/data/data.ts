@@ -250,6 +250,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    stops: [],
     ...cancellationDefaults,
     driver_payout: null,
     passenger_name: "Jordan Avery",
@@ -291,6 +292,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    stops: [],
     ...cancellationDefaults,
     driver_payout: null,
     passenger_name: "Priya Nair",
@@ -332,6 +334,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    stops: [],
     ...cancellationDefaults,
     driver_payout: 88, // 440 × 0.2 — snapshot from assignment
 
@@ -374,6 +377,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    stops: [],
     ...cancellationDefaults,
     driver_payout: 52, // 260 × 0.2 — snapshot from assignment
 
@@ -416,6 +420,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    stops: [],
     ...cancellationDefaults,
     driver_payout: null,
     passenger_name: "Jordan Avery",

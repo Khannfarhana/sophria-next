@@ -31,6 +31,7 @@ import { expireOpenCheckoutSessions, refundBookingPayment } from "@/lib/payments
 import { refundQuote } from "@/lib/cancellation";
 import { driverApplicationSchema, missingDocKeys, CHAUFFEUR_TERMS_VERSION } from "@/lib/driver-application";
 import { DOC_LABELS } from "@/lib/driver-docs";
+import { parseStops, routableStops, type BookingStop } from "@/lib/stops";
 
 /** Service-role client — bypasses RLS. Only ever used inside "use server"
  * actions, scoped to the caller's own rows / after an in-code auth check. */
@@ -59,6 +60,8 @@ async function computeServerFare(
     pickupText?: string | null;
     dropoffText?: string | null;
     passengerCount?: number | null;
+    /** Intermediate stops, routed through in order — they change the distance. */
+    stops?: BookingStop[];
   },
 ): Promise<{ breakdown: FareBreakdown; distanceKm: number | null; durationMin: number | null }> {
   const { data: vehicle } = await admin
@@ -71,7 +74,7 @@ async function computeServerFare(
   let distanceKm: number | null = opts.fallbackDistanceKm ?? null;
   let durationMin: number | null = null;
   if (opts.tripType !== "hourly" && opts.pickup && opts.dropoff) {
-    const dir = await getDirections(opts.pickup, opts.dropoff);
+    const dir = await getDirections(opts.pickup, opts.dropoff, routableStops(opts.stops ?? []));
     if (dir) { distanceKm = dir.distanceKm; durationMin = dir.durationMin; }
   }
 
@@ -159,12 +162,16 @@ export async function createBookingAction(data: {
   dropoffLng?: number | null;
   distanceKm?: number | null;
   durationMin?: number | null;
+  stops?: unknown;
 }) {
   const session = await requireSession();
   const supabase = getSupabaseServerClient(session);
   const userId = session.user.id;
 
   const tripType = data.tripType ?? "one_way";
+  // Never trust the client's stop list — cap, clamp and strip it. The DB check
+  // constraint enforces the 5-stop limit as well.
+  const stops = parseStops(data.stops);
   // Generated here and returned directly — clients can no longer SELECT the
   // start_otp column, so it must not appear in the returning clause.
   const startOtp = generateOtp();
@@ -180,6 +187,7 @@ export async function createBookingAction(data: {
     pickupText: data.pickup,
     dropoffText: data.dropoff,
     passengerCount: data.passengerCount,
+    stops,
   });
 
   const { data: booking, error } = await supabase
@@ -192,6 +200,9 @@ export async function createBookingAction(data: {
       dropoff_location: tripType === "hourly" ? (data.dropoff || "As directed (hourly)") : data.dropoff,
       // Store the exact picked wall clock (as UTC) — no timezone conversion.
       pickup_datetime: toStorageIso(data.datetime),
+      // Hourly trips are "as directed" — stops are the chauffeur's to follow on
+      // the day, not a fixed itinerary priced up front.
+      stops: tripType === "hourly" ? [] : stops,
       ...fareColumns(pricing.breakdown),
       passenger_name: data.passengerName,
       passenger_phone: data.passengerPhone,
@@ -311,7 +322,7 @@ export async function updateBookingLocationAction(
   // and editability, then recompute the fare — never trust a client amount.
   const { data: booking } = await admin
     .from("bookings")
-    .select("customer_id, vehicle_id, trip_type, duration_hours, status, passenger_count")
+    .select("customer_id, vehicle_id, trip_type, duration_hours, status, passenger_count, stops")
     .eq("id", bookingId)
     .single();
   if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
@@ -329,6 +340,9 @@ export async function updateBookingLocationAction(
     pickupText: data.pickup,
     dropoffText: data.dropoff,
     passengerCount: booking.passenger_count,
+    // Keep routing through the booking's existing stops — recomputing without
+    // them would quietly drop the distance they add and undercharge the ride.
+    stops: parseStops(booking.stops),
   });
 
   // Service client, not the caller's: the fare columns are guarded by

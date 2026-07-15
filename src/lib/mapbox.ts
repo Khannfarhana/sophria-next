@@ -159,13 +159,20 @@ export async function geocode(query: string): Promise<Place | null> {
   }
 }
 
-/** Driving distance/duration/geometry between two coordinates. */
+/**
+ * Driving distance/duration/geometry from pickup to drop-off, routed through
+ * any intermediate stops in order.
+ *
+ * Mapbox allows 25 coordinates per Directions request; MAX_STOPS caps us at 7
+ * (pickup + 5 + drop-off), so no chunking is needed.
+ */
 export async function getDirections(
   pickup: { lng: number; lat: number },
   dropoff: { lng: number; lat: number },
+  waypoints: { lng: number; lat: number }[] = [],
 ): Promise<Directions | null> {
   if (!mapboxEnabled) return null;
-  const coords = `${pickup.lng},${pickup.lat};${dropoff.lng},${dropoff.lat}`;
+  const coords = [pickup, ...waypoints, dropoff].map((p) => `${p.lng},${p.lat}`).join(";");
   const url = new URL(`${DIRECTIONS_BASE}/${coords}`);
   url.searchParams.set("access_token", MAPBOX_TOKEN);
   url.searchParams.set("geometries", "geojson");

@@ -56,6 +56,7 @@ export type Database = {
           rejection_notes: string | null
           rejection_reason: string | null
           special_requests: string | null
+          stops: Json
           start_otp: string | null
           status: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id: string | null
@@ -104,6 +105,7 @@ export type Database = {
           rejection_notes?: string | null
           rejection_reason?: string | null
           special_requests?: string | null
+          stops?: Json
           start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null
@@ -152,6 +154,7 @@ export type Database = {
           rejection_notes?: string | null
           rejection_reason?: string | null
           special_requests?: string | null
+          stops?: Json
           start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null

@@ -17,6 +17,7 @@ import {
   type TripType,
 } from "@/lib/pricing";
 import { refundQuote } from "@/lib/cancellation";
+import { parseStops } from "@/lib/stops";
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { toStorageIso } from "@/lib/datetime";
 import type { Booking } from "@/data/data";
@@ -153,9 +154,11 @@ export async function mockCreateBooking(input: {
   dropoffLng?: number | null;
   distanceKm?: number | null;
   durationMin?: number | null;
+  stops?: unknown;
 }) {
   const reference = newReference();
   const tt = input.tripType ?? "one_way";
+  const stops = tt === "hourly" ? [] : parseStops(input.stops);
   const startOtp = String(Math.floor(1000 + Math.random() * 9000));
   mutateDB((db) => {
     // Recompute rather than trusting input.fare, mirroring computeServerFare —
@@ -198,6 +201,7 @@ export async function mockCreateBooking(input: {
       pickup_location: input.pickup,
       dropoff_location: tt === "hourly" ? input.dropoff || "As directed (hourly)" : input.dropoff,
       pickup_datetime: toStorageIso(input.datetime),
+      stops,
       duration_hours: tt === "hourly" ? input.durationHours ?? null : null,
       flight_number: tt === "airport" ? input.flightNumber ?? null : null,
       passenger_count: null,

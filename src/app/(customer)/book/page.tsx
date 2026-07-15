@@ -9,7 +9,7 @@ import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
-import { Check, ArrowRight, ArrowLeft, Sparkles, Users, Luggage, Download } from "lucide-react";
+import { Check, ArrowRight, ArrowLeft, Sparkles, Users, Luggage, Download, Plus, X } from "lucide-react";
 import Image from "next/image";
 import { createBookingAction } from "@/lib/actions";
 import { TripTypeToggle } from "@/components/site/TripTypeToggle";
@@ -18,6 +18,7 @@ import { RideMap } from "@/components/site/RideMap";
 import { getDirections, type Place } from "@/lib/mapbox";
 import { formatDateTime } from "@/lib/datetime";
 import { priceBreakdown, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { MAX_STOPS, isFilledStop, routableStops, type BookingStop } from "@/lib/stops";
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { queries as mockDb } from "@/data/data";
@@ -46,6 +47,8 @@ type State = {
   dropoff: string;
   pickupCoords: Coords;
   dropoffCoords: Coords;
+  /** Intermediate stops, in order. Max MAX_STOPS. */
+  stops: BookingStop[];
   distanceKm: number | null;
   durationMin: number | null;
   datetime: string;
@@ -78,10 +81,19 @@ function BookFlow() {
   const [otp, setOtp] = useState<string | null>(null);
   const [s, setS] = useState<State>({
     tripType: "one_way", pickup: "", dropoff: "",
-    pickupCoords: null, dropoffCoords: null, distanceKm: null, durationMin: null,
+    pickupCoords: null, dropoffCoords: null, stops: [], distanceKm: null, durationMin: null,
     datetime: "", durationHours: HOURLY_MIN_HOURS, flightNumber: "", vehicleId: null,
     passengerName: "", passengerPhone: "", notes: "",
   });
+
+  const addStop = () =>
+    setS((prev) =>
+      prev.stops.length >= MAX_STOPS ? prev : { ...prev, stops: [...prev.stops, { address: "", lat: null, lng: null }] },
+    );
+  const removeStop = (i: number) =>
+    setS((prev) => ({ ...prev, stops: prev.stops.filter((_, n) => n !== i) }));
+  const setStop = (i: number, stop: BookingStop) =>
+    setS((prev) => ({ ...prev, stops: prev.stops.map((st, n) => (n === i ? stop : st)) }));
 
   const { data: vehicles } = useQuery<BookVehicle[]>({
     queryKey: ["vehicles-book"],
@@ -139,6 +151,10 @@ function BookFlow() {
     }
   }, [searchParams, vehicles]);
 
+  // Stable dep for the directions effect below: it must re-route when a stop's
+  // COORDINATES change, not on every keystroke in a stop's address field.
+  const stopsKey = routableStops(s.stops).map((p) => `${p.lng},${p.lat}`).join("|");
+
   // Compute driving distance/duration whenever both endpoints have coordinates.
   useEffect(() => {
     const p = s.pickupCoords, d = s.dropoffCoords;
@@ -149,12 +165,19 @@ function BookFlow() {
       return;
     }
     let cancelled = false;
-    getDirections(p, d).then((dir) => {
+    // Route through the stops so the shown distance (and therefore the fare)
+    // matches what the server recomputes.
+    getDirections(p, d, routableStops(s.stops)).then((dir) => {
       if (cancelled || !dir) return;
       setS((prev) => ({ ...prev, distanceKm: dir.distanceKm, durationMin: dir.durationMin }));
     });
     return () => { cancelled = true; };
-  }, [s.pickupCoords, s.dropoffCoords, s.tripType]);
+    // s.stops is intentionally not a dependency: it is a new array on every
+    // keystroke in a stop's address field, which would fire a Mapbox Directions
+    // request per character. stopsKey covers it — it changes only when a stop's
+    // resolved coordinates do, which is the only thing routing depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.pickupCoords, s.dropoffCoords, s.tripType, stopsKey]);
 
   const selected = vehicles?.find((v) => v.id === s.vehicleId);
   // Pearson airport trips use the official GTAA tariff — resolved here so the
@@ -187,6 +210,8 @@ function BookFlow() {
         datetime: s.datetime, fare, passengerName: s.passengerName,
         passengerPhone: s.passengerPhone, notes: s.notes,
         tripType: s.tripType,
+        // Blank rows are UI scaffolding — never send them.
+        stops: s.tripType === "hourly" ? [] : s.stops.filter(isFilledStop),
         durationHours: s.tripType === "hourly" ? s.durationHours : null,
         flightNumber: s.tripType === "airport" ? (s.flightNumber || null) : null,
         pickupLat: s.pickupCoords?.lat ?? null,
@@ -220,6 +245,9 @@ function BookFlow() {
     const rows: [string, string][] = [
       ["Trip type", tripTypeLabel(s.tripType)],
       ["Pickup", s.pickup],
+      ...(s.tripType !== "hourly"
+        ? (s.stops.filter(isFilledStop).map((st, i) => [`Stop ${i + 1}`, st.address]) as [string, string][])
+        : []),
       ...(s.tripType === "hourly"
         ? ([["Duration", `${Math.max(HOURLY_MIN_HOURS, s.durationHours)} hours`]] as [string, string][])
         : ([["Drop-off", s.dropoff]] as [string, string][])),
@@ -340,6 +368,49 @@ function BookFlow() {
                     mapTitle="Choose pickup on map"
                   />
                 </Field>
+                {/* Stops — one-way and airport only. Hourly is "as directed",
+                    so the chauffeur follows the passenger on the day rather
+                    than a fixed itinerary priced up front. */}
+                {s.tripType !== "hourly" &&
+                  s.stops.map((stop, i) => (
+                    <Field key={i} label={`Stop ${i + 1}`}>
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <AddressAutocomplete
+                            value={stop.address}
+                            onChange={(v) => setStop(i, { address: v, lat: null, lng: null })}
+                            onSelect={(p: Place) => setStop(i, { address: p.address, lat: p.lat, lng: p.lng })}
+                            placeholder="Where should we stop?"
+                            inputClassName={inputCls}
+                            mapInitial={s.pickupCoords}
+                            mapTitle={`Choose stop ${i + 1} on map`}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeStop(i)}
+                          aria-label={`Remove stop ${i + 1}`}
+                          className="mt-2.5 shrink-0 rounded-full p-1.5 text-ink-soft transition hover:bg-muted hover:text-foreground"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </Field>
+                  ))}
+                {s.tripType !== "hourly" && s.stops.length < MAX_STOPS && (
+                  <button
+                    type="button"
+                    onClick={addStop}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted transition hover:text-foreground"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add a stop
+                    <span className="text-ink-soft">
+                      ({s.stops.length}/{MAX_STOPS})
+                    </span>
+                  </button>
+                )}
+
                 {s.tripType === "hourly" ? (
                   <Field label="Duration">
                     <select className={inputCls} value={s.durationHours} onChange={(e) => setS({ ...s, durationHours: Number(e.target.value) })}>
@@ -465,6 +536,11 @@ function BookFlow() {
                     {([
                       ["Trip type", tripTypeLabel(s.tripType)],
                       ["Pickup", s.pickup],
+                      ...(s.tripType !== "hourly"
+                        ? s.stops
+                            .filter(isFilledStop)
+                            .map((st, i) => [`Stop ${i + 1}`, st.address] as [string, string])
+                        : []),
                       ...(s.tripType === "hourly"
                         ? [["Duration", `${Math.max(HOURLY_MIN_HOURS, s.durationHours)} hours`] as [string, string]]
                         : [["Drop-off", s.dropoff] as [string, string]]),
