@@ -109,9 +109,10 @@ export const vehicles: Vehicle[] = [
     luggage: 2,
     base_rate: 95,
     hourly_rate: 85,
-    features: ["Mercedes E-Class / Cadillac CT6", "Leather interior", "Bottled water", "Phone chargers"],
+    features: ["Cadillac LYRIQ / Lexus ES", "Leather interior", "Bottled water", "Phone chargers"],
     description: "Refined executive sedan for airport transfers, corporate travel, and private city rides.",
     image_url: "/vehicles/sedan.jpg",
+    sort_order: 2,
     is_active: true,
     created_at: NOW,
     updated_at: NOW,
@@ -124,9 +125,10 @@ export const vehicles: Vehicle[] = [
     luggage: 3,
     base_rate: 130,
     hourly_rate: 95,
-    features: ["Mercedes S-Class", "Extra legroom", "Privacy partition", "Onboard Wi-Fi"],
+    features: ["Mercedes S-Class / Volvo S90", "Extra legroom", "Privacy partition", "Onboard Wi-Fi"],
     description: "First-class comfort for executives and VIP airport coordination.",
     image_url: "/vehicles/business.jpg",
+    sort_order: 3,
     is_active: true,
     created_at: NOW,
     updated_at: NOW,
@@ -139,9 +141,16 @@ export const vehicles: Vehicle[] = [
     luggage: 5,
     base_rate: 130,
     hourly_rate: 120,
-    features: ["Cadillac Escalade / GMC Yukon", "Seats up to 6", "Ample luggage", "Winter-ready"],
+    features: [
+      "GMC Yukon XL / Denali",
+      "Chevrolet Suburban · Cadillac Escalade",
+      "Seats up to 6",
+      "Ample luggage",
+      "Winter-ready",
+    ],
     description: "Spacious luxury SUV for family transfers, group travel, and extra luggage capacity.",
     image_url: "/vehicles/suv.jpg",
+    sort_order: 1,
     is_active: true,
     created_at: NOW,
     updated_at: NOW,
@@ -157,6 +166,7 @@ export const vehicles: Vehicle[] = [
     features: ["Lincoln Stretch", "Mood lighting", "Premium sound", "Champagne service"],
     description: "Elegant stretch limousine — the ultimate statement for weddings and special events.",
     image_url: "/vehicles/limo.jpg",
+    sort_order: 5,
     is_active: true,
     created_at: NOW,
     updated_at: NOW,
@@ -172,6 +182,7 @@ export const vehicles: Vehicle[] = [
     features: ["Mercedes-Benz Sprinter", "Standing room", "Group transport", "Event-ready"],
     description: "Corporate shuttle and group transport for airport groups and private event transfers.",
     image_url: "/vehicles/sprinter.jpg",
+    sort_order: 4,
     is_active: true,
     created_at: NOW,
     updated_at: NOW,
@@ -532,8 +543,11 @@ export const db = {
 } as const;
 
 export const queries = {
+  // sort_order first, base_rate as the tiebreaker — mirrors the live queries.
   activeVehicles: () =>
-    [...vehicles].filter((v) => v.is_active).sort((a, b) => Number(a.base_rate) - Number(b.base_rate)),
+    [...vehicles]
+      .filter((v) => v.is_active)
+      .sort((a, b) => a.sort_order - b.sort_order || Number(a.base_rate) - Number(b.base_rate)),
   vehicleById: (id: string) => vehicles.find((v) => v.id === id) ?? null,
   vehicleByType: (type: VehicleType) => vehicles.find((v) => v.type === type) ?? null,
   bookingsByCustomer: (customerId: string) =>

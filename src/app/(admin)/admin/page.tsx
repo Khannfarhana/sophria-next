@@ -212,7 +212,7 @@ function AdminPortal() {
     queryKey: ["admin-vehicles"],
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockAdminVehicles();
-      return (await supabase.from("vehicles").select("*").order("base_rate")).data;
+      return (await supabase.from("vehicles").select("*").order("sort_order").order("base_rate")).data;
     },
   });
 

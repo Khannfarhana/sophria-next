@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
+import { BrandMark } from "@/components/site/BrandMark";
+import { SITE } from "@/lib/site-config";
 
 const NAV = [
   { href: "/", label: "Home" },
@@ -48,14 +50,16 @@ export function Navbar({ solid = false }: { solid?: boolean }) {
           isScrolled ? "py-3" : "py-5"
         }`}
       >
-        {/* Logo */}
+        {/* Wordmark — "Limousine Services" drops below sm so the mark stays
+            readable on a phone without losing the full name on desktop. */}
         <Link
           href="/"
-          className={`font-display text-2xl tracking-wide transition-colors duration-500 ${
+          aria-label={`${SITE.fullName} — home`}
+          className={`text-2xl transition-colors duration-500 ${
             onLight ? "text-foreground" : "text-white drop-shadow-sm"
           }`}
         >
-          SophRia
+          <BrandMark full subClassName="hidden text-base sm:inline" />
         </Link>
 
         {/* Floating pill nav */}

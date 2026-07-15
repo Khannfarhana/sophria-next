@@ -87,7 +87,7 @@ function BookFlow() {
     queryKey: ["vehicles-book"],
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockDb.activeVehicles();
-      const { data, error } = await supabase.from("vehicles").select("*").eq("is_active", true).order("base_rate");
+      const { data, error } = await supabase.from("vehicles").select("*").eq("is_active", true).order("sort_order").order("base_rate");
       if (error) throw error;
       return data as unknown as BookVehicle[];
     },

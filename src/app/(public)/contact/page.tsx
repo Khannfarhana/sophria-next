@@ -5,6 +5,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { MAPBOX_TOKEN } from "@/lib/mapbox";
 import { SiteLayout } from "@/components/site/SiteLayout";
+import { SITE } from "@/lib/site-config";
 import { Mail, Phone, MapPin } from "lucide-react";
 
 const schema = z.object({
@@ -106,15 +107,21 @@ export default function ContactPage() {
               <div className="space-y-5 text-sm">
                 <div className="flex gap-3">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <div className="text-ink-muted">Toronto &amp; Southern Ontario<br />Canada</div>
+                  <address className="not-italic leading-relaxed text-ink-muted">
+                    {SITE.address.line1}
+                    <br />
+                    {SITE.address.line2}
+                    <br />
+                    {SITE.address.country}
+                  </address>
                 </div>
                 <div className="flex gap-3">
                   <Phone className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <a href="tel:+14379672334" className="text-ink-muted hover:text-foreground">+1 (437) 967-2334</a>
+                  <a href={SITE.phoneHref} className="text-ink-muted hover:text-foreground">{SITE.phone}</a>
                 </div>
                 <div className="flex gap-3">
                   <Mail className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <a href="mailto:hello@sophria.com" className="text-ink-muted hover:text-foreground">hello@sophria.com</a>
+                  <a href={SITE.emailHref} className="text-ink-muted hover:text-foreground">{SITE.email}</a>
                 </div>
               </div>
               <div className="mt-5 border-t border-border pt-5 text-xs text-ink-soft">

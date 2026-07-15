@@ -406,6 +406,7 @@ export type Database = {
           is_active: boolean
           luggage: number
           name: string
+          sort_order: number
           type: Database["public"]["Enums"]["vehicle_type"]
           updated_at: string
         }
@@ -421,6 +422,7 @@ export type Database = {
           is_active?: boolean
           luggage?: number
           name: string
+          sort_order?: number
           type: Database["public"]["Enums"]["vehicle_type"]
           updated_at?: string
         }
@@ -436,6 +438,7 @@ export type Database = {
           is_active?: boolean
           luggage?: number
           name?: string
+          sort_order?: number
           type?: Database["public"]["Enums"]["vehicle_type"]
           updated_at?: string
         }

@@ -28,7 +28,7 @@ const now = () => new Date().toISOString();
 export async function mockActiveVehicles() {
   return readDB()
     .vehicles.filter((v) => v.is_active)
-    .sort((a, b) => Number(a.base_rate) - Number(b.base_rate));
+    .sort((a, b) => a.sort_order - b.sort_order || Number(a.base_rate) - Number(b.base_rate));
 }
 
 export async function mockBookingsForCustomer(customerId: string) {
@@ -86,7 +86,9 @@ export async function mockAdminDrivers() {
 }
 
 export async function mockAdminVehicles() {
-  return [...readDB().vehicles].sort((a, b) => Number(a.base_rate) - Number(b.base_rate));
+  return [...readDB().vehicles].sort(
+    (a, b) => a.sort_order - b.sort_order || Number(a.base_rate) - Number(b.base_rate),
+  );
 }
 
 export async function mockAdminKpi() {
