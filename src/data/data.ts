@@ -186,9 +186,9 @@ const driverExtras = {
   languages_spoken: null, time_availability: null, referral_name: null, photo_url: null,
 };
 export const drivers: Driver[] = [
-  { id: ID.driver1, user_id: ID.driverUser1, license_number: "ON-DR-44821", experience_years: 8, rating: 4.9, total_earnings: 18250, commission_rate: 0.2, is_available: true, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
-  { id: ID.driver2, user_id: ID.driverUser2, license_number: "ON-DR-77310", experience_years: 5, rating: 4.8, total_earnings: 12940, commission_rate: 0.2, is_available: false, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
-  { id: ID.driver3, user_id: ID.driverUser3, license_number: "ON-DR-90155", experience_years: 3, rating: 0, total_earnings: 0, commission_rate: 0.2, is_available: false, is_verified: false, created_at: NOW, updated_at: NOW, ...driverExtras },
+  { id: ID.driver1, user_id: ID.driverUser1, license_number: "ON-DR-44821", experience_years: 8, rating: 4.9, total_earnings: 18250, commission_rate: 0.75, is_available: true, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
+  { id: ID.driver2, user_id: ID.driverUser2, license_number: "ON-DR-77310", experience_years: 5, rating: 4.8, total_earnings: 12940, commission_rate: 0.75, is_available: false, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
+  { id: ID.driver3, user_id: ID.driverUser3, license_number: "ON-DR-90155", experience_years: 3, rating: 0, total_earnings: 0, commission_rate: 0.75, is_available: false, is_verified: false, created_at: NOW, updated_at: NOW, ...driverExtras },
 ];
 
 /* ================================================================== *

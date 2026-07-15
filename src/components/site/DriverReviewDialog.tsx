@@ -5,6 +5,7 @@ import { Loader2, X, FileText, ExternalLink, ShieldCheck, Star, Percent } from "
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useSupabase } from "@/hooks/use-supabase";
 import { formatDate } from "@/lib/datetime";
+import { DEFAULT_DRIVER_PAYOUT_RATE } from "@/lib/pricing";
 
 export interface ReviewDriver {
   id: string;
@@ -105,7 +106,7 @@ export function DriverReviewDialog({
     finally { setActing(false); }
   };
 
-  const storedPct = Math.round(Number(d.commission_rate ?? 0.2) * 100);
+  const storedPct = Math.round(Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100);
   const ratePct = rateEdit?.id === d.id ? rateEdit.value : String(storedPct);
   const pctNum = Number(ratePct);
   const rateValid = ratePct !== "" && Number.isFinite(pctNum) && pctNum >= 5 && pctNum <= 100;
@@ -162,10 +163,14 @@ export function DriverReviewDialog({
 
           {/* Compensation — the driver's cut of each fare; payouts are
               snapshotted per ride at assignment, so changing this only
-              affects future assignments. */}
+              affects future assignments.
+              This field is the share PAID TO THE DRIVER, not the platform's
+              commission. Reading it the other way once already set every live
+              driver to 20% (see migration 20260716130000), so the label states
+              both sides of the split explicitly. */}
           <div className="border-t border-white/10 px-6 py-4">
             <div className="mb-3 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-white/45">
-              <Percent className="h-3 w-3" /> Compensation
+              <Percent className="h-3 w-3" /> Driver&apos;s share of the fare
             </div>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2">
@@ -174,9 +179,9 @@ export function DriverReviewDialog({
                   onChange={(e) => setRateEdit({ id: d.id, value: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
                   inputMode="numeric"
                   className="w-12 bg-transparent text-center text-sm text-white focus:outline-none"
-                  aria-label="Commission percentage"
+                  aria-label="Percentage of the pre-tax fare paid to the driver"
                 />
-                <span className="text-sm text-white/50">% of fare</span>
+                <span className="text-sm text-white/50">% to driver</span>
               </div>
               <button
                 onClick={saveRate}
@@ -187,6 +192,12 @@ export function DriverReviewDialog({
               </button>
             </div>
             {!rateValid && <p className="mt-2 text-xs text-red-400">Enter a value between 5 and 100.</p>}
+            {rateValid && (
+              <p className="mt-2 text-xs text-white/55">
+                Driver keeps <span className="text-[#e7d3a8]">{pctNum}%</span> of the pre-tax fare · SophRia
+                commission <span className="text-[#e7d3a8]">{100 - pctNum}%</span>
+              </p>
+            )}
             <p className="mt-2 text-xs text-white/40">Applies to future ride assignments only — already-assigned rides keep their locked payout.</p>
           </div>
 

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { useSupabase } from "@/hooks/use-supabase";
+import { DEFAULT_DRIVER_PAYOUT_RATE } from "@/lib/pricing";
 import { StatusBadge } from "@/components/site/StatusBadge";
 import { AdminTabs } from "@/components/site/AdminTabs";
 import { DriverReviewDialog } from "@/components/site/DriverReviewDialog";
@@ -294,7 +295,7 @@ function AdminPortal() {
   const openPayoutConfig = (d: AdminDriver) => {
     if (!assignFor) return;
     const fare = Number(assignFor.fare_estimate);
-    const pct = Math.round(Number(d.commission_rate ?? 0.2) * 100);
+    const pct = Math.round(Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100);
     setPayoutDriver(d);
     setPayoutPct(String(pct));
     setPayoutAmt(((fare * pct) / 100).toFixed(2));
@@ -567,7 +568,7 @@ function AdminPortal() {
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm text-ink-muted">
-                  <span>{d.experience_years}y exp · ★ {Number(d.rating).toFixed(2)} · {Math.round(Number(d.commission_rate ?? 0.2) * 100)}%</span>
+                  <span>{d.experience_years}y exp · ★ {Number(d.rating).toFixed(2)} · {Math.round(Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100)}%</span>
                   <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground">
                     {d.is_verified ? "View" : "Review"} <ChevronRight className="h-3.5 w-3.5" />
                   </span>
@@ -609,7 +610,7 @@ function AdminPortal() {
                       <td className="p-3 font-mono text-xs">{d.license_number}</td>
                       <td className="p-3">{d.experience_years}y</td>
                       <td className="p-3">{Number(d.rating).toFixed(2)}</td>
-                      <td className="p-3">{Math.round(Number(d.commission_rate ?? 0.2) * 100)}%</td>
+                      <td className="p-3">{Math.round(Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100)}%</td>
                       <td className="p-3">${Number(d.total_earnings).toFixed(0)}</td>
                       <td className="p-3">
                         <span className={`rounded-full px-2.5 py-0.5 text-xs ${d.is_verified ? "bg-foreground text-background" : "bg-[#c9a76a]/15 text-[#8a6d33]"}`}>
@@ -810,7 +811,7 @@ function AdminPortal() {
                   <div className="flex items-center gap-2 text-xs text-ink-muted">
                     <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{Number(payoutDriver.rating).toFixed(2)}</span>
                     <span>· {payoutDriver.experience_years}y exp</span>
-                    <span>· default {Math.round(Number(payoutDriver.commission_rate ?? 0.2) * 100)}%</span>
+                    <span>· default {Math.round(Number(payoutDriver.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100)}%</span>
                   </div>
                 </div>
                 <div className="ml-auto shrink-0 text-right">
@@ -876,7 +877,7 @@ function AdminPortal() {
                             <div className="flex items-center gap-2 text-xs text-ink-muted">
                               <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{Number(d.rating).toFixed(2)}</span>
                               <span>· {d.experience_years}y exp</span>
-                              <span>· {Math.round(Number(d.commission_rate ?? 0.2) * 100)}%</span>
+                              <span>· {Math.round(Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100)}%</span>
                               <span>· {d.is_available ? "Online" : "Offline"}</span>
                             </div>
                             {d.profile?.email && <div className="mt-0.5 truncate text-xs text-ink-soft">{d.profile.email}</div>}
