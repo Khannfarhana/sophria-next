@@ -16,11 +16,15 @@ export type Database = {
     Tables: {
       bookings: {
         Row: {
+          airport_fee: number
+          base_fare: number | null
           created_at: string
           customer_id: string
           distance_km: number | null
           driver_id: string | null
           driver_payout: number | null
+          markup_amount: number
+          tax_amount: number
           dropoff_lat: number | null
           dropoff_lng: number | null
           dropoff_location: string
@@ -55,11 +59,15 @@ export type Database = {
           vehicle_id: string | null
         }
         Insert: {
+          airport_fee?: number
+          base_fare?: number | null
           created_at?: string
           customer_id: string
           distance_km?: number | null
           driver_id?: string | null
           driver_payout?: number | null
+          markup_amount?: number
+          tax_amount?: number
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_location: string
@@ -94,11 +102,15 @@ export type Database = {
           vehicle_id?: string | null
         }
         Update: {
+          airport_fee?: number
+          base_fare?: number | null
           created_at?: string
           customer_id?: string
           distance_km?: number | null
           driver_id?: string | null
           driver_payout?: number | null
+          markup_amount?: number
+          tax_amount?: number
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_location?: string

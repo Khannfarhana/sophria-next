@@ -52,7 +52,9 @@ export async function createCheckoutSessionAction(
 
   const { data: booking } = await admin
     .from("bookings")
-    .select("id, reference, customer_id, status, payment_status, fare_estimate, pickup_location, dropoff_location")
+    .select(
+      "id, reference, customer_id, status, payment_status, fare_estimate, airport_fee, tax_amount, pickup_location, dropoff_location",
+    )
     .eq("id", bookingId)
     .single();
   if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
@@ -60,8 +62,14 @@ export async function createCheckoutSessionAction(
     throw new Error("This booking is not awaiting payment.");
   }
 
-  const amountCents = Math.round(Number(booking.fare_estimate) * 100);
-  if (!Number.isFinite(amountCents) || amountCents < 50) {
+  // fare_estimate is the PRE-TAX subtotal (airport fee included); HST rides on
+  // top. Both are itemised below so the Stripe receipt matches the quote the
+  // customer accepted, rather than one opaque number.
+  const airportFeeCents = Math.round(Number(booking.airport_fee ?? 0) * 100);
+  const taxCents = Math.round(Number(booking.tax_amount ?? 0) * 100);
+  const rideCents = Math.round(Number(booking.fare_estimate) * 100) - airportFeeCents;
+  const amountCents = rideCents + airportFeeCents + taxCents;
+  if (!Number.isFinite(amountCents) || amountCents < 50 || rideCents < 0) {
     throw new Error("This booking's fare cannot be charged online — please contact dispatch.");
   }
 
@@ -75,13 +83,40 @@ export async function createCheckoutSessionAction(
           quantity: 1,
           price_data: {
             currency: "cad",
-            unit_amount: amountCents,
+            unit_amount: rideCents,
             product_data: {
               name: `SophRia chauffeur booking ${booking.reference}`,
               description: `${booking.pickup_location} → ${booking.dropoff_location}`,
             },
           },
         },
+        ...(airportFeeCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "cad",
+                  unit_amount: airportFeeCents,
+                  product_data: {
+                    name: "Airport fee",
+                    description: "Levied by the airport authority on airport pickups and drop-offs",
+                  },
+                },
+              },
+            ]
+          : []),
+        ...(taxCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "cad",
+                  unit_amount: taxCents,
+                  product_data: { name: "HST (13%)", description: "Ontario Harmonized Sales Tax" },
+                },
+              },
+            ]
+          : []),
         ...(tipCents > 0
           ? [
               {

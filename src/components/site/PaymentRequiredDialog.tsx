@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatDateTime } from "@/lib/datetime";
+import { DEFAULT_TIP_RATE, round2, suggestedTip } from "@/lib/pricing";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { createCheckoutSessionAction } from "@/lib/payment-actions";
 import { mockPayBooking } from "@/lib/mock-db/actions";
@@ -31,19 +32,25 @@ export function PaymentRequiredDialog({
   onPaid: () => void;
 }) {
   const [pending, startTransition] = useTransition();
-  // Driver tip: preset dollars or "custom". Custom input strips everything
-  // but digits and a dot, so it can never go negative — the server and the
-  // DB check-constraint enforce tip >= 0 regardless.
-  const [tipChoice, setTipChoice] = useState<number | "custom">(0);
+  // Driver tip: a percentage of the pre-tax fare, or "custom" dollars. Tipping
+  // is a strong expectation in this market, so DEFAULT_TIP_RATE is preselected
+  // rather than "no tip" — the customer can still lower or clear it. The custom
+  // input strips everything but digits and a dot, so it can never go negative;
+  // the server and the DB check-constraint enforce tip >= 0 regardless.
+  const [tipChoice, setTipChoice] = useState<number | "custom">(DEFAULT_TIP_RATE);
   const [customTip, setCustomTip] = useState("");
 
   const b = booking;
   if (!b) return null;
 
+  // fare_estimate is the pre-tax subtotal; HST is charged on top of it.
   const fare = Number(b.fare_estimate);
-  const rawTip = tipChoice === "custom" ? Number(customTip) : tipChoice;
-  const tip = Number.isFinite(rawTip) && rawTip > 0 ? Math.round(rawTip * 100) / 100 : 0;
-  const total = fare + tip;
+  const tax = Number(b.tax_amount ?? 0);
+  const tip =
+    tipChoice === "custom"
+      ? (Number.isFinite(Number(customTip)) && Number(customTip) > 0 ? round2(Number(customTip)) : 0)
+      : suggestedTip(fare, tipChoice);
+  const total = fare + tax + tip;
 
   const pay = () =>
     startTransition(async () => {
@@ -62,11 +69,11 @@ export function PaymentRequiredDialog({
     });
 
   const TIP_PRESETS: { label: string; value: number | "custom" }[] = [
-    { label: "No tip", value: 0 },
-    { label: "+$2", value: 2 },
-    { label: "+$5", value: 5 },
-    { label: "+$10", value: 10 },
+    { label: "15%", value: 0.15 },
+    { label: "18%", value: 0.18 },
+    { label: "20%", value: 0.2 },
     { label: "Custom", value: "custom" },
+    { label: "No tip", value: 0 },
   ];
 
   return (
@@ -125,7 +132,9 @@ export function PaymentRequiredDialog({
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-white/45">
             <HandCoins className="h-3.5 w-3.5" /> Add a tip for your chauffeur
           </div>
-          <p className="mt-1 text-xs text-white/40">Optional — 100% goes directly to your driver.</p>
+          <p className="mt-1 text-xs text-white/40">
+            Calculated on the pre-tax fare. 100% goes directly to your driver.
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {TIP_PRESETS.map((t) => (
               <button
@@ -165,6 +174,12 @@ export function PaymentRequiredDialog({
             <span>Fare</span>
             <span>${fare.toFixed(2)}</span>
           </div>
+          {tax > 0 && (
+            <div className="mt-1 flex items-center justify-between text-sm text-white/60">
+              <span>HST (13%)</span>
+              <span>${tax.toFixed(2)}</span>
+            </div>
+          )}
           {tip > 0 && (
             <div className="mt-1 flex items-center justify-between text-sm text-white/60">
               <span>Driver tip</span>

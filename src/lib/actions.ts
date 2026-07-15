@@ -5,7 +5,14 @@ import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import type { Session } from "next-auth";
-import { quote, type TripType } from "@/lib/pricing";
+import {
+  priceBreakdown,
+  round2,
+  HST_RATE,
+  DEFAULT_DRIVER_PAYOUT_RATE,
+  type FareBreakdown,
+  type TripType,
+} from "@/lib/pricing";
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { getDirections } from "@/lib/mapbox";
 import { toStorageIso } from "@/lib/datetime";
@@ -50,7 +57,7 @@ async function computeServerFare(
     dropoffText?: string | null;
     passengerCount?: number | null;
   },
-): Promise<{ fare: number; distanceKm: number | null; durationMin: number | null }> {
+): Promise<{ breakdown: FareBreakdown; distanceKm: number | null; durationMin: number | null }> {
   const { data: vehicle } = await admin
     .from("vehicles")
     .select("base_rate, hourly_rate, type")
@@ -77,13 +84,24 @@ async function computeServerFare(
         })
       : null;
 
-  const fare = quote(opts.tripType, vehicle, {
+  const breakdown = priceBreakdown(opts.tripType, vehicle, {
     durationHours: opts.durationHours ?? undefined,
     distanceKm: distanceKm ?? undefined,
     tariff,
     passengerCount: opts.passengerCount,
   });
-  return { fare, distanceKm, durationMin };
+  return { breakdown, distanceKm, durationMin };
+}
+
+/** Fare columns for a booking insert/update, from a computed breakdown. */
+function fareColumns(b: FareBreakdown) {
+  return {
+    fare_estimate: b.subtotal,
+    base_fare: b.baseFare,
+    markup_amount: b.markup,
+    airport_fee: b.airportFee,
+    tax_amount: b.hst,
+  };
 }
 
 function getSupabaseServerClient(session: Session) {
@@ -171,7 +189,7 @@ export async function createBookingAction(data: {
       dropoff_location: tripType === "hourly" ? (data.dropoff || "As directed (hourly)") : data.dropoff,
       // Store the exact picked wall clock (as UTC) — no timezone conversion.
       pickup_datetime: toStorageIso(data.datetime),
-      fare_estimate: pricing.fare,
+      ...fareColumns(pricing.breakdown),
       passenger_name: data.passengerName,
       passenger_phone: data.passengerPhone,
       special_requests: data.notes,
@@ -284,7 +302,6 @@ export async function updateBookingLocationAction(
   },
 ) {
   const session = await requireSession();
-  const supabase = getSupabaseServerClient(session);
   const admin = getServiceClient();
 
   // Load the booking's own vehicle + trip type (server truth), verify ownership
@@ -311,7 +328,10 @@ export async function updateBookingLocationAction(
     passengerCount: booking.passenger_count,
   });
 
-  const { error } = await supabase
+  // Service client, not the caller's: the fare columns are guarded by
+  // prevent_booking_payout_tamper, which only exempts admins and the service
+  // role. Ownership and editability are verified above.
+  const { error } = await admin
     .from("bookings")
     .update({
       pickup_location: data.pickup,
@@ -322,14 +342,14 @@ export async function updateBookingLocationAction(
       dropoff_lng: data.dropoffLng,
       distance_km: pricing.distanceKm,
       duration_min: pricing.durationMin ?? data.durationMin,
-      fare_estimate: pricing.fare,
+      ...fareColumns(pricing.breakdown),
     })
     .eq("id", bookingId);
 
   if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard");
-  return { success: true, fare: pricing.fare };
+  return { success: true, fare: pricing.breakdown.subtotal };
 }
 
 export async function cancelBookingAction(bookingId: string) {
@@ -495,9 +515,22 @@ export async function updateBookingFareAction(bookingId: string, fare: number, r
   // so the driver-payout snapshot can never go stale either). The change and
   // its reason are stored on the booking and communicated inside the
   // payment-request email — never as a separate fare email.
+  //
+  // An override replaces the whole pre-tax subtotal with a negotiated price, so
+  // the computed breakdown no longer describes it: base_fare becomes the quoted
+  // figure and the markup/airport lines collapse into it. HST is always
+  // recomputed — leaving stale tax here would charge the wrong total.
   const { data, error } = await supabase
     .from("bookings")
-    .update({ fare_estimate: newFare, previous_fare: oldFare, fare_change_reason: reason.trim() })
+    .update({
+      fare_estimate: newFare,
+      base_fare: newFare,
+      markup_amount: 0,
+      airport_fee: 0,
+      tax_amount: round2(newFare * HST_RATE),
+      previous_fare: oldFare,
+      fare_change_reason: reason.trim(),
+    })
     .eq("id", bookingId)
     .in("status", ["pending", "confirmed"])
     .eq("payment_status", "pending")
@@ -607,7 +640,7 @@ export async function assignDriverAction(
       .single();
     if (bkErr || !bk) throw new Error("Booking not found");
 
-    payout = Math.round(Number(bk.fare_estimate) * Number(drv.commission_rate ?? 0.2) * 100) / 100;
+    payout = Math.round(Number(bk.fare_estimate) * Number(drv.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100) / 100;
   }
 
   // Payment wall: a driver can be assigned (or reassigned, pre-ride) only
@@ -768,7 +801,7 @@ export async function completeRideAction(rideId: string) {
   const payout =
     row.driver_payout != null
       ? Number(row.driver_payout)
-      : Math.round(Number(row.fare_estimate ?? 0) * Number(driver.commission_rate ?? 0.2) * 100) / 100;
+      : Math.round(Number(row.fare_estimate ?? 0) * Number(driver.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100) / 100;
   const earned = Math.round((payout + Math.max(0, Number(row.tip ?? 0))) * 100) / 100;
   const newEarnings = Number(driver.total_earnings ?? 0) + earned;
 

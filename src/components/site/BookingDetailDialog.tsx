@@ -15,7 +15,7 @@ import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
 import { StatusBadge } from "@/components/site/StatusBadge";
 import { getDirections, type Place } from "@/lib/mapbox";
 import { formatDateTime } from "@/lib/datetime";
-import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { priceBreakdown, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
@@ -44,7 +44,10 @@ export interface BookingRow {
   pickup_datetime: string;
   duration_hours: number | null;
   flight_number: string | null;
+  /** Pre-tax subtotal (markup + airport fee included). HST rides on top. */
   fare_estimate: number;
+  airport_fee?: number | null;
+  tax_amount?: number | null;
   passenger_name: string | null;
   passenger_phone: string | null;
   driver_id?: string | null;
@@ -145,9 +148,10 @@ export function BookingDetailDialog({
           distanceKm,
         })
       : null;
-  // Live fare: re-quote from distance when we have vehicle rates, else keep stored fare.
+  // Live fare: re-quote from distance when we have vehicle rates, else keep the
+  // stored fare. Both are pre-tax subtotals, matching bookings.fare_estimate.
   const liveFare = editing && vehicleRates
-    ? quote(tripType, vehicleRates, { durationHours: b.duration_hours ?? HOURLY_MIN_HOURS, distanceKm: distanceKm ?? undefined, tariff: editTariff })
+    ? priceBreakdown(tripType, vehicleRates, { durationHours: b.duration_hours ?? HOURLY_MIN_HOURS, distanceKm: distanceKm ?? undefined, tariff: editTariff }).subtotal
     : Number(b.fare_estimate);
 
   const save = async () => {

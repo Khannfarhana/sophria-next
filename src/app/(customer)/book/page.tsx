@@ -17,7 +17,7 @@ import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
 import { RideMap } from "@/components/site/RideMap";
 import { getDirections, type Place } from "@/lib/mapbox";
 import { formatDateTime } from "@/lib/datetime";
-import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { priceBreakdown, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { queries as mockDb } from "@/data/data";
@@ -169,7 +169,15 @@ function BookFlow() {
           distanceKm: s.distanceKm,
         })
       : null;
-  const fare = quote(s.tripType, selected, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff });
+  // Mirrors the server's authoritative breakdown (actions.ts:computeServerFare).
+  // `fare` stays the pre-tax subtotal — the server ignores the client's number
+  // and recomputes, so this is display-only.
+  const bd = priceBreakdown(s.tripType, selected, {
+    durationHours: s.durationHours,
+    distanceKm: s.distanceKm ?? undefined,
+    tariff: pearsonTariff,
+  });
+  const fare = bd.subtotal;
 
   const confirm = async () => {
     if (!user || !s.vehicleId) return;
@@ -221,6 +229,11 @@ function BookFlow() {
       ["Date & time", dt],
       ["Vehicle", selected?.name ?? "—"],
       ["Passenger", s.passengerName],
+      ["Fare", `$${(bd.baseFare + bd.markup).toFixed(2)}`],
+      ...(bd.airportFee > 0
+        ? ([["Airport fee", `$${bd.airportFee.toFixed(2)}`]] as [string, string][])
+        : []),
+      ["HST (13%)", `$${bd.hst.toFixed(2)}`],
       ...(s.passengerPhone ? ([["Phone", s.passengerPhone]] as [string, string][]) : []),
     ];
     const rowsHtml = rows
@@ -254,8 +267,8 @@ function BookFlow() {
     <div class="top"><div class="brand">Soph<b>Ria</b></div><div class="sub">Chauffeur Receipt</div></div>
     <div class="ref"><div><div class="lbl">Booking reference</div><div class="num">${esc(reference)}</div></div><div class="badge">${esc(tripTypeLabel(s.tripType))}</div></div>
     <table>${rowsHtml}</table>
-    <div class="total"><div class="lbl">Estimated fare</div><div class="amt">$${fare.toFixed(2)} CAD</div></div>
-    <div class="foot">This is an estimate, not a paid invoice. Fares are subject to 13% HST; tolls, parking and waiting time are extra where applicable. Once dispatch confirms your reservation you'll receive a secure payment link. Thank you for choosing SophRia — luxury limousine &amp; chauffeur services across Toronto &amp; Southern Ontario.</div>
+    <div class="total"><div class="lbl">Estimated total (incl. HST)</div><div class="amt">$${bd.total.toFixed(2)} CAD</div></div>
+    <div class="foot">This is an estimate, not a paid invoice. The total includes 13% HST; tolls, parking and waiting time are extra where applicable, and gratuity is added at payment. Once dispatch confirms your reservation you'll receive a secure payment link. Thank you for choosing SophRia — luxury limousine &amp; chauffeur services across Toronto &amp; Southern Ontario.</div>
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print()},350)}<\/script>
 </body></html>`;
@@ -413,8 +426,8 @@ function BookFlow() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="text-base font-medium text-foreground">${quote(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff }).toFixed(0)}</div>
-                        <div className="text-xs text-ink-soft">{s.tripType === "hourly" ? `CAD · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD est."}</div>
+                        <div className="text-base font-medium text-foreground">${priceBreakdown(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff }).total.toFixed(0)}</div>
+                        <div className="text-xs text-ink-soft">{s.tripType === "hourly" ? `incl. HST · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD incl. HST"}</div>
                       </div>
                       {s.vehicleId === v.id && (
                         <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground">
@@ -461,9 +474,14 @@ function BookFlow() {
                       ["Date & Time", formatDateTime(s.datetime)],
                       ["Vehicle", selected?.name ?? "—"],
                       ["Passenger", s.passengerName],
-                      ["Estimated fare", `$${fare.toFixed(2)} CAD`],
+                      ["Fare", `$${(bd.baseFare + bd.markup).toFixed(2)}`],
+                      ...(bd.airportFee > 0
+                        ? [["Airport fee", `$${bd.airportFee.toFixed(2)}`] as [string, string]]
+                        : []),
+                      ["HST (13%)", `$${bd.hst.toFixed(2)}`],
+                      ["Estimated total", `$${bd.total.toFixed(2)} CAD`],
                     ] as [string, string][]).map(([k, v]) => (
-                      <div key={k} className={`flex justify-between py-2.5 ${k !== "Estimated fare" ? "border-b border-border" : "font-medium text-foreground"}`}>
+                      <div key={k} className={`flex justify-between py-2.5 ${k !== "Estimated total" ? "border-b border-border" : "font-medium text-foreground"}`}>
                         <span className="text-ink-muted">{k}</span>
                         <span className="text-right text-foreground">{v}</span>
                       </div>
@@ -475,11 +493,11 @@ function BookFlow() {
                   </div>
                   {pearsonTariff != null ? (
                     <p className="text-xs text-ink-soft">
-                      Priced by the official Toronto Pearson airport tariff (taxes included). Highway 407 tolls at cost, requested stops $10 per 10 minutes, and a $15 surcharge for more than 4 passengers or excess baggage may apply.
+                      Priced from the official Toronto Pearson airport tariff, with the airport fee and 13% HST shown separately above. Highway 407 tolls at cost, requested stops $10 per 10 minutes, and a $15 surcharge for more than 4 passengers or excess baggage may apply.
                     </p>
                   ) : (
                     <p className="text-xs text-ink-soft">
-                      Fares are subject to 13% HST. Highway tolls (incl. 407), parking, airport fees, waiting time beyond the complimentary period and additional stops are extra where applicable.
+                      The total above includes 13% HST. Highway tolls (incl. 407), parking, waiting time beyond the complimentary period and additional stops are extra where applicable. Gratuity is added at payment.
                     </p>
                   )}
                 </div>
