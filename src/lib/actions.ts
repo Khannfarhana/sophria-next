@@ -27,7 +27,8 @@ import {
   notifyBookingCancelled,
   notifyDriverApplication,
 } from "@/lib/mailer/notifications";
-import { expireOpenCheckoutSessions } from "@/lib/payments";
+import { expireOpenCheckoutSessions, refundBookingPayment } from "@/lib/payments";
+import { refundQuote } from "@/lib/cancellation";
 
 /** Service-role client — bypasses RLS. Only ever used inside "use server"
  * actions, scoped to the caller's own rows / after an in-code auth check. */
@@ -352,28 +353,71 @@ export async function updateBookingLocationAction(
   return { success: true, fare: pricing.breakdown.subtotal };
 }
 
+/** Statuses a customer may still cancel from — never one already under way. */
+const CANCELLABLE = ["pending", "confirmed", "driver_assigned", "accepted"] as const;
+
+/**
+ * Cancel a booking, applying the penalty ladder and refunding the balance.
+ *
+ * Previously this only flipped `status` and left the money captured, against a
+ * published refund policy. Order matters here: the cancellation is CLAIMED with
+ * a conditional update first, so exactly one caller can proceed to the refund;
+ * issuing the Stripe refund before the claim would let two concurrent cancels
+ * both pay out.
+ *
+ * Uses the service client because the penalty/refund columns are guarded by
+ * prevent_booking_payout_tamper; ownership is checked in code.
+ */
 export async function cancelBookingAction(bookingId: string) {
   const session = await requireSession();
-  const supabase = getSupabaseServerClient(session);
+  const admin = getServiceClient();
 
-  // Only pre-ride bookings can be cancelled — never one already in progress.
-  const { data, error } = await supabase
+  const { data: booking } = await admin
     .from("bookings")
-    .update({ status: "cancelled" })
+    .select("id, customer_id, status, payment_status, pickup_datetime, fare_estimate, tax_amount, tip, stripe_payment_id")
     .eq("id", bookingId)
-    .in("status", ["pending", "confirmed", "driver_assigned", "accepted"])
+    .single();
+  if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
+
+  const now = Date.now();
+  const quote = refundQuote(booking, now);
+  const wasPaid = booking.payment_status === "paid";
+
+  const { data: claimed, error } = await admin
+    .from("bookings")
+    .update({
+      status: "cancelled" as const,
+      cancelled_at: new Date(now).toISOString(),
+      cancellation_penalty_rate: quote.rate,
+      cancellation_penalty: wasPaid ? quote.penalty : 0,
+      refund_amount: 0,
+    })
+    .eq("id", bookingId)
+    .in("status", CANCELLABLE)
     .select("id");
 
-  if (error) {
-    throw new Error(error.message);
-  }
-  if (!data || data.length === 0) {
+  if (error) throw new Error(error.message);
+  if (!claimed || claimed.length === 0) {
     throw new Error("This ride can no longer be cancelled.");
+  }
+
+  // Unpaid bookings have nothing to return; the penalty is recorded but not
+  // collected, since we never held the money.
+  let refunded = 0;
+  if (wasPaid && quote.refund > 0) {
+    await refundBookingPayment({
+      bookingId,
+      paymentIntentId: booking.stripe_payment_id,
+      amountCents: Math.round(quote.refund * 100),
+      penalty: quote.penalty,
+    });
+    refunded = quote.refund;
   }
 
   after(() => notifyBookingCancelled(bookingId));
   revalidatePath("/dashboard");
-  return { success: true };
+  revalidatePath("/admin");
+  return { success: true, penalty: wasPaid ? quote.penalty : 0, refund: refunded, rate: quote.rate };
 }
 
 export async function updateDriverAvailabilityAction(isAvailable: boolean) {

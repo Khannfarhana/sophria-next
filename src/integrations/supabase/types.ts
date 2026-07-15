@@ -18,6 +18,11 @@ export type Database = {
         Row: {
           airport_fee: number
           base_fare: number | null
+          cancellation_penalty: number | null
+          cancellation_penalty_rate: number | null
+          cancelled_at: string | null
+          refund_amount: number | null
+          stripe_refund_id: string | null
           created_at: string
           customer_id: string
           distance_km: number | null
@@ -61,6 +66,11 @@ export type Database = {
         Insert: {
           airport_fee?: number
           base_fare?: number | null
+          cancellation_penalty?: number | null
+          cancellation_penalty_rate?: number | null
+          cancelled_at?: string | null
+          refund_amount?: number | null
+          stripe_refund_id?: string | null
           created_at?: string
           customer_id: string
           distance_km?: number | null
@@ -104,6 +114,11 @@ export type Database = {
         Update: {
           airport_fee?: number
           base_fare?: number | null
+          cancellation_penalty?: number | null
+          cancellation_penalty_rate?: number | null
+          cancelled_at?: string | null
+          refund_amount?: number | null
+          stripe_refund_id?: string | null
           created_at?: string
           customer_id?: string
           distance_km?: number | null

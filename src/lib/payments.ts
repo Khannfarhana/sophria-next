@@ -33,6 +33,61 @@ export async function expireOpenCheckoutSessions(bookingId: string) {
 }
 
 /**
+ * Refund part or all of a captured payment, and record it on the booking.
+ *
+ * Call ONLY after atomically claiming the cancellation (a conditional status
+ * update that no concurrent caller can also win) — Stripe's idempotency key is
+ * a second line of defence against a double refund, not the first.
+ *
+ * Returns the refund id, or null when there was nothing to refund. Throws if
+ * Stripe rejects: the caller must know the money did not move.
+ */
+export async function refundBookingPayment(opts: {
+  bookingId: string;
+  paymentIntentId: string | null;
+  amountCents: number;
+  penalty: number;
+}): Promise<string | null> {
+  if (opts.amountCents <= 0) return null;
+  // markBookingPaid stores the PaymentIntent id, but falls back to the Checkout
+  // session id if Stripe ever omits it — only a pi_ can be refunded.
+  if (!opts.paymentIntentId?.startsWith("pi_")) {
+    console.error(
+      `[payments] booking ${opts.bookingId} has no refundable payment intent (${opts.paymentIntentId}) — refund must be issued by hand`,
+    );
+    return null;
+  }
+
+  const refund = await getStripe().refunds.create(
+    {
+      payment_intent: opts.paymentIntentId,
+      amount: opts.amountCents,
+      reason: "requested_by_customer",
+      metadata: { booking_id: opts.bookingId, penalty_cad: String(opts.penalty) },
+    },
+    { idempotencyKey: `refund:${opts.bookingId}` },
+  );
+
+  const admin = svc();
+  const { error } = await admin
+    .from("bookings")
+    .update({
+      // A partial refund still leaves the booking settled, but "refunded" is the
+      // only terminal value the enum offers; the kept penalty is recorded in
+      // cancellation_penalty rather than inferred from payment_status.
+      payment_status: "refunded" as const,
+      refund_amount: opts.amountCents / 100,
+      stripe_refund_id: refund.id,
+    })
+    .eq("id", opts.bookingId);
+  if (error) {
+    // The money HAS moved — never surface this as a failed refund.
+    console.error(`[payments] refund ${refund.id} succeeded but booking update failed:`, error.message);
+  }
+  return refund.id;
+}
+
+/**
  * Idempotent "payment landed" write, shared by the Stripe webhook and
  * verifyCheckoutSessionAction — whichever runs first wins; the loser is a
  * no-op. The conditional update on payment_status='pending' is the

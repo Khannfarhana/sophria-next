@@ -48,6 +48,7 @@ export interface BookingRow {
   fare_estimate: number;
   airport_fee?: number | null;
   tax_amount?: number | null;
+  tip?: number | null;
   passenger_name: string | null;
   passenger_phone: string | null;
   driver_id?: string | null;

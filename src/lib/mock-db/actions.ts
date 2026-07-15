@@ -16,6 +16,7 @@ import {
   DEFAULT_DRIVER_PAYOUT_RATE,
   type TripType,
 } from "@/lib/pricing";
+import { refundQuote } from "@/lib/cancellation";
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { toStorageIso } from "@/lib/datetime";
 import type { Booking } from "@/data/data";
@@ -212,6 +213,11 @@ export async function mockCreateBooking(input: {
       tax_amount: bd ? bd.hst : round2(input.fare * HST_RATE),
       previous_fare: null,
       fare_change_reason: null,
+      cancelled_at: null,
+      cancellation_penalty_rate: null,
+      cancellation_penalty: null,
+      refund_amount: null,
+      stripe_refund_id: null,
       driver_payout: null,
       tip: 0,
       passenger_name: input.passengerName,
@@ -236,8 +242,21 @@ export async function mockCancelBooking(id: string) {
   if (!booking || !CANCELLABLE.has(booking.status)) {
     throw new Error("This ride can no longer be cancelled.");
   }
-  patchBooking(id, { status: "cancelled" });
-  return { success: true };
+  // Mirrors cancelBookingAction: apply the ladder, record the split. No money
+  // moves in mock mode, so the refund is only bookkeeping.
+  const quote = refundQuote(booking);
+  const wasPaid = booking.payment_status === "paid";
+  const refund = wasPaid ? quote.refund : 0;
+
+  patchBooking(id, {
+    status: "cancelled",
+    cancelled_at: now(),
+    cancellation_penalty_rate: quote.rate,
+    cancellation_penalty: wasPaid ? quote.penalty : 0,
+    refund_amount: refund,
+    ...(refund > 0 ? { payment_status: "refunded" as const } : {}),
+  });
+  return { success: true, penalty: wasPaid ? quote.penalty : 0, refund, rate: quote.rate };
 }
 
 export async function mockBookingOtp(bookingId: string): Promise<string | null> {

@@ -185,6 +185,12 @@ const driverExtras = {
   city_of_residence: null, province: null, work_authorization: null,
   languages_spoken: null, time_availability: null, referral_name: null, photo_url: null,
 };
+
+/** Cancellation audit columns — null until a booking is actually cancelled. */
+const cancellationDefaults = {
+  cancelled_at: null, cancellation_penalty_rate: null, cancellation_penalty: null,
+  refund_amount: null, stripe_refund_id: null,
+};
 export const drivers: Driver[] = [
   { id: ID.driver1, user_id: ID.driverUser1, license_number: "ON-DR-44821", experience_years: 8, rating: 4.9, total_earnings: 18250, commission_rate: 0.75, is_available: true, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
   { id: ID.driver2, user_id: ID.driverUser2, license_number: "ON-DR-77310", experience_years: 5, rating: 4.8, total_earnings: 12940, commission_rate: 0.75, is_available: false, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },
@@ -229,6 +235,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    ...cancellationDefaults,
     driver_payout: null,
     passenger_name: "Jordan Avery",
     passenger_phone: "+1 (416) 555-0123",
@@ -269,6 +276,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    ...cancellationDefaults,
     driver_payout: null,
     passenger_name: "Priya Nair",
     passenger_phone: "+1 (647) 555-0456",
@@ -309,6 +317,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    ...cancellationDefaults,
     driver_payout: 88, // 440 × 0.2 — snapshot from assignment
 
     passenger_name: "Jordan Avery",
@@ -350,6 +359,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    ...cancellationDefaults,
     driver_payout: 52, // 260 × 0.2 — snapshot from assignment
 
     passenger_name: "Priya Nair",
@@ -391,6 +401,7 @@ export const bookings: Booking[] = [
     tip: 0,
     previous_fare: null,
     fare_change_reason: null,
+    ...cancellationDefaults,
     driver_payout: null,
     passenger_name: "Jordan Avery",
     passenger_phone: "+1 (416) 555-0123",

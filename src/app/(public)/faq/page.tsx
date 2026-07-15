@@ -26,13 +26,15 @@ const SECTIONS = [
     items: [
       { q: "Which payment methods do you accept?", a: "All major credit and debit cards in CAD via Stripe. Corporate accounts with monthly billing are available upon approval." },
       { q: "When am I charged?", a: "Once dispatch confirms your booking, you'll receive a secure payment link — the full fare is paid online to secure your booking before a chauffeur is assigned." },
-      { q: "What extra charges can apply?", a: "HST (13%) applies to all services. Highway tolls (including Highway 407), parking and airport fees are additional where applicable. Waiting time beyond the complimentary period is billed at the applicable hourly rate, and gratuity may be added for larger groups or special events." },
+      { q: "What extra charges can apply?", a: "HST (13%) applies to all services and is shown as its own line on your quote. Airport pickups and drop-offs carry a $17.25 airport fee. Highway tolls (including Highway 407) and parking are additional where applicable, and waiting time beyond the complimentary period is billed at the applicable hourly rate." },
+      { q: "Is gratuity included?", a: "No — gratuity is separate and entirely yours to choose. At payment you can add a tip, with 15% suggested; 100% of it goes directly to your chauffeur." },
     ],
   },
   {
     title: "Cancellation",
     items: [
-      { q: "What is your cancellation policy?", a: "Cancellations more than 24 hours before pickup receive a full refund; 12–24 hours before pickup, a 50% refund; less than 12 hours, no refund. Weddings, proms and other special-event bookings have separate terms — contact dispatch for details." },
+      { q: "What is your cancellation policy?", a: "Cancel more than 12 hours before pickup and there's no charge — you're refunded in full. Inside that window a cancellation fee applies: 25% within 12 hours of pickup, 50% within 6 hours, 75% within 15 minutes, and 100% at or after the pickup time. The fee is calculated on the fare and its HST; any tip is always refunded in full. Weddings, proms and other special-event bookings have separate terms — contact dispatch for details." },
+      { q: "How do refunds work?", a: "Refunds are issued automatically to your original payment method as soon as you cancel, less any cancellation fee. They typically appear within 5–10 business days, depending on your bank." },
     ],
   },
   {
