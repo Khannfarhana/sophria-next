@@ -57,7 +57,15 @@ export function Footer() {
 
         <div className="mt-16 flex flex-col items-start justify-between gap-4 border-t border-white/10 pt-8 text-xs text-white/40 md:flex-row md:items-center">
           <div>© {new Date().getFullYear()} {SITE.fullName}. All rights reserved.</div>
-          <div>Toronto · Ontario · Canada</div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Link href="/terms" className="hover:text-white/70">Terms</Link>
+            <span aria-hidden>·</span>
+            <Link href="/privacy" className="hover:text-white/70">Privacy</Link>
+            <span aria-hidden>·</span>
+            <Link href="/refund-policy" className="hover:text-white/70">Refunds</Link>
+            <span aria-hidden>·</span>
+            <Link href="/chauffeur-terms" className="hover:text-white/70">Chauffeur Terms</Link>
+          </div>
         </div>
       </div>
     </footer>

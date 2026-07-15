@@ -33,7 +33,7 @@ const SECTIONS = [
   {
     title: "Cancellation",
     items: [
-      { q: "What is your cancellation policy?", a: "Cancel more than 12 hours before pickup and there's no charge — you're refunded in full. Inside that window a cancellation fee applies: 25% within 12 hours of pickup, 50% within 6 hours, 75% within 15 minutes, and 100% at or after the pickup time. The fee is calculated on the fare and its HST; any tip is always refunded in full. Weddings, proms and other special-event bookings have separate terms — contact dispatch for details." },
+      { q: "What is your cancellation policy?", a: "Cancel more than 12 hours before pickup and there's no charge — you're refunded in full. Inside that window a cancellation fee applies: 25% within 12 hours of pickup, 50% within 6 hours, 75% within 15 minutes, and 100% at or after the pickup time. The fee is calculated on the fare and its HST; any tip is always refunded in full. Weddings, proms and other special-event bookings have separate terms — see our Refund & Cancellation Policy, or contact dispatch." },
       { q: "How do refunds work?", a: "Refunds are issued automatically to your original payment method as soon as you cancel, less any cancellation fee. They typically appear within 5–10 business days, depending on your bank." },
     ],
   },
