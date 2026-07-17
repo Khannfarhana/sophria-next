@@ -9,7 +9,15 @@
  * client-side hydration the pages used to do) so callers can swap 1:1.
  */
 import { readDB, mutateDB, newId, newReference } from "./store";
-import { quote, type TripType } from "@/lib/pricing";
+import {
+  priceBreakdown,
+  round2,
+  HST_RATE,
+  DEFAULT_DRIVER_PAYOUT_RATE,
+  type TripType,
+} from "@/lib/pricing";
+import { refundQuote } from "@/lib/cancellation";
+import { parseStops } from "@/lib/stops";
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { toStorageIso } from "@/lib/datetime";
 import type { Booking } from "@/data/data";
@@ -21,7 +29,7 @@ const now = () => new Date().toISOString();
 export async function mockActiveVehicles() {
   return readDB()
     .vehicles.filter((v) => v.is_active)
-    .sort((a, b) => Number(a.base_rate) - Number(b.base_rate));
+    .sort((a, b) => a.sort_order - b.sort_order || Number(a.base_rate) - Number(b.base_rate));
 }
 
 export async function mockBookingsForCustomer(customerId: string) {
@@ -79,7 +87,9 @@ export async function mockAdminDrivers() {
 }
 
 export async function mockAdminVehicles() {
-  return [...readDB().vehicles].sort((a, b) => Number(a.base_rate) - Number(b.base_rate));
+  return [...readDB().vehicles].sort(
+    (a, b) => a.sort_order - b.sort_order || Number(a.base_rate) - Number(b.base_rate),
+  );
 }
 
 export async function mockAdminKpi() {
@@ -144,11 +154,40 @@ export async function mockCreateBooking(input: {
   dropoffLng?: number | null;
   distanceKm?: number | null;
   durationMin?: number | null;
+  stops?: unknown;
 }) {
   const reference = newReference();
   const tt = input.tripType ?? "one_way";
+  const stops = tt === "hourly" ? [] : parseStops(input.stops);
   const startOtp = String(Math.floor(1000 + Math.random() * 9000));
   mutateDB((db) => {
+    // Recompute rather than trusting input.fare, mirroring computeServerFare —
+    // otherwise mock bookings carry no tax and the two paths disagree.
+    const vehicle = db.vehicles.find((v) => v.id === input.vehicleId);
+    const tariff =
+      tt === "airport"
+        ? resolvePearsonTariff({
+            pickup: input.pickup,
+            dropoff: input.dropoff,
+            pickupCoords:
+              input.pickupLat != null && input.pickupLng != null
+                ? { lat: input.pickupLat, lng: input.pickupLng }
+                : undefined,
+            dropoffCoords:
+              input.dropoffLat != null && input.dropoffLng != null
+                ? { lat: input.dropoffLat, lng: input.dropoffLng }
+                : undefined,
+            distanceKm: input.distanceKm,
+          })
+        : null;
+    const bd = vehicle
+      ? priceBreakdown(tt, vehicle, {
+          durationHours: input.durationHours ?? undefined,
+          distanceKm: input.distanceKm ?? undefined,
+          tariff,
+        })
+      : null;
+
     db.bookings.unshift({
       id: newId(),
       reference,
@@ -162,6 +201,7 @@ export async function mockCreateBooking(input: {
       pickup_location: input.pickup,
       dropoff_location: tt === "hourly" ? input.dropoff || "As directed (hourly)" : input.dropoff,
       pickup_datetime: toStorageIso(input.datetime),
+      stops,
       duration_hours: tt === "hourly" ? input.durationHours ?? null : null,
       flight_number: tt === "airport" ? input.flightNumber ?? null : null,
       passenger_count: null,
@@ -172,9 +212,21 @@ export async function mockCreateBooking(input: {
       dropoff_lng: input.dropoffLng ?? null,
       distance_km: input.distanceKm ?? null,
       duration_min: input.durationMin ?? null,
-      fare_estimate: input.fare,
+      fare_estimate: bd ? bd.subtotal : input.fare,
+      base_fare: bd ? bd.baseFare : input.fare,
+      markup_amount: bd ? bd.markup : 0,
+      airport_fee: bd ? bd.airportFee : 0,
+      tax_amount: bd ? bd.hst : round2(input.fare * HST_RATE),
       previous_fare: null,
       fare_change_reason: null,
+      cancelled_at: null,
+      cancellation_penalty_rate: null,
+      cancellation_penalty: null,
+      refund_amount: null,
+      stripe_refund_id: null,
+      authorized_at: null,
+      captured_at: null,
+      auth_expires_at: null,
       driver_payout: null,
       tip: 0,
       passenger_name: input.passengerName,
@@ -199,8 +251,23 @@ export async function mockCancelBooking(id: string) {
   if (!booking || !CANCELLABLE.has(booking.status)) {
     throw new Error("This ride can no longer be cancelled.");
   }
-  patchBooking(id, { status: "cancelled" });
-  return { success: true };
+  // Mirrors cancelBookingAction: apply the ladder, record the split. No money
+  // moves in mock mode, so the refund is only bookkeeping.
+  const quote = refundQuote(booking);
+  const wasPaid = booking.payment_status === "paid";
+  const refund = wasPaid ? quote.refund : 0;
+
+  patchBooking(id, {
+    status: "cancelled",
+    cancelled_at: now(),
+    cancellation_penalty_rate: quote.rate,
+    cancellation_penalty: wasPaid ? quote.penalty : 0,
+    refund_amount: refund,
+    ...(refund > 0 ? { payment_status: "refunded" as const } : {}),
+  });
+  // settlementFailed mirrors cancelBookingAction's shape so callers can read
+  // one result type. No money moves here, so it can never be true.
+  return { success: true, penalty: wasPaid ? quote.penalty : 0, refund, rate: quote.rate, settlementFailed: false };
 }
 
 export async function mockBookingOtp(bookingId: string): Promise<string | null> {
@@ -253,14 +320,15 @@ export async function mockUpdateBookingLocation(
           distanceKm: data.distanceKm,
         })
       : null;
-  const fare = vehicle
-    ? quote(tripType, vehicle, {
+  const bd = vehicle
+    ? priceBreakdown(tripType, vehicle, {
         durationHours: booking!.duration_hours ?? undefined,
         distanceKm: data.distanceKm ?? undefined,
         tariff,
         passengerCount: booking!.passenger_count,
       })
-    : Number(booking?.fare_estimate ?? 0);
+    : null;
+  const fare = bd ? bd.subtotal : Number(booking?.fare_estimate ?? 0);
 
   patchBooking(id, {
     pickup_location: data.pickup,
@@ -272,6 +340,14 @@ export async function mockUpdateBookingLocation(
     distance_km: data.distanceKm,
     duration_min: data.durationMin,
     fare_estimate: fare,
+    ...(bd
+      ? {
+          base_fare: bd.baseFare,
+          markup_amount: bd.markup,
+          airport_fee: bd.airportFee,
+          tax_amount: bd.hst,
+        }
+      : {}),
   });
   return { success: true, fare };
 }
@@ -292,8 +368,14 @@ export async function mockUpdateBookingFare(id: string, fare: number, reason: st
   ) {
     throw new Error("The fare can only be changed before the booking is paid.");
   }
+  // Mirrors updateBookingFareAction: an override replaces the pre-tax subtotal,
+  // so the breakdown collapses into base_fare and HST is recomputed.
   patchBooking(id, {
     fare_estimate: newFare,
+    base_fare: newFare,
+    markup_amount: 0,
+    airport_fee: 0,
+    tax_amount: round2(newFare * HST_RATE),
     previous_fare: Number(booking.fare_estimate),
     fare_change_reason: reason.trim(),
   });
@@ -331,7 +413,8 @@ export async function mockPayBooking(id: string, tipDollars?: number) {
     db.payments.push({
       id: newId(),
       booking_id: id,
-      amount: Number(b.fare_estimate ?? 0) + tip,
+      // Ledger records the full charged total: pre-tax fare + HST + tip.
+      amount: round2(Number(b.fare_estimate ?? 0) + Number(b.tax_amount ?? 0) + tip),
       currency: "CAD",
       status: "paid",
       stripe_id: stripeId,
@@ -369,7 +452,7 @@ export async function mockAssignDriver(id: string, driverId: string, payoutOverr
     }
   } else {
     payout =
-      Math.round(Number(booking.fare_estimate) * Number(driver.commission_rate ?? 0.2) * 100) / 100;
+      Math.round(Number(booking.fare_estimate) * Number(driver.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100) / 100;
   }
   patchBooking(id, { driver_id: driverId, status: "driver_assigned", driver_payout: payout });
   return { success: true };
@@ -484,7 +567,7 @@ export async function mockCompleteRide(id: string) {
       const payout =
         b.driver_payout != null
           ? Number(b.driver_payout)
-          : Math.round(Number(b.fare_estimate ?? 0) * Number(d.commission_rate ?? 0.2) * 100) / 100;
+          : Math.round(Number(b.fare_estimate ?? 0) * Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100) / 100;
       earned = Math.round((payout + Math.max(0, Number(b.tip ?? 0))) * 100) / 100;
       d.total_earnings = Number(d.total_earnings) + earned;
     }

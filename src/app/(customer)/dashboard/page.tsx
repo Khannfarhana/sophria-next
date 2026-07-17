@@ -10,6 +10,7 @@ import { SiteLayout } from "@/components/site/SiteLayout";
 import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { BookingDetailDialog, type BookingRow } from "@/components/site/BookingDetailDialog";
 import { PaymentRequiredDialog } from "@/components/site/PaymentRequiredDialog";
+import { CancelBookingDialog } from "@/components/site/CancelBookingDialog";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
 import { StatusBadge } from "@/components/site/StatusBadge";
@@ -32,6 +33,7 @@ function Dashboard() {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<BookingRow | null>(null);
   const [payFor, setPayFor] = useState<BookingRow | null>(null);
+  const [cancelFor, setCancelFor] = useState<BookingRow | null>(null);
   // Auto-open the payment popup once per page load; after dismissal the
   // per-card "Pay now" banner is the persistent affordance. Captured once
   // (lazy init) so a return-from-Stripe load (?payment=...) shows only the
@@ -51,8 +53,14 @@ function Dashboard() {
       // the detail dialog fetches it via getBookingOtpAction.
       const { data, error } = await supabase
         .from("bookings")
-        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, fare_estimate, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name, type, base_rate, hourly_rate)")
-        .order("pickup_datetime", { ascending: false });
+        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, fare_estimate, base_fare, markup_amount, airport_fee, tax_amount, tip, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, stops, vehicles(name, type, base_rate, hourly_rate)")
+        // Filter by owner explicitly. This relied on RLS alone, but the
+        // bookings policy also (correctly) grants a driver their ASSIGNED
+        // rides — so anyone holding both roles saw their driver work listed
+        // under "My Bookings". RLS still backstops this; the filter is what
+        // makes the query mean "bookings I placed".
+        .eq("customer_id", user!.id)
+        .order("created_at", { ascending: false });
       if (error) throw error;
 
       const rows = (data ?? []).map((b) => {
@@ -68,9 +76,27 @@ function Dashboard() {
 
   const cancel = async (id: string) => {
     try {
-      if (SUPABASE_ENABLED) await cancelBookingAction(id);
-      else await mockCancelBooking(id);
-      toast.success("Booking cancelled");
+      const res = SUPABASE_ENABLED ? await cancelBookingAction(id) : await mockCancelBooking(id);
+      // Report what actually happened server-side, not what the dialog
+      // predicted — the tier is resolved against the server's clock.
+      const refund = Number(res?.refund ?? 0);
+      const penalty = Number(res?.penalty ?? 0);
+      // The ride is cancelled either way; only the money is unresolved. Say so
+      // rather than report a $0 fee as though everything settled — an admin has
+      // been emailed and will pick it up.
+      if (res?.settlementFailed) {
+        toast.success("Booking cancelled — we'll confirm the payment details with you by email.");
+      } else if (penalty > 0) {
+        toast.success(
+          `Booking cancelled — $${penalty.toFixed(2)} cancellation fee applied` +
+            (refund > 0 ? `, $${refund.toFixed(2)} refunded` : ""),
+        );
+      } else if (refund > 0) {
+        toast.success(`Booking cancelled — $${refund.toFixed(2)} refunded in full`);
+      } else {
+        toast.success("Booking cancelled");
+      }
+      setCancelFor(null);
       qc.invalidateQueries({ queryKey: ["my-bookings"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to cancel booking");
@@ -242,7 +268,7 @@ function Dashboard() {
                       <div className="mt-3 flex items-center justify-between">
                         {cancellable ? (
                           <button
-                            onClick={(e) => { e.stopPropagation(); cancel(b.id); }}
+                            onClick={(e) => { e.stopPropagation(); setCancelFor(b); }}
                             className="cursor-pointer text-xs text-ink-soft underline underline-offset-2 hover:text-foreground"
                           >
                             Cancel booking
@@ -270,6 +296,13 @@ function Dashboard() {
         open={!!selected}
         onClose={() => setSelected(null)}
         onUpdated={() => qc.invalidateQueries({ queryKey: ["my-bookings"] })}
+      />
+
+      <CancelBookingDialog
+        booking={cancelFor}
+        open={!!cancelFor}
+        onClose={() => setCancelFor(null)}
+        onConfirm={cancel}
       />
 
       <PaymentRequiredDialog

@@ -16,11 +16,20 @@ export type Database = {
     Tables: {
       bookings: {
         Row: {
+          airport_fee: number
+          base_fare: number | null
+          cancellation_penalty: number | null
+          cancellation_penalty_rate: number | null
+          cancelled_at: string | null
+          refund_amount: number | null
+          stripe_refund_id: string | null
           created_at: string
           customer_id: string
           distance_km: number | null
           driver_id: string | null
           driver_payout: number | null
+          markup_amount: number
+          tax_amount: number
           dropoff_lat: number | null
           dropoff_lng: number | null
           dropoff_location: string
@@ -47,6 +56,10 @@ export type Database = {
           rejection_notes: string | null
           rejection_reason: string | null
           special_requests: string | null
+          stops: Json
+          authorized_at: string | null
+          captured_at: string | null
+          auth_expires_at: string | null
           start_otp: string | null
           status: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id: string | null
@@ -55,11 +68,20 @@ export type Database = {
           vehicle_id: string | null
         }
         Insert: {
+          airport_fee?: number
+          base_fare?: number | null
+          cancellation_penalty?: number | null
+          cancellation_penalty_rate?: number | null
+          cancelled_at?: string | null
+          refund_amount?: number | null
+          stripe_refund_id?: string | null
           created_at?: string
           customer_id: string
           distance_km?: number | null
           driver_id?: string | null
           driver_payout?: number | null
+          markup_amount?: number
+          tax_amount?: number
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_location: string
@@ -86,6 +108,10 @@ export type Database = {
           rejection_notes?: string | null
           rejection_reason?: string | null
           special_requests?: string | null
+          stops?: Json
+          authorized_at?: string | null
+          captured_at?: string | null
+          auth_expires_at?: string | null
           start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null
@@ -94,11 +120,20 @@ export type Database = {
           vehicle_id?: string | null
         }
         Update: {
+          airport_fee?: number
+          base_fare?: number | null
+          cancellation_penalty?: number | null
+          cancellation_penalty_rate?: number | null
+          cancelled_at?: string | null
+          refund_amount?: number | null
+          stripe_refund_id?: string | null
           created_at?: string
           customer_id?: string
           distance_km?: number | null
           driver_id?: string | null
           driver_payout?: number | null
+          markup_amount?: number
+          tax_amount?: number
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_location?: string
@@ -125,6 +160,10 @@ export type Database = {
           rejection_notes?: string | null
           rejection_reason?: string | null
           special_requests?: string | null
+          stops?: Json
+          authorized_at?: string | null
+          captured_at?: string | null
+          auth_expires_at?: string | null
           start_otp?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           stripe_payment_id?: string | null
@@ -200,15 +239,23 @@ export type Database = {
           is_available: boolean
           is_verified: boolean
           languages_spoken: string | null
+          licence_class: string | null
           license_number: string
+          limo_plate: string | null
           province: string | null
           rating: number
           photo_url: string | null
           referral_name: string | null
+          terms_accepted_at: string | null
+          terms_version: string | null
           time_availability: string | null
           total_earnings: number
           updated_at: string
           user_id: string
+          vehicle_class: string | null
+          vehicle_make: string | null
+          vehicle_model: string | null
+          vehicle_year: number | null
           work_authorization: string | null
         }
         Insert: {
@@ -220,15 +267,23 @@ export type Database = {
           is_available?: boolean
           is_verified?: boolean
           languages_spoken?: string | null
+          licence_class?: string | null
           license_number: string
+          limo_plate?: string | null
           province?: string | null
           rating?: number
           photo_url?: string | null
           referral_name?: string | null
+          terms_accepted_at?: string | null
+          terms_version?: string | null
           time_availability?: string | null
           total_earnings?: number
           updated_at?: string
           user_id: string
+          vehicle_class?: string | null
+          vehicle_make?: string | null
+          vehicle_model?: string | null
+          vehicle_year?: number | null
           work_authorization?: string | null
         }
         Update: {
@@ -240,15 +295,23 @@ export type Database = {
           is_available?: boolean
           is_verified?: boolean
           languages_spoken?: string | null
+          licence_class?: string | null
           license_number?: string
+          limo_plate?: string | null
           province?: string | null
           rating?: number
           photo_url?: string | null
           referral_name?: string | null
+          terms_accepted_at?: string | null
+          terms_version?: string | null
           time_availability?: string | null
           total_earnings?: number
           updated_at?: string
           user_id?: string
+          vehicle_class?: string | null
+          vehicle_make?: string | null
+          vehicle_model?: string | null
+          vehicle_year?: number | null
           work_authorization?: string | null
         }
         Relationships: []
@@ -355,6 +418,7 @@ export type Database = {
           is_active: boolean
           luggage: number
           name: string
+          sort_order: number
           type: Database["public"]["Enums"]["vehicle_type"]
           updated_at: string
         }
@@ -370,6 +434,7 @@ export type Database = {
           is_active?: boolean
           luggage?: number
           name: string
+          sort_order?: number
           type: Database["public"]["Enums"]["vehicle_type"]
           updated_at?: string
         }
@@ -385,6 +450,7 @@ export type Database = {
           is_active?: boolean
           luggage?: number
           name?: string
+          sort_order?: number
           type?: Database["public"]["Enums"]["vehicle_type"]
           updated_at?: string
         }
@@ -416,7 +482,7 @@ export type Database = {
         | "cancelled"
         | "rejected"
       doc_status: "pending" | "approved" | "rejected"
-      payment_status: "pending" | "paid" | "refunded" | "failed"
+      payment_status: "pending" | "authorized" | "paid" | "refunded" | "failed"
       vehicle_type: "sedan" | "business" | "suv" | "limousine" | "party_bus"
     }
     CompositeTypes: {
@@ -557,7 +623,7 @@ export const Constants = {
         "rejected",
       ],
       doc_status: ["pending", "approved", "rejected"],
-      payment_status: ["pending", "paid", "refunded", "failed"],
+      payment_status: ["pending", "authorized", "paid", "refunded", "failed"],
       vehicle_type: ["sedan", "business", "suv", "limousine", "party_bus"],
     },
   },

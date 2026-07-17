@@ -5,8 +5,8 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { MAPBOX_TOKEN } from "@/lib/mapbox";
 import { SiteLayout } from "@/components/site/SiteLayout";
-import { Mail, Phone, MapPin } from "lucide-react";
 import { SITE } from "@/lib/site-config";
+import { Mail, Phone, MapPin } from "lucide-react";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Required").max(100),
@@ -107,11 +107,13 @@ export default function ContactPage() {
               <div className="space-y-5 text-sm">
                 <div className="flex gap-3">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
-                  <div className="text-ink-muted">
-                    {SITE.address.line1}<br />
-                    {SITE.address.line2}<br />
-                    {SITE.address.city}, Canada
-                  </div>
+                  <address className="not-italic leading-relaxed text-ink-muted">
+                    {SITE.address.line1}
+                    <br />
+                    {SITE.address.line2}
+                    <br />
+                    {SITE.address.country}
+                  </address>
                 </div>
                 <div className="flex gap-3">
                   <Phone className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />

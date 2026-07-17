@@ -11,7 +11,8 @@ import { StatusBadge } from "@/components/site/StatusBadge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { RideMap, navigateUrl } from "@/components/site/RideMap";
-import { formatDateTime, formatDate, isSameUtcDay } from "@/lib/datetime";
+import { formatDateTime, formatDate, isPickupToday, minutesUntilPickup } from "@/lib/datetime";
+import { parseStops } from "@/lib/stops";
 import { MapPin, Navigation, Play, Check, X, KeyRound, Loader2 } from "lucide-react";
 import {
   updateDriverAvailabilityAction,
@@ -61,6 +62,8 @@ interface DriverRide {
   dropoff_lng: number | null;
   distance_km: number | null;
   duration_min: number | null;
+  /** Ordered intermediate stops — the driver's itinerary for the ride. */
+  stops?: unknown;
   vehicles?: { name: string | null } | null;
 }
 
@@ -99,7 +102,7 @@ function DriverPortal() {
         .from("bookings")
         // Explicit columns — never expose start_otp OR the customer fare to
         // the driver's client; drivers see their payout (driver_payout) only.
-        .select("id, reference, customer_id, driver_id, vehicle_id, pickup_location, dropoff_location, pickup_datetime, status, driver_payout, tip, passenger_name, passenger_phone, special_requests, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
+        .select("id, reference, customer_id, driver_id, vehicle_id, pickup_location, dropoff_location, pickup_datetime, status, driver_payout, tip, passenger_name, passenger_phone, special_requests, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, stops, vehicles(name)")
         .eq("driver_id", driver!.id)
         .order("pickup_datetime");
       if (error) throw error;
@@ -169,10 +172,17 @@ function DriverPortal() {
   const list = rides ?? [];
   const newRequests = list.filter((r) => r.status === "driver_assigned");
   // "confirmed" kept for rides accepted before the dedicated status existed.
+  // The query is ordered by pickup ascending, which is what an operational
+  // "next ride up" queue wants. Completed work reads the other way round —
+  // newest first — so it gets its own sort rather than showing the driver
+  // their oldest-ever ride at the top.
   const upcoming = list.filter((r) => r.status === "accepted" || r.status === "confirmed" || r.status === "in_progress");
-  const completed = list.filter((r) => r.status === "completed");
+  const completed = list
+    .filter((r) => r.status === "completed")
+    .slice()
+    .sort((a, b) => b.pickup_datetime.localeCompare(a.pickup_datetime));
 
-  const today = list.filter((r) => isSameUtcDay(r.pickup_datetime));
+  const today = list.filter((r) => isPickupToday(r.pickup_datetime));
 
   return (
     <SiteLayout solidNav>
@@ -357,9 +367,11 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
   const isInProgress = ride.status === "in_progress";
   // Only pre-ride states can start — never completed/cancelled/rejected rides.
   const startable = ["accepted", "confirmed", "driver_assigned"].includes(ride.status);
-  const pickupTime = new Date(ride.pickup_datetime);
-  // eslint-disable-next-line react-hooks/purity
-  const canStart = startable && Date.now() >= pickupTime.getTime() - 30 * 60_000; // 30 min before pickup
+  // Must resolve the true instant: pickup_datetime holds the picked wall clock
+  // encoded as UTC ("6pm" -> "18:00Z"), which as a bare instant is 2pm Toronto
+  // in summer. Comparing it to Date.now() directly unlocked Start Ride four
+  // hours early, letting a driver start (and so bill) a ride before it existed.
+  const canStart = startable && minutesUntilPickup(ride.pickup_datetime) <= 30;
   const [otpMode, setOtpMode] = useState(false);
   const [otp, setOtp] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
@@ -394,6 +406,7 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
           dropoff={ride.dropoff_location}
           pickupCoords={ride.pickup_lng != null && ride.pickup_lat != null ? { lng: ride.pickup_lng, lat: ride.pickup_lat } : null}
           dropoffCoords={ride.dropoff_lng != null && ride.dropoff_lat != null ? { lng: ride.dropoff_lng, lat: ride.dropoff_lat } : null}
+          stops={parseStops(ride.stops)}
           height={280}
         />
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-foreground">

@@ -16,12 +16,16 @@ export const metadata: Metadata = {
 // Marketing rates — kept consistent with the fare engine: hourly = the
 // vehicle's hourly_rate; airport "from" = base_rate + $15 airport fee
 // (see src/lib/pricing.ts and the vehicles table).
+// Order mirrors vehicles.sort_order (20260716160000), NOT price: SUV leads
+// everywhere, because "executive clients don't like to search, what comes
+// first that's it". This list is hand-maintained — /fleet, /book and the admin
+// read sort_order from the DB, but this page is static marketing copy.
 const FLEET_RATES = [
+  { name: "Luxury SUV", hr: 120, airport: 145 },
   { name: "Executive Sedan", hr: 85, airport: 110 },
   { name: "Business Class", hr: 95, airport: 145 },
-  { name: "Luxury SUV", hr: 120, airport: 145 },
-  { name: "Stretch Limousine", hr: 180, airport: 275 },
   { name: "Executive Sprinter", hr: 220, airport: 335 },
+  { name: "Stretch Limousine", hr: 180, airport: 275 },
 ];
 
 const PACKAGES = [

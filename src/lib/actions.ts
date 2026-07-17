@@ -5,10 +5,19 @@ import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import type { Session } from "next-auth";
-import { quote, type TripType } from "@/lib/pricing";
+import {
+  priceBreakdown,
+  round2,
+  HST_RATE,
+  DEFAULT_DRIVER_PAYOUT_RATE,
+  driverPayoutBase,
+  type FareBreakdown,
+  type TripType,
+} from "@/lib/pricing";
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { getDirections } from "@/lib/mapbox";
-import { toStorageIso } from "@/lib/datetime";
+import { toStorageIso, isFuturePickup } from "@/lib/datetime";
+import { loadPricingConfig } from "@/lib/pricing-config.server";
 import {
   notifyBookingCreated,
   notifyBookingConfirmed,
@@ -19,8 +28,18 @@ import {
   notifyRideCompleted,
   notifyBookingCancelled,
   notifyDriverApplication,
+  notifyPaymentCaptureFailed,
 } from "@/lib/mailer/notifications";
-import { expireOpenCheckoutSessions } from "@/lib/payments";
+import {
+  expireOpenCheckoutSessions,
+  refundBookingPayment,
+  captureBookingPayment,
+  releaseBookingHold,
+} from "@/lib/payments";
+import { refundQuote } from "@/lib/cancellation";
+import { driverApplicationSchema, missingDocKeys, CHAUFFEUR_TERMS_VERSION } from "@/lib/driver-application";
+import { DOC_LABELS, isKnownDocType } from "@/lib/driver-docs";
+import { parseStops, routableStops, type BookingStop } from "@/lib/stops";
 
 /** Service-role client — bypasses RLS. Only ever used inside "use server"
  * actions, scoped to the caller's own rows / after an in-code auth check. */
@@ -49,19 +68,24 @@ async function computeServerFare(
     pickupText?: string | null;
     dropoffText?: string | null;
     passengerCount?: number | null;
+    luggageCount?: number | null;
+    /** Intermediate stops, routed through in order — they change the distance. */
+    stops?: BookingStop[];
   },
-): Promise<{ fare: number; distanceKm: number | null; durationMin: number | null }> {
-  const { data: vehicle } = await admin
-    .from("vehicles")
-    .select("base_rate, hourly_rate, type")
-    .eq("id", opts.vehicleId)
-    .single();
+): Promise<{ breakdown: FareBreakdown; distanceKm: number | null; durationMin: number | null }> {
+  // The authoritative fare — this is what the customer is charged, so both the
+  // vehicle rates AND the rate card are read server-side from the database.
+  // Never from the client, and never from a constant the client also holds.
+  const [{ data: vehicle }, config] = await Promise.all([
+    admin.from("vehicles").select("base_rate, hourly_rate, type, tariff_multiplier, luggage").eq("id", opts.vehicleId).single(),
+    loadPricingConfig(),
+  ]);
   if (!vehicle) throw new Error("Vehicle not found");
 
   let distanceKm: number | null = opts.fallbackDistanceKm ?? null;
   let durationMin: number | null = null;
   if (opts.tripType !== "hourly" && opts.pickup && opts.dropoff) {
-    const dir = await getDirections(opts.pickup, opts.dropoff);
+    const dir = await getDirections(opts.pickup, opts.dropoff, routableStops(opts.stops ?? []));
     if (dir) { distanceKm = dir.distanceKm; durationMin = dir.durationMin; }
   }
 
@@ -77,13 +101,40 @@ async function computeServerFare(
         })
       : null;
 
-  const fare = quote(opts.tripType, vehicle, {
-    durationHours: opts.durationHours ?? undefined,
-    distanceKm: distanceKm ?? undefined,
-    tariff,
-    passengerCount: opts.passengerCount,
-  });
-  return { fare, distanceKm, durationMin };
+  const breakdown = priceBreakdown(
+    opts.tripType,
+    vehicle,
+    {
+      durationHours: opts.durationHours ?? undefined,
+      distanceKm: distanceKm ?? undefined,
+      tariff,
+      passengerCount: opts.passengerCount,
+      luggageCount: opts.luggageCount,
+    },
+    config,
+  );
+  return { breakdown, distanceKm, durationMin };
+}
+
+/**
+ * Fare columns for a booking insert/update, from a computed breakdown.
+ *
+ * base_fare carries the tariff surcharge. There is no surcharge column, and
+ * every reader (BookingDetailDialog, the admin) derives the base as
+ * `fare_estimate - markup - airport_fee` — so leaving the surcharge out of all
+ * four would make those three stop summing to fare_estimate and quietly go
+ * missing from the receipt. Folding it into base_fare keeps the invariant
+ * base_fare + markup_amount + airport_fee = fare_estimate true, and matches
+ * what the customer is shown anyway: one base fare, never a "$15" line.
+ */
+function fareColumns(b: FareBreakdown) {
+  return {
+    fare_estimate: b.subtotal,
+    base_fare: round2(b.baseFare + b.surcharge),
+    markup_amount: b.markup,
+    airport_fee: b.airportFee,
+    tax_amount: b.hst,
+  };
 }
 
 function getSupabaseServerClient(session: Session) {
@@ -138,12 +189,24 @@ export async function createBookingAction(data: {
   dropoffLng?: number | null;
   distanceKm?: number | null;
   durationMin?: number | null;
+  stops?: unknown;
 }) {
   const session = await requireSession();
   const supabase = getSupabaseServerClient(session);
   const userId = session.user.id;
 
+  // The picker's `min` is a hint, not a control — this is a public endpoint.
+  // Nothing else rejects a past pickup: toStorageIso only guards NaN, and
+  // silently coerces garbage to `new Date()`, so an empty datetime used to
+  // book a ride for the instant it was submitted.
+  if (!isFuturePickup(data.datetime)) {
+    throw new Error("Pick-up time must be in the future.");
+  }
+
   const tripType = data.tripType ?? "one_way";
+  // Never trust the client's stop list — cap, clamp and strip it. The DB check
+  // constraint enforces the 5-stop limit as well.
+  const stops = parseStops(data.stops);
   // Generated here and returned directly — clients can no longer SELECT the
   // start_otp column, so it must not appear in the returning clause.
   const startOtp = generateOtp();
@@ -159,6 +222,8 @@ export async function createBookingAction(data: {
     pickupText: data.pickup,
     dropoffText: data.dropoff,
     passengerCount: data.passengerCount,
+    luggageCount: data.luggageCount,
+    stops,
   });
 
   const { data: booking, error } = await supabase
@@ -171,7 +236,10 @@ export async function createBookingAction(data: {
       dropoff_location: tripType === "hourly" ? (data.dropoff || "As directed (hourly)") : data.dropoff,
       // Store the exact picked wall clock (as UTC) — no timezone conversion.
       pickup_datetime: toStorageIso(data.datetime),
-      fare_estimate: pricing.fare,
+      // Hourly trips are "as directed" — stops are the chauffeur's to follow on
+      // the day, not a fixed itinerary priced up front.
+      stops: tripType === "hourly" ? [] : stops,
+      ...fareColumns(pricing.breakdown),
       passenger_name: data.passengerName,
       passenger_phone: data.passengerPhone,
       special_requests: data.notes,
@@ -284,19 +352,28 @@ export async function updateBookingLocationAction(
   },
 ) {
   const session = await requireSession();
-  const supabase = getSupabaseServerClient(session);
   const admin = getServiceClient();
 
   // Load the booking's own vehicle + trip type (server truth), verify ownership
   // and editability, then recompute the fare — never trust a client amount.
   const { data: booking } = await admin
     .from("bookings")
-    .select("customer_id, vehicle_id, trip_type, duration_hours, status, passenger_count")
+    .select("customer_id, vehicle_id, trip_type, duration_hours, status, payment_status, passenger_count, stops")
     .eq("id", bookingId)
     .single();
   if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
   if (!["pending", "confirmed"].includes(booking.status)) {
     throw new Error("This booking can no longer be edited.");
+  }
+  // Paying does not advance `status` — only `payment_status` — so a paid or
+  // held booking sits at 'confirmed' and would otherwise still be editable
+  // here. Re-routing recomputes the fare under the service role (bypassing the
+  // tamper trigger) without re-charging the card, so a customer could pay for a
+  // 5 km trip and then rewrite it to a 450 km one for the same money — and
+  // driver_payout would snapshot off the inflated fare. Match the admin fare
+  // path (updateBookingFareAction), which pins payment_status = 'pending'.
+  if (booking.payment_status !== "pending") {
+    throw new Error("This booking can no longer be edited — it has already been paid.");
   }
 
   const pricing = await computeServerFare(admin, {
@@ -309,9 +386,15 @@ export async function updateBookingLocationAction(
     pickupText: data.pickup,
     dropoffText: data.dropoff,
     passengerCount: booking.passenger_count,
+    // Keep routing through the booking's existing stops — recomputing without
+    // them would quietly drop the distance they add and undercharge the ride.
+    stops: parseStops(booking.stops),
   });
 
-  const { error } = await supabase
+  // Service client, not the caller's: the fare columns are guarded by
+  // prevent_booking_payout_tamper, which only exempts admins and the service
+  // role. Ownership and editability are verified above.
+  const { error } = await admin
     .from("bookings")
     .update({
       pickup_location: data.pickup,
@@ -322,38 +405,142 @@ export async function updateBookingLocationAction(
       dropoff_lng: data.dropoffLng,
       distance_km: pricing.distanceKm,
       duration_min: pricing.durationMin ?? data.durationMin,
-      fare_estimate: pricing.fare,
+      ...fareColumns(pricing.breakdown),
     })
     .eq("id", bookingId);
 
   if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard");
-  return { success: true, fare: pricing.fare };
+  return { success: true, fare: pricing.breakdown.subtotal };
 }
 
+/** Statuses a customer may still cancel from — never one already under way. */
+const CANCELLABLE = ["pending", "confirmed", "driver_assigned", "accepted"] as const;
+
+/**
+ * Cancel a booking, applying the penalty ladder and refunding the balance.
+ *
+ * Previously this only flipped `status` and left the money captured, against a
+ * published refund policy. Order matters here: the cancellation is CLAIMED with
+ * a conditional update first, so exactly one caller can proceed to the refund;
+ * issuing the Stripe refund before the claim would let two concurrent cancels
+ * both pay out.
+ *
+ * Uses the service client because the penalty/refund columns are guarded by
+ * prevent_booking_payout_tamper; ownership is checked in code.
+ */
 export async function cancelBookingAction(bookingId: string) {
   const session = await requireSession();
-  const supabase = getSupabaseServerClient(session);
+  const admin = getServiceClient();
 
-  // Only pre-ride bookings can be cancelled — never one already in progress.
-  const { data, error } = await supabase
+  const { data: booking } = await admin
     .from("bookings")
-    .update({ status: "cancelled" })
+    .select("id, customer_id, status, payment_status, pickup_datetime, fare_estimate, tax_amount, tip, stripe_payment_id")
     .eq("id", bookingId)
-    .in("status", ["pending", "confirmed", "driver_assigned", "accepted"])
+    .single();
+  if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
+
+  const now = Date.now();
+  const quote = refundQuote(booking, now);
+  const wasPaid = booking.payment_status === "paid";
+  const wasHeld = booking.payment_status === "authorized";
+  const hadFunds = wasPaid || wasHeld;
+
+  const { data: claimed, error } = await admin
+    .from("bookings")
+    .update({
+      status: "cancelled" as const,
+      cancelled_at: new Date(now).toISOString(),
+      cancellation_penalty_rate: quote.rate,
+      cancellation_penalty: hadFunds ? quote.penalty : 0,
+      refund_amount: 0,
+    })
+    .eq("id", bookingId)
+    .in("status", CANCELLABLE)
     .select("id");
 
-  if (error) {
-    throw new Error(error.message);
-  }
-  if (!data || data.length === 0) {
+  if (error) throw new Error(error.message);
+  if (!claimed || claimed.length === 0) {
     throw new Error("This ride can no longer be cancelled.");
   }
 
+  // Three cases:
+  //
+  //   held  — nothing was ever charged, so there is nothing to refund. Capture
+  //           just the fee (Stripe releases the untaken balance automatically),
+  //           or cancel the intent outright when the cancellation is free. The
+  //           customer never waits 5-10 days for their own money back.
+  //   paid  — money is already taken (booking was beyond the hold window), so
+  //           refund the balance.
+  //   neither — the penalty is recorded but uncollected; we never held funds.
+  // The claim above ALREADY committed — status is 'cancelled' and the penalty
+  // is recorded. Everything below moves money and throws on failure
+  // (captureBookingPayment/refundBookingPayment document this: "the caller must
+  // know the money did not move"). Unguarded, a throw here escaped past the
+  // notify and returned a raw Stripe error to the customer, who reasonably read
+  // it as "the cancellation failed" — while the booking WAS cancelled, the DB
+  // claimed a fee that was never taken, and no email was ever sent.
+  //
+  // So: never let a payment failure rewrite what happened to the booking, and
+  // never let the DB assert money moved when it didn't.
+  let refunded = 0;
+  let settlementFailed = false;
+  try {
+    if (wasHeld) {
+      if (quote.penalty > 0) {
+        // Partial capture: the fee comes out of the hold and Stripe releases
+        // the balance immediately — no refund, no 5-10 day wait.
+        await captureBookingPayment({
+          bookingId,
+          paymentIntentId: booking.stripe_payment_id,
+          amountCents: Math.round(quote.penalty * 100),
+        });
+      } else {
+        await releaseBookingHold(bookingId, booking.stripe_payment_id);
+      }
+    } else if (wasPaid && quote.refund > 0) {
+      await refundBookingPayment({
+        bookingId,
+        paymentIntentId: booking.stripe_payment_id,
+        amountCents: Math.round(quote.refund * 100),
+        penalty: quote.penalty,
+      });
+      refunded = quote.refund;
+    }
+  } catch (err) {
+    settlementFailed = true;
+    console.error(`[actions] cancellation settlement failed for booking ${bookingId}:`, err);
+    // Correct the record rather than leave it lying. The most likely cause is a
+    // lapsed hold, so the fee was NOT collected — carrying cancellation_penalty
+    // would show the customer a charge that never happened and feed a false
+    // figure into admin reporting.
+    const { error: fixErr } = await admin
+      .from("bookings")
+      .update({ cancellation_penalty: 0, refund_amount: 0 })
+      .eq("id", bookingId);
+    if (fixErr) console.error(`[actions] could not zero the uncollected penalty on ${bookingId}:`, fixErr.message);
+    after(() => notifyPaymentCaptureFailed(bookingId));
+  }
+
+  // Fires either way: the ride IS cancelled, and the customer must be told —
+  // that is not contingent on the money having settled.
   after(() => notifyBookingCancelled(bookingId));
   revalidatePath("/dashboard");
-  return { success: true };
+  revalidatePath("/admin");
+  return {
+    success: true,
+    penalty: hadFunds && !settlementFailed ? quote.penalty : 0,
+    refund: refunded,
+    /** True when the balance was released from a hold rather than refunded. */
+    released: wasHeld && !settlementFailed,
+    rate: quote.rate,
+    /**
+     * The cancellation stuck but the payment side did not. The UI must not
+     * claim a fee was taken or a refund issued; an admin has been emailed.
+     */
+    settlementFailed,
+  };
 }
 
 export async function updateDriverAvailabilityAction(isAvailable: boolean) {
@@ -420,18 +607,13 @@ export async function verifyDriverAction(driverId: string, verified: boolean) {
  * applicant is NOT granted the driver role — this creates a PENDING record only.
  * Runs via the service role so it works before the user is a driver, and so the
  * applicant can't set privileged fields (is_verified stays false).
+ *
+ * Everything is re-validated here. A server action is a public HTTP endpoint:
+ * this previously trusted its typed argument completely and wrote it straight
+ * to the DB, so any signed-in caller could bypass every rule the form enforced.
  */
 export async function submitDriverApplicationAction(data: {
-  fullName: string;
-  phone: string;
-  license: string;
-  experience: number;
-  city: string;
-  province: string;
-  workAuthorization: string;
-  languages: string;
-  referral: string | null;
-  availability: string;
+  application: unknown;
   photoPath: string | null;
   docs: { docType: string; path: string }[];
 }) {
@@ -439,19 +621,80 @@ export async function submitDriverApplicationAction(data: {
   const admin = getServiceClient();
   const userId = session.user.id;
 
+  const parsed = driverApplicationSchema.safeParse(data.application);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? "Your application is incomplete.");
+  }
+  const app = parsed.data;
+
+  if (!data.photoPath) throw new Error("A driver photo is required.");
+
+  // Storage paths come from the CLIENT (become-chauffeur uploads directly, then
+  // posts the resulting paths), so they are attacker-chosen strings. They were
+  // only checked for truthiness. The storage RLS policy scopes writes to
+  // `${auth.uid()}/...`, but this action reads paths rather than writing files,
+  // and the admin review dialog later signs whatever path is stored — using
+  // ADMIN credentials, which are not so scoped.
+  //
+  // So an attacker who learned another applicant's object path (a previously
+  // shared signed URL embeds the full path) could submit it as their own and
+  // have the reviewer shown the victim's genuine licence and insurance under
+  // the attacker's name — and be approved, and granted the driver role, on
+  // someone else's credentials. Pin every path to the caller's own prefix.
+  const ownsPath = (p: string) => p.startsWith(`${userId}/`) && !p.includes("..");
+  if (!ownsPath(data.photoPath)) throw new Error("Invalid photo upload.");
+  for (const d of data.docs) {
+    if (d.path && !ownsPath(d.path)) throw new Error("Invalid document upload.");
+  }
+
+  // "Nothing is optional, this part is all mandatory" — enforce it server-side
+  // too, not just in the form.
+  const provided = data.docs.filter((d) => d.path).map((d) => d.docType);
+  const missing = missingDocKeys(provided);
+  if (missing.length > 0) {
+    const names = missing.map((k) => DOC_LABELS[k] ?? k);
+    throw new Error(`Missing required document${missing.length > 1 ? "s" : ""}: ${names.join(", ")}.`);
+  }
+
+  // docType is only checked for the PRESENCE of the required keys, so arbitrary
+  // extra keys used to ride straight into the insert. Drop anything unknown.
+  const cleanDocs = data.docs.filter((d) => d.path && isKnownDocType(d.docType));
+
+  // Never overwrite an application that has already been reviewed: the upsert
+  // below is keyed on user_id, so without this an approved driver could re-post
+  // and reset their own record.
+  const { data: existing } = await admin
+    .from("drivers")
+    .select("id, is_verified")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existing?.is_verified) {
+    throw new Error("You're already an approved chauffeur.");
+  }
+
   const { data: driver, error } = await admin
     .from("drivers")
     .upsert({
       user_id: userId,
-      license_number: data.license,
-      experience_years: data.experience,
-      city_of_residence: data.city,
-      province: data.province,
-      work_authorization: data.workAuthorization,
-      languages_spoken: data.languages,
-      time_availability: data.availability,
-      referral_name: data.referral || null,
+      license_number: app.license,
+      licence_class: app.licenceClass,
+      experience_years: app.experience,
+      city_of_residence: app.city,
+      province: app.province,
+      work_authorization: app.workAuthorization,
+      languages_spoken: app.languages,
+      time_availability: app.availability,
+      referral_name: app.referral || null,
       photo_url: data.photoPath,
+      vehicle_class: app.vehicleClass,
+      vehicle_make: app.vehicleMake,
+      vehicle_model: app.vehicleModel,
+      vehicle_year: app.vehicleYear,
+      limo_plate: app.limoPlate,
+      // Stamped server-side from the server's clock — a client-supplied
+      // acceptance timestamp would be worth nothing as a legal record.
+      terms_accepted_at: new Date().toISOString(),
+      terms_version: CHAUFFEUR_TERMS_VERSION,
       is_verified: false,
       is_available: false,
     }, { onConflict: "user_id" })
@@ -459,13 +702,18 @@ export async function submitDriverApplicationAction(data: {
     .single();
   if (error) throw new Error(error.message);
 
-  await admin.from("profiles").update({ full_name: data.fullName, phone: data.phone }).eq("id", userId);
+  await admin.from("profiles").update({ full_name: app.fullName, phone: app.phone }).eq("id", userId);
 
-  for (const d of data.docs) {
-    if (d.path) await admin.from("driver_documents").insert({ driver_id: driver.id, doc_type: d.docType, file_url: d.path });
+  // Re-applying replaces the previous document set rather than stacking a
+  // second copy of every file under the same driver.
+  await admin.from("driver_documents").delete().eq("driver_id", driver.id);
+  const rows = cleanDocs.map((d) => ({ driver_id: driver.id, doc_type: d.docType, file_url: d.path }));
+  if (rows.length > 0) {
+    const { error: docErr } = await admin.from("driver_documents").insert(rows);
+    if (docErr) throw new Error(docErr.message);
   }
 
-  after(() => notifyDriverApplication(data.fullName || "there", session.user.email ?? ""));
+  after(() => notifyDriverApplication(app.fullName || "there", session.user.email ?? ""));
   revalidatePath("/admin");
   return { success: true };
 }
@@ -495,9 +743,22 @@ export async function updateBookingFareAction(bookingId: string, fare: number, r
   // so the driver-payout snapshot can never go stale either). The change and
   // its reason are stored on the booking and communicated inside the
   // payment-request email — never as a separate fare email.
+  //
+  // An override replaces the whole pre-tax subtotal with a negotiated price, so
+  // the computed breakdown no longer describes it: base_fare becomes the quoted
+  // figure and the markup/airport lines collapse into it. HST is always
+  // recomputed — leaving stale tax here would charge the wrong total.
   const { data, error } = await supabase
     .from("bookings")
-    .update({ fare_estimate: newFare, previous_fare: oldFare, fare_change_reason: reason.trim() })
+    .update({
+      fare_estimate: newFare,
+      base_fare: newFare,
+      markup_amount: 0,
+      airport_fee: 0,
+      tax_amount: round2(newFare * HST_RATE),
+      previous_fare: oldFare,
+      fare_change_reason: reason.trim(),
+    })
     .eq("id", bookingId)
     .in("status", ["pending", "confirmed"])
     .eq("payment_status", "pending")
@@ -602,29 +863,35 @@ export async function assignDriverAction(
 
     const { data: bk, error: bkErr } = await supabase
       .from("bookings")
-      .select("fare_estimate")
+      .select("fare_estimate, airport_fee")
       .eq("id", bookingId)
       .single();
     if (bkErr || !bk) throw new Error("Booking not found");
 
-    payout = Math.round(Number(bk.fare_estimate) * Number(drv.commission_rate ?? 0.2) * 100) / 100;
+    // The airport fee is excluded: it is the GTAA's money, not SophRia's
+    // revenue, so no share of it is the driver's. See driverPayoutBase.
+    payout = round2(
+      driverPayoutBase(bk.fare_estimate, bk.airport_fee) * Number(drv.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE),
+    );
   }
 
-  // Payment wall: a driver can be assigned (or reassigned, pre-ride) only
-  // once the customer has paid the full fare.
+  // Payment wall: a driver can be assigned (or reassigned, pre-ride) only once
+  // the customer's funds are secured. 'authorized' counts — the money is held
+  // on the card and is captured when the ride completes. Requiring 'paid' here
+  // would make every held booking undispatchable.
   const { data, error } = await supabase
     .from("bookings")
     .update({ driver_id: driverId, status: "driver_assigned" as any, driver_payout: payout })
     .eq("id", bookingId)
     .in("status", ["confirmed", "driver_assigned", "accepted"])
-    .eq("payment_status", "paid")
+    .in("payment_status", ["authorized", "paid"])
     .select("id");
 
   if (error) {
     throw new Error(error.message);
   }
   if (!data || data.length === 0) {
-    throw new Error("A driver can only be assigned after the customer has paid.");
+    throw new Error("A driver can only be assigned once the customer's payment is secured.");
   }
 
   after(() => notifyDriverAssigned(bookingId));
@@ -659,10 +926,22 @@ export async function acceptRideAction(rideId: string) {
   const session = await requireSession("driver");
   const supabase = getSupabaseServerClient(session);
 
+  // Resolve the caller's own driver row so the update can be pinned to it.
+  // requireSession("driver") proves the caller IS a driver, not that they are
+  // THIS ride's driver — without the driver_id predicate the only thing
+  // stopping A from accepting B's ride was the bookings UPDATE policy.
+  const { data: driver, error: driverErr } = await supabase
+    .from("drivers")
+    .select("id")
+    .eq("user_id", session.user.id)
+    .single();
+  if (driverErr || !driver) throw new Error("Driver profile not found");
+
   const { data, error } = await supabase
     .from("bookings")
     .update({ status: "accepted" })
     .eq("id", rideId)
+    .eq("driver_id", driver.id)
     .eq("status", "driver_assigned")
     .select("id");
 
@@ -745,18 +1024,64 @@ export async function completeRideAction(rideId: string) {
 
   // Complete only an in-progress ride, and read its payout from the DB in the
   // same statement — the client no longer supplies the fare (was tamperable).
+  // The guarded update is also what makes the capture below safe to run once:
+  // only one caller can move the ride out of in_progress.
+  //
+  // driver_id is pinned to THIS driver. Without it the only thing separating
+  // driver A from completing driver B's ride was the bookings UPDATE policy —
+  // and the payout is credited to whoever CALLS this (driver.id is resolved
+  // from the caller's user_id) while the amount is read from the victim's
+  // booking, so a missing policy meant one driver could bank another's
+  // earnings and trigger their capture. Defence in depth: start_ride_with_otp
+  // already re-checks the assignee server-side; accept/complete now match.
   const { data: updated, error: bookingErr } = await supabase
     .from("bookings")
     .update({ status: "completed" })
     .eq("id", rideId)
+    .eq("driver_id", driver.id)
     .eq("status", "in_progress")
-    .select("id, fare_estimate, driver_payout, tip");
+    .select("id, fare_estimate, airport_fee, driver_payout, tip, payment_status, stripe_payment_id");
 
   if (bookingErr) {
     throw new Error(bookingErr.message);
   }
   if (!updated || updated.length === 0) {
     throw new Error("Only a ride in progress can be completed.");
+  }
+
+  // "After completing the ride we must charge" — take the funds held at booking.
+  //
+  // Deliberately after the status flip and non-fatal: the ride DID happen, and
+  // the driver must still be credited. A capture failure here (an authorization
+  // that lapsed before the ride) is an accounts problem to chase, not a reason
+  // to tell the chauffeur their completed ride didn't complete.
+  // A failure here is NOT swallowed into a log line any more. The hold can
+  // lapse before the ride (a card authorization lives ~7 days, and issuers
+  // release early), and the booking then sat at 'authorized' forever: the ride
+  // dispatched, completed, credited the driver, and the only trace was a
+  // console line nobody reads — a free ride, silently.
+  //
+  // Move it to 'failed', which is the honest state (the money was NOT
+  // collected) and the one surface an admin can actually see and chase. The
+  // capture stays non-fatal to the DRIVER: the ride happened and they must be
+  // credited; an uncollected fare is an accounts problem, not a reason to tell
+  // a chauffeur their completed ride didn't complete.
+  if (updated[0].payment_status === "authorized") {
+    try {
+      await captureBookingPayment({
+        bookingId: rideId,
+        paymentIntentId: updated[0].stripe_payment_id,
+      });
+    } catch (err) {
+      console.error(`[actions] capture failed for completed ride ${rideId}:`, err);
+      const { error: flagErr } = await getServiceClient()
+        .from("bookings")
+        .update({ payment_status: "failed" as const })
+        .eq("id", rideId)
+        .eq("payment_status", "authorized");
+      if (flagErr) console.error(`[actions] could not flag ${rideId} as failed:`, flagErr.message);
+      after(() => notifyPaymentCaptureFailed(rideId));
+    }
   }
 
   // Credit the payout snapshot taken at assignment (fare × commission rate at
@@ -768,14 +1093,22 @@ export async function completeRideAction(rideId: string) {
   const payout =
     row.driver_payout != null
       ? Number(row.driver_payout)
-      : Math.round(Number(row.fare_estimate ?? 0) * Number(driver.commission_rate ?? 0.2) * 100) / 100;
-  const earned = Math.round((payout + Math.max(0, Number(row.tip ?? 0))) * 100) / 100;
-  const newEarnings = Number(driver.total_earnings ?? 0) + earned;
+      : round2(
+          driverPayoutBase(row.fare_estimate, row.airport_fee) *
+            Number(driver.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE),
+        );
+  const earned = round2(payout + Math.max(0, Number(row.tip ?? 0)));
 
-  const { error: driverUpdateErr } = await getServiceClient()
-    .from("drivers")
-    .update({ total_earnings: newEarnings })
-    .eq("id", driver.id);
+  // Atomic increment, not read-modify-write. Two rides completing at once both
+  // read the same total_earnings and the second write erased the first — a
+  // driver silently short by a whole ride, with nothing to reconcile against
+  // (total_earnings is a standalone counter, not derived from bookings).
+  // credit_driver_earnings does `total_earnings = total_earnings + _amount` in
+  // one statement, so concurrent credits serialise. Service-role only.
+  const { error: driverUpdateErr } = await getServiceClient().rpc("credit_driver_earnings", {
+    _driver_id: driver.id,
+    _amount: earned,
+  });
 
   if (driverUpdateErr) {
     throw new Error(driverUpdateErr.message);

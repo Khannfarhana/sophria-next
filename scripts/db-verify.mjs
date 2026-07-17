@@ -4,7 +4,9 @@ for (const line of fs.readFileSync(".env.local", "utf8").split("\n")) {
   const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^"|"$/g, "");
 }
-let conn = process.env.POSTGRES_URL_NON_POOLING.replace(/([?&])sslmode=[^&]*/i, "$1").replace(/[?&]$/, "");
+let conn = process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL || process.env.POSTGRES_URL;
+if (!conn) throw new Error("Set POSTGRES_URL_NON_POOLING, DATABASE_URL or POSTGRES_URL in .env.local");
+conn = conn.replace(/([?&])sslmode=[^&]*/i, "$1").replace(/[?&]$/, "");
 const client = new Client({ connectionString: conn, ssl: { rejectUnauthorized: false } });
 await client.connect();
 const v = await client.query(`select name, type, base_rate, hourly_rate, is_active from public.vehicles order by base_rate`);

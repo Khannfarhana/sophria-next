@@ -1,0 +1,24 @@
+-- Separate "can set prices" from "can run dispatch" (17 Jul 2026).
+--
+-- `admin` is one flat role guarding six server actions, and they are two
+-- different jobs: confirming a booking and assigning a driver is daily dispatch;
+-- setting the driver's commission and repricing the whole business is not.
+-- With the rate card now editable from the admin, ANYONE who can confirm a 6am
+-- booking can also change what every customer in the country pays.
+--
+-- That is fine while the only two admins are the owners. It stops being fine
+-- the first time dispatch is handed to staff — which is exactly when someone
+-- would want an admin account, and exactly when nobody is thinking about
+-- pricing.
+--
+-- This migration only makes the separation POSSIBLE. Every current admin is
+-- granted `pricing` below, so nothing changes today and nobody is locked out of
+-- a screen they were using five minutes ago. The value is the next account: an
+-- admin created without `pricing` can dispatch and cannot reprice.
+--
+-- ALTER TYPE ADD VALUE cannot be used in the same transaction that adds it, and
+-- db-apply-migration.mjs wraps each file in one — so the grant that USES the new
+-- value has to live in the next migration file. Same trap as
+-- 20260716180000_payment_status_authorized.
+
+alter type public.app_role add value if not exists 'pricing';

@@ -66,12 +66,15 @@ export default function Home() {
           <div className="animate-rise">
             <Eyebrow dark className="mb-6 text-white/70">Toronto · Est. 2018</Eyebrow>
           </div>
+          {/* The client asked three times for the full name in bold here
+              rather than just "SophRia". */}
           <h1 className="max-w-3xl text-5xl leading-[1.05] md:text-7xl animate-rise delay-100">
-            Toronto's premier <br />
-            <span className="text-[#e7d3a8]">chauffeur service.</span>
+            <span className="font-semibold">SophRia</span> <br />
+            <span className="font-semibold text-[#e7d3a8]">Limousine Services.</span>
           </h1>
           <p className="mt-6 max-w-xl text-base text-white/80 md:text-lg animate-rise delay-200">
-            Discreet. Punctual. Effortless. Reserve a private driver for any occasion across Toronto, Hamilton, Mississauga, Niagara and Southern Ontario — from Pearson arrivals to evening galas.
+            Reserve a chauffeur in under a minute, available 24/7 across the Greater Toronto Area, Niagara and Toronto
+            Downtown — from Pearson arrivals to evening galas, and across the border.
           </p>
           <div className="mt-10 flex flex-wrap gap-3 animate-rise delay-300">
             <Link
@@ -139,10 +142,13 @@ export default function Home() {
             <Link href="/fleet" className="reveal-underline hidden text-sm text-[#444] hover:text-black md:inline-block">View all →</Link>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
+            {/* SUV leads — asked for twice: "In place of luxury sedan first must
+                be SUV", because "executive clients don't like to search, what
+                comes first that's it". Mirrors the sort_order on /fleet. */}
             {[
-              { key: "sedan", name: "Executive Sedan", cap: "1–3 guests", desc: "Mercedes S-Class. For executive travel." },
-              { key: "suv", name: "Luxury SUV", cap: "1–6 guests", desc: "Cadillac Escalade. Group comfort." },
-              { key: "limousine", name: "Stretch Limousine", cap: "1–8 guests", desc: "Classic. For special occasions." },
+              { key: "suv", name: "Luxury SUV", cap: "1–6 guests", desc: "GMC Yukon XL. Group comfort." },
+              { key: "sedan", name: "Executive Sedan", cap: "1–3 guests", desc: "Cadillac LYRIQ. For executive travel." },
+              { key: "business", name: "Business Class", cap: "1–3 guests", desc: "Mercedes S-Class. First-class comfort." },
             ].map((v) => (
               <Link href="/fleet" key={v.key} className="group block">
                 <div className="card-lift overflow-hidden rounded-sm border border-black/10 bg-white shadow-[0_10px_30px_-18px_rgba(0,0,0,0.45)]">

@@ -193,6 +193,8 @@ export default function AuthPage() {
 
         <p className="mt-6 text-center text-xs text-white/25">
           By continuing you agree to our{" "}
+          <Link href="/terms" className="underline hover:text-white/50">Terms of Service</Link>{" "}
+          and{" "}
           <Link href="/privacy" className="underline hover:text-white/50">Privacy Policy</Link>
         </p>
       </div>

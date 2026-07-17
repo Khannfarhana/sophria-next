@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 
 export default async function FleetPage() {
   const { data: dbVehicles } = SUPABASE_ENABLED
-    ? await supabase.from("vehicles").select("*").eq("is_active", true).order("base_rate")
+    ? await supabase.from("vehicles").select("*").eq("is_active", true).order("sort_order").order("base_rate")
     : { data: null };
   const vehicles = dbVehicles?.length ? dbVehicles : mockDb.activeVehicles();
 

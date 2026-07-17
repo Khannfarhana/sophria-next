@@ -4,7 +4,8 @@ import { auth } from "@/auth";
 import { createClient } from "@supabase/supabase-js";
 import type { Session } from "next-auth";
 import { getStripe } from "@/lib/stripe";
-import { markBookingPaid } from "@/lib/payments";
+import { canHoldUntil, settleCheckoutSession } from "@/lib/payments";
+import { pickupInstant } from "@/lib/datetime";
 
 /**
  * Stripe Checkout server actions. Payment is collected AFTER the admin
@@ -36,7 +37,7 @@ async function requireSession(): Promise<Session> {
 export async function createCheckoutSessionAction(
   bookingId: string,
   tipDollars?: number,
-): Promise<{ url: string }> {
+): Promise<{ url: string; hold: boolean }> {
   const session = await requireSession();
   const admin = getServiceClient();
 
@@ -52,7 +53,9 @@ export async function createCheckoutSessionAction(
 
   const { data: booking } = await admin
     .from("bookings")
-    .select("id, reference, customer_id, status, payment_status, fare_estimate, pickup_location, dropoff_location")
+    .select(
+      "id, reference, customer_id, status, payment_status, fare_estimate, airport_fee, tax_amount, pickup_datetime, pickup_location, dropoff_location",
+    )
     .eq("id", bookingId)
     .single();
   if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
@@ -60,10 +63,23 @@ export async function createCheckoutSessionAction(
     throw new Error("This booking is not awaiting payment.");
   }
 
-  const amountCents = Math.round(Number(booking.fare_estimate) * 100);
-  if (!Number.isFinite(amountCents) || amountCents < 50) {
+  // fare_estimate is the PRE-TAX subtotal (airport fee included); HST rides on
+  // top. Both are itemised below so the Stripe receipt matches the quote the
+  // customer accepted, rather than one opaque number.
+  const airportFeeCents = Math.round(Number(booking.airport_fee ?? 0) * 100);
+  const taxCents = Math.round(Number(booking.tax_amount ?? 0) * 100);
+  const rideCents = Math.round(Number(booking.fare_estimate) * 100) - airportFeeCents;
+  const amountCents = rideCents + airportFeeCents + taxCents;
+  if (!Number.isFinite(amountCents) || amountCents < 50 || rideCents < 0) {
     throw new Error("This booking's fare cannot be charged online — please contact dispatch.");
   }
+
+  // Hold the money rather than taking it, and capture when the ride completes —
+  // but only when the pickup is close enough that the authorization will still
+  // be alive. Beyond that window the hold would lapse before the ride and
+  // capture would fail, so those bookings are charged up front (as they were
+  // before) and told so at checkout. See AUTH_HOLD_WINDOW_DAYS.
+  const hold = canHoldUntil(pickupInstant(booking.pickup_datetime).getTime());
 
   const appUrl = (process.env.NEXTAUTH_URL || "").replace(/\/$/, "");
   const checkout = await getStripe().checkout.sessions.create(
@@ -75,13 +91,40 @@ export async function createCheckoutSessionAction(
           quantity: 1,
           price_data: {
             currency: "cad",
-            unit_amount: amountCents,
+            unit_amount: rideCents,
             product_data: {
               name: `SophRia chauffeur booking ${booking.reference}`,
               description: `${booking.pickup_location} → ${booking.dropoff_location}`,
             },
           },
         },
+        ...(airportFeeCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "cad",
+                  unit_amount: airportFeeCents,
+                  product_data: {
+                    name: "Airport fee",
+                    description: "Levied by the airport authority on airport pickups and drop-offs",
+                  },
+                },
+              },
+            ]
+          : []),
+        ...(taxCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "cad",
+                  unit_amount: taxCents,
+                  product_data: { name: "HST (13%)", description: "Ontario Harmonized Sales Tax" },
+                },
+              },
+            ]
+          : []),
         ...(tipCents > 0
           ? [
               {
@@ -98,20 +141,27 @@ export async function createCheckoutSessionAction(
             ]
           : []),
       ],
-      // tip_cents rides in server-created metadata — markBookingPaid reads it
+      // tip_cents rides in server-created metadata — the settle path reads it
       // back from Stripe, never from the client.
       metadata: { booking_id: booking.id, tip_cents: String(tipCents) },
-      payment_intent_data: { metadata: { booking_id: booking.id, tip_cents: String(tipCents) } },
+      payment_intent_data: {
+        // The whole point: authorize now, capture when the ride is done.
+        ...(hold ? { capture_method: "manual" as const } : {}),
+        description: `SophRia booking ${booking.reference}`,
+        metadata: { booking_id: booking.id, tip_cents: String(tipCents) },
+      },
       success_url: `${appUrl}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/dashboard?payment=cancelled`,
     },
     // Repeat clicks (double-click, two tabs) get the SAME session back instead
     // of minting parallel payable sessions; a fare edit or a different tip
     // changes the key and therefore mints a fresh session at the new total.
-    { idempotencyKey: `checkout:${booking.id}:${amountCents}:${tipCents}` },
+    // `hold` is in the key too: a booking that crosses the window boundary
+    // between attempts must not reuse a session created under the other mode.
+    { idempotencyKey: `checkout:${booking.id}:${amountCents}:${tipCents}:${hold ? "hold" : "charge"}` },
   );
   if (!checkout.url) throw new Error("Stripe did not return a checkout URL");
-  return { url: checkout.url };
+  return { url: checkout.url, hold };
 }
 
 /**
@@ -120,7 +170,7 @@ export async function createCheckoutSessionAction(
  * the flow works even when no webhook is configured (local dev without
  * `stripe listen`). Whichever of the two runs first wins.
  */
-export async function verifyCheckoutSessionAction(sessionId: string): Promise<{ paid: boolean }> {
+export async function verifyCheckoutSessionAction(sessionId: string): Promise<{ paid: boolean; held?: boolean }> {
   const session = await requireSession();
   if (!/^cs_/.test(sessionId)) throw new Error("Invalid session id");
 
@@ -136,16 +186,6 @@ export async function verifyCheckoutSessionAction(sessionId: string): Promise<{ 
     .single();
   if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
 
-  if (checkout.payment_status !== "paid") return { paid: false };
-  await markBookingPaid({
-    bookingId,
-    paymentIntentId:
-      typeof checkout.payment_intent === "string"
-        ? checkout.payment_intent
-        : checkout.payment_intent?.id ?? checkout.id,
-    amountCents: checkout.amount_total ?? 0,
-    currency: checkout.currency ?? "cad",
-    tipCents: Math.max(0, Number(checkout.metadata?.tip_cents ?? 0) || 0),
-  });
-  return { paid: true };
+  return settleCheckoutSession(checkout);
 }
+

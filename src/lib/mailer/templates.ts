@@ -1,4 +1,4 @@
-import { SITE } from "../site-config";
+import { SITE } from "@/lib/site-config";
 
 export interface TemplateResult {
   html: string;
@@ -61,11 +61,11 @@ function emailWrapper(title: string, bodyContentHtml: string): string {
     <div class="container">
       <div class="header">
         <div class="logo">SOPHRIA</div>
-        <div class="tagline">Luxury Chauffeur Service · Southern Ontario</div>
+        <div class="tagline">Limousine Services · ${SITE.serviceArea}</div>
       </div>
       <div class="content">${bodyContentHtml}</div>
       <div class="footer">
-        <p style="margin:0 0 10px 0;">SophRia Chauffeur Service · Toronto &amp; Southern Ontario</p>
+        <p style="margin:0 0 10px 0;">${SITE.fullName} · ${SITE.address.full}</p>
         <p style="margin:0;">Need assistance? Our 24/7 dispatch is at <a href="${SITE.phoneHref}">${SITE.phone}</a>, or reply to this email.</p>
       </div>
     </div>

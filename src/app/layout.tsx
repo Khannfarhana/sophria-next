@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Cormorant_Garamond } from "next/font/google";
 import { Providers } from "./providers";
+import { SITE } from "@/lib/site-config";
 import "./globals.css";
 
 const inter = Inter({
@@ -17,14 +18,15 @@ const cormorant = Cormorant_Garamond({
 
 export const metadata: Metadata = {
   title: {
-    default: "SophRia — Toronto's Premier Chauffeur Service",
-    template: "%s — SophRia",
+    default: `${SITE.fullName} — Chauffeur Service in the Greater Toronto Area`,
+    template: `%s — ${SITE.fullName}`,
   },
-  description: "Luxury chauffeur and limousine service in Toronto. Airport transfers, corporate travel, weddings, and hourly charter. Professional. Discreet. On time.",
-  authors: [{ name: "SophRia" }],
+  description:
+    "Luxury chauffeur and limousine service across the Greater Toronto Area and across the border. Airport transfers, corporate travel, weddings, and hourly charter. Professional. Discreet. On time.",
+  authors: [{ name: SITE.fullName }],
   openGraph: {
-    title: "SophRia — Toronto's Premier Chauffeur Service",
-    description: "Luxury chauffeur and limousine service in Toronto.",
+    title: `${SITE.fullName} — Chauffeur Service in the Greater Toronto Area`,
+    description: `Luxury limousine & chauffeur services across the ${SITE.serviceArea}.`,
     type: "website",
   },
   twitter: {

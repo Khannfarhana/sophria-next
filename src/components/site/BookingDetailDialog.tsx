@@ -15,8 +15,9 @@ import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
 import { StatusBadge } from "@/components/site/StatusBadge";
 import { getDirections, type Place } from "@/lib/mapbox";
 import { formatDateTime } from "@/lib/datetime";
-import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { priceBreakdown, tripTypeLabel, HOURLY_MIN_HOURS, HST_RATE, type TripType } from "@/lib/pricing";
 import { resolvePearsonTariff } from "@/lib/tariff";
+import { parseStops, routableStops } from "@/lib/stops";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { updateBookingLocationAction, getBookingDriverAction, getBookingOtpAction } from "@/lib/actions";
@@ -44,7 +45,15 @@ export interface BookingRow {
   pickup_datetime: string;
   duration_hours: number | null;
   flight_number: string | null;
+  /** Pre-tax subtotal (markup + airport fee included). HST rides on top. */
   fare_estimate: number;
+  base_fare?: number | null;
+  markup_amount?: number | null;
+  airport_fee?: number | null;
+  tax_amount?: number | null;
+  tip?: number | null;
+  /** Ordered intermediate stops (jsonb). Routed through on the map. */
+  stops?: unknown;
   passenger_name: string | null;
   passenger_phone: string | null;
   driver_id?: string | null;
@@ -118,16 +127,20 @@ export function BookingDetailDialog({
   }, [open, b?.id, b?.status]);
 
   // Recompute distance while editing when both endpoints have coordinates.
+  // Must route through the booking's stops: updateBookingLocationAction does
+  // so server-side, and quoting the direct line here previewed a shorter trip
+  // — and a cheaper fare — than the one actually saved and charged.
   useEffect(() => {
     if (!editing || isHourly || !pickupCoords || !dropoffCoords) return;
     let cancelled = false;
-    getDirections(pickupCoords, dropoffCoords).then((dir) => {
+    getDirections(pickupCoords, dropoffCoords, routableStops(parseStops(b?.stops))).then((dir) => {
       if (cancelled || !dir) return;
       setDistanceKm(dir.distanceKm);
       setDurationMin(dir.durationMin);
     });
     return () => { cancelled = true; };
-  }, [editing, isHourly, pickupCoords, dropoffCoords]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, isHourly, pickupCoords, dropoffCoords, JSON.stringify(routableStops(parseStops(b?.stops)))]);
 
   if (!b) return null;
 
@@ -145,10 +158,32 @@ export function BookingDetailDialog({
           distanceKm,
         })
       : null;
-  // Live fare: re-quote from distance when we have vehicle rates, else keep stored fare.
-  const liveFare = editing && vehicleRates
-    ? quote(tripType, vehicleRates, { durationHours: b.duration_hours ?? HOURLY_MIN_HOURS, distanceKm: distanceKm ?? undefined, tariff: editTariff })
-    : Number(b.fare_estimate);
+  // Live fare: re-quote from distance when we have vehicle rates, else keep the
+  // stored fare. Both are pre-tax subtotals, matching bookings.fare_estimate.
+  const liveQuote = editing && vehicleRates
+    ? priceBreakdown(tripType, vehicleRates, { durationHours: b.duration_hours ?? HOURLY_MIN_HOURS, distanceKm: distanceKm ?? undefined, tariff: editTariff })
+    : null;
+  // What the customer is shown. While editing, that's the re-quote; otherwise
+  // it's the STORED breakdown — the figures actually billed, not a
+  // recomputation that could drift from them.
+  //
+  // base_fare/markup_amount post-date the earliest bookings, so fall back to
+  // deriving the base from the subtotal rather than rendering a blank row.
+  const storedMarkup = Number(b.markup_amount ?? 0);
+  const storedAirportFee = Number(b.airport_fee ?? 0);
+  const fare = liveQuote ?? {
+    baseFare: b.base_fare != null ? Number(b.base_fare) : Number(b.fare_estimate) - storedMarkup - storedAirportFee,
+    markup: storedMarkup,
+    airportFee: storedAirportFee,
+    subtotal: Number(b.fare_estimate),
+    // Read tax_amount as-is; never derive it. Bookings taken before HST was
+    // added to the fare engine carry tax_amount = 0 and genuinely WERE charged
+    // no tax, so computing 13% here would show those customers a total higher
+    // than the one they actually paid.
+    hst: Number(b.tax_amount ?? 0),
+  };
+  const tip = Number(b.tip ?? 0);
+  const grandTotal = fare.subtotal + fare.hst + tip;
 
   const save = async () => {
     if (!pickup || (!isHourly && !dropoff)) {
@@ -206,6 +241,7 @@ export function BookingDetailDialog({
               dropoff={dropoff}
               pickupCoords={pickupCoords}
               dropoffCoords={dropoffCoords}
+              stops={parseStops(b.stops)}
               height={190}
               className="!rounded-none !border-x-0 !border-t-0 !border-b !border-white/10"
             />
@@ -364,14 +400,39 @@ export function BookingDetailDialog({
             )}
           </div>
 
-          {/* Fare */}
-          <div className="flex items-center justify-between bg-[#141416] px-6 py-4">
-            <span className="text-sm text-white/60">{editing ? "Updated fare" : "Estimated fare"}</span>
-            <span className="font-display text-2xl text-[#e7d3a8]">${liveFare.toFixed(2)}</span>
+          {/* Fare breakdown. This used to be a single "Estimated fare" showing
+              fare_estimate — the PRE-TAX subtotal — so the number the customer
+              read back was less than what Stripe actually charged them. */}
+          <div className="bg-[#141416] px-6 py-4">
+            <dl className="space-y-1.5 text-sm">
+              {/* Base fare folds in the tariff markup deliberately. The markup
+                  is SophRia's margin on the GTAA tariff, not a tax or a fee —
+                  itemising it would show the customer our cost and our cut as
+                  separate lines. Per the client: "provide the base fare first
+                  and then outline all applicable taxes and airport fees". */}
+              <FareRow label="Base fare" value={fare.baseFare + fare.markup} />
+              {fare.airportFee > 0 && <FareRow label="Airport pickup fee" value={fare.airportFee} />}
+              {fare.airportFee > 0 && <FareRow label="Subtotal" value={fare.subtotal} />}
+              <FareRow label={`HST (${Math.round(HST_RATE * 100)}%)`} value={fare.hst} />
+              {tip > 0 && <FareRow label="Driver tip" value={tip} />}
+            </dl>
+            <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
+              <span className="text-sm text-white/60">{editing ? "Updated total" : "Total"}</span>
+              <span className="font-display text-2xl text-[#e7d3a8]">${grandTotal.toFixed(2)}</span>
+            </div>
           </div>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function FareRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className="text-white/55">{label}</dt>
+      <dd className="tabular-nums text-white/85">${value.toFixed(2)}</dd>
+    </div>
   );
 }
 

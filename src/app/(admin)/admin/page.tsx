@@ -5,8 +5,11 @@ import { toast } from "sonner";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { useSupabase } from "@/hooks/use-supabase";
+import { DEFAULT_DRIVER_PAYOUT_RATE } from "@/lib/pricing";
 import { StatusBadge } from "@/components/site/StatusBadge";
 import { AdminTabs } from "@/components/site/AdminTabs";
+import { PricingConfigPanel } from "@/components/site/PricingConfigPanel";
+import { usePricingConfig } from "@/hooks/use-pricing-config";
 import { DriverReviewDialog } from "@/components/site/DriverReviewDialog";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -116,6 +119,15 @@ interface AdminDriver {
   time_availability: string | null;
   referral_name: string | null;
   photo_url: string | null;
+  // Applicant-supplied vehicle + terms acceptance (migration 20260716150000).
+  licence_class: string | null;
+  limo_plate: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  vehicle_year: number | null;
+  vehicle_class: string | null;
+  terms_accepted_at: string | null;
+  terms_version: string | null;
   profile: {
     id: string;
     full_name: string | null;
@@ -127,6 +139,8 @@ interface AdminDriver {
 function AdminPortal() {
   const qc = useQueryClient();
   const supabase = useSupabase();
+  // The live rate card — the fare engine's actual source of truth.
+  const pricingConfig = usePricingConfig();
   const [filter, setFilter] = useState<string>("all");
   const [rejectFor, setRejectFor] = useState<AdminBooking | null>(null);
   const [rejReason, setRejReason] = useState<string>("no_drivers");
@@ -202,7 +216,7 @@ function AdminPortal() {
     queryKey: ["admin-vehicles"],
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockAdminVehicles();
-      return (await supabase.from("vehicles").select("*").order("base_rate")).data;
+      return (await supabase.from("vehicles").select("*").order("sort_order").order("base_rate")).data;
     },
   });
 
@@ -294,7 +308,7 @@ function AdminPortal() {
   const openPayoutConfig = (d: AdminDriver) => {
     if (!assignFor) return;
     const fare = Number(assignFor.fare_estimate);
-    const pct = Math.round(Number(d.commission_rate ?? 0.2) * 100);
+    const pct = Math.round(Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100);
     setPayoutDriver(d);
     setPayoutPct(String(pct));
     setPayoutAmt(((fare * pct) / 100).toFixed(2));
@@ -567,7 +581,7 @@ function AdminPortal() {
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-sm text-ink-muted">
-                  <span>{d.experience_years}y exp · ★ {Number(d.rating).toFixed(2)} · {Math.round(Number(d.commission_rate ?? 0.2) * 100)}%</span>
+                  <span>{d.experience_years}y exp · ★ {Number(d.rating).toFixed(2)} · {Math.round(Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100)}%</span>
                   <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground">
                     {d.is_verified ? "View" : "Review"} <ChevronRight className="h-3.5 w-3.5" />
                   </span>
@@ -609,7 +623,7 @@ function AdminPortal() {
                       <td className="p-3 font-mono text-xs">{d.license_number}</td>
                       <td className="p-3">{d.experience_years}y</td>
                       <td className="p-3">{Number(d.rating).toFixed(2)}</td>
-                      <td className="p-3">{Math.round(Number(d.commission_rate ?? 0.2) * 100)}%</td>
+                      <td className="p-3">{Math.round(Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100)}%</td>
                       <td className="p-3">${Number(d.total_earnings).toFixed(0)}</td>
                       <td className="p-3">
                         <span className={`rounded-full px-2.5 py-0.5 text-xs ${d.is_verified ? "bg-foreground text-background" : "bg-[#c9a76a]/15 text-[#8a6d33]"}`}>
@@ -632,6 +646,14 @@ function AdminPortal() {
               </table>
             </div>
           </div>
+
+          {/* Rates. Sits above Fleet because the fare engine reads from here —
+              the vehicles table only supplies base/hourly rates. */}
+          <h2 className="mt-12 mb-1 text-2xl font-light sm:mt-16">Rates</h2>
+          <p className="mb-4 text-sm text-ink-muted">
+            The live rate card. Every change is published as a new version with a reason — nothing is overwritten.
+          </p>
+          <PricingConfigPanel config={pricingConfig} />
 
           {/* Vehicles */}
           <h2 className="mt-12 mb-4 text-2xl font-light sm:mt-16">Fleet</h2>
@@ -810,7 +832,7 @@ function AdminPortal() {
                   <div className="flex items-center gap-2 text-xs text-ink-muted">
                     <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{Number(payoutDriver.rating).toFixed(2)}</span>
                     <span>· {payoutDriver.experience_years}y exp</span>
-                    <span>· default {Math.round(Number(payoutDriver.commission_rate ?? 0.2) * 100)}%</span>
+                    <span>· default {Math.round(Number(payoutDriver.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100)}%</span>
                   </div>
                 </div>
                 <div className="ml-auto shrink-0 text-right">
@@ -876,7 +898,7 @@ function AdminPortal() {
                             <div className="flex items-center gap-2 text-xs text-ink-muted">
                               <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{Number(d.rating).toFixed(2)}</span>
                               <span>· {d.experience_years}y exp</span>
-                              <span>· {Math.round(Number(d.commission_rate ?? 0.2) * 100)}%</span>
+                              <span>· {Math.round(Number(d.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE) * 100)}%</span>
                               <span>· {d.is_available ? "Online" : "Offline"}</span>
                             </div>
                             {d.profile?.email && <div className="mt-0.5 truncate text-xs text-ink-soft">{d.profile.email}</div>}

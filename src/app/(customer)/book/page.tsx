@@ -9,15 +9,17 @@ import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
-import { Check, ArrowRight, ArrowLeft, Sparkles, Users, Luggage, Download } from "lucide-react";
+import { Check, ArrowRight, ArrowLeft, Sparkles, Users, Luggage, Download, Plus, X } from "lucide-react";
 import Image from "next/image";
 import { createBookingAction } from "@/lib/actions";
 import { TripTypeToggle } from "@/components/site/TripTypeToggle";
 import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
 import { RideMap } from "@/components/site/RideMap";
 import { getDirections, type Place } from "@/lib/mapbox";
-import { formatDateTime } from "@/lib/datetime";
-import { quote, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { formatDateTime, isFuturePickup, minPickupLocalValue } from "@/lib/datetime";
+import { usePricingConfig } from "@/hooks/use-pricing-config";
+import { priceBreakdown, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { MAX_STOPS, isFilledStop, routableStops, type BookingStop } from "@/lib/stops";
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { queries as mockDb } from "@/data/data";
@@ -46,6 +48,8 @@ type State = {
   dropoff: string;
   pickupCoords: Coords;
   dropoffCoords: Coords;
+  /** Intermediate stops, in order. Max MAX_STOPS. */
+  stops: BookingStop[];
   distanceKm: number | null;
   durationMin: number | null;
   datetime: string;
@@ -54,6 +58,9 @@ type State = {
   vehicleId: string | null;
   passengerName: string;
   passengerPhone: string;
+  /** Party size — drives the tariff's >4 passenger / excess-baggage surcharge. */
+  passengers: number;
+  luggage: number;
   notes: string;
 };
 
@@ -73,21 +80,33 @@ function BookFlow() {
   const searchParams = useSearchParams();
   const supabase = useSupabase();
 
+  // The live rate card. Drives the PREVIEW only — the server recomputes the
+  // fare from its own read and ignores whatever this quotes.
+  const pricingConfig = usePricingConfig();
   const [step, setStep] = useState(1);
   const [reference, setReference] = useState<string | null>(null);
   const [otp, setOtp] = useState<string | null>(null);
   const [s, setS] = useState<State>({
     tripType: "one_way", pickup: "", dropoff: "",
-    pickupCoords: null, dropoffCoords: null, distanceKm: null, durationMin: null,
+    pickupCoords: null, dropoffCoords: null, stops: [], distanceKm: null, durationMin: null,
     datetime: "", durationHours: HOURLY_MIN_HOURS, flightNumber: "", vehicleId: null,
-    passengerName: "", passengerPhone: "", notes: "",
+    passengerName: "", passengerPhone: "", passengers: 1, luggage: 0, notes: "",
   });
+
+  const addStop = () =>
+    setS((prev) =>
+      prev.stops.length >= MAX_STOPS ? prev : { ...prev, stops: [...prev.stops, { address: "", lat: null, lng: null }] },
+    );
+  const removeStop = (i: number) =>
+    setS((prev) => ({ ...prev, stops: prev.stops.filter((_, n) => n !== i) }));
+  const setStop = (i: number, stop: BookingStop) =>
+    setS((prev) => ({ ...prev, stops: prev.stops.map((st, n) => (n === i ? stop : st)) }));
 
   const { data: vehicles } = useQuery<BookVehicle[]>({
     queryKey: ["vehicles-book"],
     queryFn: async () => {
       if (!SUPABASE_ENABLED) return mockDb.activeVehicles();
-      const { data, error } = await supabase.from("vehicles").select("*").eq("is_active", true).order("base_rate");
+      const { data, error } = await supabase.from("vehicles").select("*").eq("is_active", true).order("sort_order").order("base_rate");
       if (error) throw error;
       return data as unknown as BookVehicle[];
     },
@@ -139,6 +158,10 @@ function BookFlow() {
     }
   }, [searchParams, vehicles]);
 
+  // Stable dep for the directions effect below: it must re-route when a stop's
+  // COORDINATES change, not on every keystroke in a stop's address field.
+  const stopsKey = routableStops(s.stops).map((p) => `${p.lng},${p.lat}`).join("|");
+
   // Compute driving distance/duration whenever both endpoints have coordinates.
   useEffect(() => {
     const p = s.pickupCoords, d = s.dropoffCoords;
@@ -149,12 +172,19 @@ function BookFlow() {
       return;
     }
     let cancelled = false;
-    getDirections(p, d).then((dir) => {
+    // Route through the stops so the shown distance (and therefore the fare)
+    // matches what the server recomputes.
+    getDirections(p, d, routableStops(s.stops)).then((dir) => {
       if (cancelled || !dir) return;
       setS((prev) => ({ ...prev, distanceKm: dir.distanceKm, durationMin: dir.durationMin }));
     });
     return () => { cancelled = true; };
-  }, [s.pickupCoords, s.dropoffCoords, s.tripType]);
+    // s.stops is intentionally not a dependency: it is a new array on every
+    // keystroke in a stop's address field, which would fire a Mapbox Directions
+    // request per character. stopsKey covers it — it changes only when a stop's
+    // resolved coordinates do, which is the only thing routing depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.pickupCoords, s.dropoffCoords, s.tripType, stopsKey]);
 
   const selected = vehicles?.find((v) => v.id === s.vehicleId);
   // Pearson airport trips use the official GTAA tariff — resolved here so the
@@ -169,7 +199,22 @@ function BookFlow() {
           distanceKm: s.distanceKm,
         })
       : null;
-  const fare = quote(s.tripType, selected, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff });
+  // Mirrors the server's authoritative breakdown (actions.ts:computeServerFare).
+  // `fare` stays the pre-tax subtotal — the server ignores the client's number
+  // and recomputes, so this is display-only.
+  const bd = priceBreakdown(
+    s.tripType,
+    selected,
+    {
+      durationHours: s.durationHours,
+      distanceKm: s.distanceKm ?? undefined,
+      tariff: pearsonTariff,
+      passengerCount: s.passengers,
+      luggageCount: s.luggage,
+    },
+    pricingConfig,
+  );
+  const fare = bd.subtotal;
 
   const confirm = async () => {
     if (!user || !s.vehicleId) return;
@@ -178,7 +223,10 @@ function BookFlow() {
         vehicleId: s.vehicleId, pickup: s.pickup, dropoff: s.dropoff,
         datetime: s.datetime, fare, passengerName: s.passengerName,
         passengerPhone: s.passengerPhone, notes: s.notes,
+        passengerCount: s.passengers, luggageCount: s.luggage,
         tripType: s.tripType,
+        // Blank rows are UI scaffolding — never send them.
+        stops: s.tripType === "hourly" ? [] : s.stops.filter(isFilledStop),
         durationHours: s.tripType === "hourly" ? s.durationHours : null,
         flightNumber: s.tripType === "airport" ? (s.flightNumber || null) : null,
         pickupLat: s.pickupCoords?.lat ?? null,
@@ -212,6 +260,9 @@ function BookFlow() {
     const rows: [string, string][] = [
       ["Trip type", tripTypeLabel(s.tripType)],
       ["Pickup", s.pickup],
+      ...(s.tripType !== "hourly"
+        ? (s.stops.filter(isFilledStop).map((st, i) => [`Stop ${i + 1}`, st.address]) as [string, string][])
+        : []),
       ...(s.tripType === "hourly"
         ? ([["Duration", `${Math.max(HOURLY_MIN_HOURS, s.durationHours)} hours`]] as [string, string][])
         : ([["Drop-off", s.dropoff]] as [string, string][])),
@@ -221,6 +272,11 @@ function BookFlow() {
       ["Date & time", dt],
       ["Vehicle", selected?.name ?? "—"],
       ["Passenger", s.passengerName],
+      ["Fare", `$${(bd.baseFare + bd.markup).toFixed(2)}`],
+      ...(bd.airportFee > 0
+        ? ([["Airport fee", `$${bd.airportFee.toFixed(2)}`]] as [string, string][])
+        : []),
+      ["HST (13%)", `$${bd.hst.toFixed(2)}`],
       ...(s.passengerPhone ? ([["Phone", s.passengerPhone]] as [string, string][]) : []),
     ];
     const rowsHtml = rows
@@ -254,8 +310,8 @@ function BookFlow() {
     <div class="top"><div class="brand">Soph<b>Ria</b></div><div class="sub">Chauffeur Receipt</div></div>
     <div class="ref"><div><div class="lbl">Booking reference</div><div class="num">${esc(reference)}</div></div><div class="badge">${esc(tripTypeLabel(s.tripType))}</div></div>
     <table>${rowsHtml}</table>
-    <div class="total"><div class="lbl">Estimated fare</div><div class="amt">$${fare.toFixed(2)} CAD</div></div>
-    <div class="foot">This is an estimate, not a paid invoice. Fares are subject to 13% HST; tolls, parking and waiting time are extra where applicable. Once dispatch confirms your reservation you'll receive a secure payment link. Thank you for choosing SophRia — luxury limousine &amp; chauffeur services across Toronto &amp; Southern Ontario.</div>
+    <div class="total"><div class="lbl">Estimated total (incl. HST)</div><div class="amt">$${bd.total.toFixed(2)} CAD</div></div>
+    <div class="foot">This is an estimate, not a paid invoice. The total includes 13% HST; tolls, parking and waiting time are extra where applicable, and gratuity is added at payment. Once dispatch confirms your reservation you'll receive a secure payment link. Thank you for choosing SophRia — luxury limousine &amp; chauffeur services across Toronto &amp; Southern Ontario.</div>
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print()},350)}<\/script>
 </body></html>`;
@@ -327,6 +383,49 @@ function BookFlow() {
                     mapTitle="Choose pickup on map"
                   />
                 </Field>
+                {/* Stops — one-way and airport only. Hourly is "as directed",
+                    so the chauffeur follows the passenger on the day rather
+                    than a fixed itinerary priced up front. */}
+                {s.tripType !== "hourly" &&
+                  s.stops.map((stop, i) => (
+                    <Field key={i} label={`Stop ${i + 1}`}>
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <AddressAutocomplete
+                            value={stop.address}
+                            onChange={(v) => setStop(i, { address: v, lat: null, lng: null })}
+                            onSelect={(p: Place) => setStop(i, { address: p.address, lat: p.lat, lng: p.lng })}
+                            placeholder="Where should we stop?"
+                            inputClassName={inputCls}
+                            mapInitial={s.pickupCoords}
+                            mapTitle={`Choose stop ${i + 1} on map`}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeStop(i)}
+                          aria-label={`Remove stop ${i + 1}`}
+                          className="mt-2.5 shrink-0 rounded-full p-1.5 text-ink-soft transition hover:bg-muted hover:text-foreground"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </Field>
+                  ))}
+                {s.tripType !== "hourly" && s.stops.length < MAX_STOPS && (
+                  <button
+                    type="button"
+                    onClick={addStop}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted transition hover:text-foreground"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add a stop
+                    <span className="text-ink-soft">
+                      ({s.stops.length}/{MAX_STOPS})
+                    </span>
+                  </button>
+                )}
+
                 {s.tripType === "hourly" ? (
                   <Field label="Duration">
                     <select className={inputCls} value={s.durationHours} onChange={(e) => setS({ ...s, durationHours: Number(e.target.value) })}>
@@ -360,6 +459,7 @@ function BookFlow() {
                       dropoff={s.dropoff}
                       pickupCoords={s.pickupCoords}
                       dropoffCoords={s.dropoffCoords}
+                      stops={s.stops}
                       height={220}
                     />
                     {s.distanceKm != null && (
@@ -382,9 +482,26 @@ function BookFlow() {
             {step === 2 && (
               <Step title="Date & time">
                 <Field label="Pickup date & time">
-                  <input type="datetime-local" className={inputCls} value={s.datetime} onChange={(e) => setS({ ...s, datetime: e.target.value })} />
+                  <input
+                    type="datetime-local"
+                    className={inputCls}
+                    // Greys out past slots in the picker. The server re-checks:
+                    // `min` is trivially bypassed and is only a convenience.
+                    min={minPickupLocalValue()}
+                    value={s.datetime}
+                    onChange={(e) => setS({ ...s, datetime: e.target.value })}
+                  />
                 </Field>
-                <Nav onBack={() => setStep(1)} onNext={() => s.datetime ? setStep(3) : toast.error("Pick a date and time")} />
+                <Nav
+                  onBack={() => setStep(1)}
+                  onNext={() =>
+                    !s.datetime
+                      ? toast.error("Pick a date and time")
+                      : !isFuturePickup(s.datetime)
+                        ? toast.error("Pick-up time must be in the future")
+                        : setStep(3)
+                  }
+                />
               </Step>
             )}
 
@@ -413,8 +530,8 @@ function BookFlow() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="text-base font-medium text-foreground">${quote(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff }).toFixed(0)}</div>
-                        <div className="text-xs text-ink-soft">{s.tripType === "hourly" ? `CAD · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD est."}</div>
+                        <div className="text-base font-medium text-foreground">${priceBreakdown(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff }, pricingConfig).total.toFixed(0)}</div>
+                        <div className="text-xs text-ink-soft">{s.tripType === "hourly" ? `incl. HST · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD incl. HST"}</div>
                       </div>
                       {s.vehicleId === v.id && (
                         <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground">
@@ -437,10 +554,47 @@ function BookFlow() {
                 <Field label="Phone">
                   <input className={inputCls} value={s.passengerPhone} onChange={(e) => setS({ ...s, passengerPhone: e.target.value })} placeholder="+1 (416) …" />
                 </Field>
+                {/* The airport tariff charges a once-per-trip surcharge for more
+                    than 4 passengers and/or excess baggage. It was implemented
+                    and priced, but this form never asked — so passenger_count
+                    reached the DB as null and the surcharge could never fire. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Passengers">
+                    <input
+                      type="number"
+                      min={1}
+                      max={selected?.capacity ?? 8}
+                      className={inputCls}
+                      value={s.passengers}
+                      onChange={(e) => setS({ ...s, passengers: Math.max(1, Number(e.target.value) || 1) })}
+                    />
+                  </Field>
+                  <Field label="Bags">
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      className={inputCls}
+                      value={s.luggage}
+                      onChange={(e) => setS({ ...s, luggage: Math.max(0, Number(e.target.value) || 0) })}
+                    />
+                  </Field>
+                </div>
+                {selected && s.passengers > selected.capacity && (
+                  <p className="-mt-1 text-xs text-amber-600">
+                    {selected.name} seats {selected.capacity}. Pick a larger vehicle or reduce the party.
+                  </p>
+                )}
                 <Field label="Special requests (optional)">
                   <textarea rows={3} className={inputCls} value={s.notes} onChange={(e) => setS({ ...s, notes: e.target.value })} />
                 </Field>
-                <Nav onBack={() => setStep(3)} onNext={() => s.passengerName && s.passengerPhone ? setStep(5) : toast.error("Please add a name and phone")} />
+                <Nav onBack={() => setStep(3)} onNext={() =>
+                    !s.passengerName || !s.passengerPhone
+                      ? toast.error("Please add a name and phone")
+                      : selected && s.passengers > selected.capacity
+                        ? toast.error(`${selected.name} seats ${selected.capacity}`)
+                        : setStep(5)
+                  } />
               </Step>
             )}
 
@@ -452,6 +606,11 @@ function BookFlow() {
                     {([
                       ["Trip type", tripTypeLabel(s.tripType)],
                       ["Pickup", s.pickup],
+                      ...(s.tripType !== "hourly"
+                        ? s.stops
+                            .filter(isFilledStop)
+                            .map((st, i) => [`Stop ${i + 1}`, st.address] as [string, string])
+                        : []),
                       ...(s.tripType === "hourly"
                         ? [["Duration", `${Math.max(HOURLY_MIN_HOURS, s.durationHours)} hours`] as [string, string]]
                         : [["Drop-off", s.dropoff] as [string, string]]),
@@ -461,9 +620,14 @@ function BookFlow() {
                       ["Date & Time", formatDateTime(s.datetime)],
                       ["Vehicle", selected?.name ?? "—"],
                       ["Passenger", s.passengerName],
-                      ["Estimated fare", `$${fare.toFixed(2)} CAD`],
+                      ["Fare", `$${(bd.baseFare + bd.markup).toFixed(2)}`],
+                      ...(bd.airportFee > 0
+                        ? [["Airport fee", `$${bd.airportFee.toFixed(2)}`] as [string, string]]
+                        : []),
+                      ["HST (13%)", `$${bd.hst.toFixed(2)}`],
+                      ["Estimated total", `$${bd.total.toFixed(2)} CAD`],
                     ] as [string, string][]).map(([k, v]) => (
-                      <div key={k} className={`flex justify-between py-2.5 ${k !== "Estimated fare" ? "border-b border-border" : "font-medium text-foreground"}`}>
+                      <div key={k} className={`flex justify-between py-2.5 ${k !== "Estimated total" ? "border-b border-border" : "font-medium text-foreground"}`}>
                         <span className="text-ink-muted">{k}</span>
                         <span className="text-right text-foreground">{v}</span>
                       </div>
@@ -475,11 +639,11 @@ function BookFlow() {
                   </div>
                   {pearsonTariff != null ? (
                     <p className="text-xs text-ink-soft">
-                      Priced by the official Toronto Pearson airport tariff (taxes included). Highway 407 tolls at cost, requested stops $10 per 10 minutes, and a $15 surcharge for more than 4 passengers or excess baggage may apply.
+                      Priced from the official Toronto Pearson airport tariff, with the airport fee and {(pricingConfig.hstRate * 100).toFixed(0)}% HST shown separately above. Highway 407 tolls at cost, requested stops ${pricingConfig.stopWaitPer10Min} per 10 minutes, and a ${pricingConfig.extraPassengerSurcharge} surcharge for more than 4 passengers or excess baggage may apply.
                     </p>
                   ) : (
                     <p className="text-xs text-ink-soft">
-                      Fares are subject to 13% HST. Highway tolls (incl. 407), parking, airport fees, waiting time beyond the complimentary period and additional stops are extra where applicable.
+                      The total above includes 13% HST. Highway tolls (incl. 407), parking, waiting time beyond the complimentary period and additional stops are extra where applicable. Gratuity is added at payment.
                     </p>
                   )}
                 </div>
@@ -514,6 +678,7 @@ function BookFlow() {
                       dropoff={s.dropoff}
                       pickupCoords={s.pickupCoords}
                       dropoffCoords={s.dropoffCoords}
+                      stops={s.stops}
                       height={180}
                       className="!rounded-none !border-x-0 !border-t-0 !border-b !border-white/10"
                     />
