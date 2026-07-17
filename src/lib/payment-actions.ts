@@ -3,9 +3,8 @@
 import { auth } from "@/auth";
 import { createClient } from "@supabase/supabase-js";
 import type { Session } from "next-auth";
-import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
-import { markBookingPaid, markBookingAuthorized, canHoldUntil } from "@/lib/payments";
+import { canHoldUntil, settleCheckoutSession } from "@/lib/payments";
 import { pickupInstant } from "@/lib/datetime";
 
 /**
@@ -190,42 +189,3 @@ export async function verifyCheckoutSessionAction(sessionId: string): Promise<{ 
   return settleCheckoutSession(checkout);
 }
 
-/**
- * Turn a completed Checkout session into the right booking state. Shared by the
- * webhook and the success-redirect, either of which may land first.
- *
- * The subtlety: for a manual-capture session Stripe leaves
- * `session.payment_status` as "unpaid" until you capture, because nothing has
- * been charged. Gating on `payment_status === "paid"` — as this did — silently
- * ignores every held booking. The PaymentIntent's status is the truth:
- * `requires_capture` means the funds are held.
- */
-export async function settleCheckoutSession(
-  checkout: Stripe.Checkout.Session,
-): Promise<{ paid: boolean; held?: boolean }> {
-  const bookingId = checkout.metadata?.booking_id;
-  if (!bookingId) return { paid: false };
-
-  const paymentIntentId =
-    typeof checkout.payment_intent === "string" ? checkout.payment_intent : checkout.payment_intent?.id ?? null;
-  const tipCents = Math.max(0, Number(checkout.metadata?.tip_cents ?? 0) || 0);
-
-  if (paymentIntentId) {
-    const intent = await getStripe().paymentIntents.retrieve(paymentIntentId);
-    if (intent.status === "requires_capture") {
-      await markBookingAuthorized({ bookingId, paymentIntentId, tipCents });
-      return { paid: true, held: true };
-    }
-  }
-
-  // Immediate-capture path (booking beyond the hold window, or a legacy session).
-  if (checkout.payment_status !== "paid") return { paid: false };
-  await markBookingPaid({
-    bookingId,
-    paymentIntentId: paymentIntentId ?? checkout.id,
-    amountCents: checkout.amount_total ?? 0,
-    currency: checkout.currency ?? "cad",
-    tipCents,
-  });
-  return { paid: true, held: false };
-}

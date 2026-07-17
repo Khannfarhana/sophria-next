@@ -303,3 +303,62 @@ export function notifyDriverApplication(applicantName: string, applicantEmail: s
     await Promise.all(sends);
   });
 }
+
+/**
+ * Admin alert for a booking whose money needs a human.
+ *
+ * These are the cases where the operational side succeeded and the payment side
+ * did not — they used to be a console.error, which is indistinguishable from
+ * nothing. A card authorization lives ~7 days and issuers release early, so a
+ * hold placed at booking can vanish before the ride: the fare goes uncollected
+ * and the only correct resolution is someone chasing an invoice. Marking the
+ * booking is not enough on its own; that state is inert until somebody looks.
+ *
+ * Admin-only and internal, so it sends raw html/text rather than earning a
+ * customer-facing template.
+ */
+function notifyAdminPaymentIssue(bookingId: string, headline: string, guidance: string) {
+  return safe(async () => {
+    const adminEmail = getAdminEmail();
+    if (!adminEmail) return;
+    const c = await loadBookingContext(bookingId);
+    if (!c) return;
+    const rows = [
+      `Passenger: ${c.passengerName || c.customer?.name || "—"}`,
+      `Pickup:    ${c.pickup}`,
+      `Drop-off:  ${c.dropoff}`,
+      `When:      ${c.datetime}`,
+      `Fare:      $${c.fare}`,
+    ];
+    await sendMail({
+      to: adminEmail,
+      subject: `ACTION NEEDED — ${c.reference}: ${headline}`,
+      text: [`${c.reference}: ${headline}`, "", ...rows, "", guidance].join("\n"),
+      html:
+        `<p><strong>${c.reference}: ${headline}</strong></p>` +
+        `<p>${rows.join("<br/>")}</p>` +
+        `<p>${guidance}</p>`,
+    });
+  });
+}
+
+/** A completed ride whose held funds could not be captured. */
+export function notifyPaymentCaptureFailed(bookingId: string) {
+  return notifyAdminPaymentIssue(
+    bookingId,
+    "ride completed but the payment could NOT be captured",
+    "The authorization most likely expired before the ride (holds last ~7 days). " +
+      "The booking is marked payment_status = failed. Take payment manually.",
+  );
+}
+
+/** A hold released BEFORE the ride — the booking is no longer funded. */
+export function notifyPaymentHoldReleased(bookingId: string) {
+  return notifyAdminPaymentIssue(
+    bookingId,
+    "the card hold was released before the ride",
+    "Stripe reports the authorization is cancelled, so no funds are held. The booking is " +
+      "back to payment_status = pending and CANNOT be dispatched until it is paid again. " +
+      "A driver may already be assigned — re-request payment or contact the passenger.",
+  );
+}

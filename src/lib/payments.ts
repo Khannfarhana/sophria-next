@@ -1,9 +1,10 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
+import type Stripe from "stripe";
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getStripe } from "@/lib/stripe";
-import { notifyPaymentReceived } from "@/lib/mailer/notifications";
+import { notifyPaymentReceived, notifyPaymentHoldReleased } from "@/lib/mailer/notifications";
 
 function svc() {
   return createClient(
@@ -22,18 +23,37 @@ export { AUTH_HOLD_WINDOW_DAYS, canHoldUntil } from "@/lib/payment-window";
  * Best-effort: expire any OPEN Checkout sessions for a booking. Used when the
  * admin changes the fare — a session created at the old amount would otherwise
  * stay payable for up to 24h. Non-throwing (mock mode has no Stripe key).
+ *
+ * Auto-paginates. It used to take a single page of 100 open sessions
+ * ACCOUNT-WIDE and filter in JS, so the session it exists to kill was missed
+ * whenever more than 100 open sessions existed — a busy day of abandoned
+ * checkouts. The customer could then open their still-live tab and pay the OLD
+ * fare: admin corrects $200 -> $350, customer pays $200, settleCheckoutSession
+ * marks it paid, $150 gone with nothing logged. Stripe cannot filter list() by
+ * metadata, so paging the whole set is the only way to be sure.
  */
 export async function expireOpenCheckoutSessions(bookingId: string) {
   try {
     const stripe = getStripe();
-    const sessions = await stripe.checkout.sessions.list({ status: "open", limit: 100 });
-    for (const s of sessions.data) {
+    let scanned = 0;
+    let expired = 0;
+    // autoPagingEach walks every page, not just the first.
+    for await (const s of stripe.checkout.sessions.list({ status: "open", limit: 100 })) {
+      scanned++;
       if (s.metadata?.booking_id === bookingId) {
         await stripe.checkout.sessions.expire(s.id);
+        expired++;
       }
     }
+    if (expired === 0 && scanned > 0) {
+      // Not an error: usually the customer simply never opened checkout.
+      console.info(`[payments] no open checkout session for booking ${bookingId} (scanned ${scanned})`);
+    }
   } catch (err) {
-    console.error("[payments] expiring open checkout sessions failed:", err);
+    // Swallowed because this runs inside after() on a best-effort path — but a
+    // failure here means a stale, cheaper session may still be payable, so it
+    // must be loud enough to find.
+    console.error(`[payments] expiring open checkout sessions for booking ${bookingId} failed:`, err);
   }
 }
 
@@ -219,6 +239,56 @@ export async function releaseBookingHold(bookingId: string, paymentIntentId: str
 }
 
 /**
+ * A hold that no longer exists: put the booking back to 'pending'.
+ *
+ * Driven by the payment_intent.canceled webhook. A card authorization lives
+ * ~7 days, issuers release early, and Stripe cancels an uncaptured intent when
+ * it expires — but nothing watched for it, so payment_status stayed
+ * 'authorized' indefinitely. assignDriverAction treats 'authorized' as secured
+ * funds, so the ride kept dispatching against money that was already gone, and
+ * the first sign of trouble was a capture failure after the ride had been
+ * driven. That is a free ride.
+ *
+ * Three guards, each load-bearing:
+ *   payment_status = 'authorized' — never touch a booking already captured
+ *     ('paid'); the capture path also cancels nothing, but a stale webhook
+ *     retry must not undo a settled payment.
+ *   stripe_payment_id = the cancelled intent — if the customer has since paid
+ *     again, that is a DIFFERENT intent and this event is about a dead one.
+ *   status not terminal — a FREE CANCELLATION cancels the intent itself
+ *     (releaseBookingHold), which fires this same event. That booking is
+ *     already cancelled and correctly settled; marking it "pending payment"
+ *     would tell the customer they still owe for a ride they cancelled.
+ */
+export async function releaseAuthorizedBooking(bookingId: string, paymentIntentId: string): Promise<void> {
+  const admin = svc();
+  const { data, error } = await admin
+    .from("bookings")
+    .update({
+      payment_status: "pending" as const,
+      authorized_at: null,
+      auth_expires_at: null,
+    })
+    .eq("id", bookingId)
+    .eq("payment_status", "authorized")
+    .eq("stripe_payment_id", paymentIntentId)
+    .not("status", "in", "(cancelled,rejected,completed)")
+    .select("id, status");
+
+  if (error) {
+    // Throwing gives Stripe a 5xx and a retry, which is what we want: leaving a
+    // booking marked as funded when it isn't is the failure being fixed here.
+    throw new Error(`releaseAuthorizedBooking(${bookingId}): ${error.message}`);
+  }
+  if (!data || data.length === 0) return; // already cancelled, captured, or re-paid
+
+  console.warn(`[payments] hold released before the ride for booking ${bookingId} (${paymentIntentId}) — back to pending`);
+  after(() => notifyPaymentHoldReleased(bookingId));
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+}
+
+/**
  * Idempotent "payment landed" write, shared by the Stripe webhook and
  * verifyCheckoutSessionAction — whichever runs first wins; the loser is a
  * no-op. The conditional update on payment_status='pending' is the
@@ -263,4 +333,53 @@ export async function markBookingPaid(opts: {
   revalidatePath("/admin");
   revalidatePath("/dashboard");
   return { alreadyPaid: false };
+}
+
+/**
+ * Turn a completed Checkout session into the right booking state. Shared by the
+ * webhook and the success-redirect, either of which may land first.
+ *
+ * The subtlety: for a manual-capture session Stripe leaves
+ * `session.payment_status` as "unpaid" until you capture, because nothing has
+ * been charged. Gating on `payment_status === "paid"` — as this did — silently
+ * ignores every held booking. The PaymentIntent's status is the truth:
+ * `requires_capture` means the funds are held.
+ *
+ * This lives in this server-only module rather than payment-actions.ts because
+ * EVERY export of a "use server" file is a public POST endpoint, and this
+ * function takes the Stripe session as an argument and writes payment state
+ * under the service role. Exported from there, an attacker could POST a forged
+ * `{payment_status:"paid", metadata:{booking_id}}` and mark any booking paid.
+ * Its callers must establish trust first: the webhook by verifying Stripe's
+ * signature, verifyCheckoutSessionAction by retrieving the session from Stripe
+ * and checking ownership.
+ */
+export async function settleCheckoutSession(
+  checkout: Stripe.Checkout.Session,
+): Promise<{ paid: boolean; held?: boolean }> {
+  const bookingId = checkout.metadata?.booking_id;
+  if (!bookingId) return { paid: false };
+
+  const paymentIntentId =
+    typeof checkout.payment_intent === "string" ? checkout.payment_intent : checkout.payment_intent?.id ?? null;
+  const tipCents = Math.max(0, Number(checkout.metadata?.tip_cents ?? 0) || 0);
+
+  if (paymentIntentId) {
+    const intent = await getStripe().paymentIntents.retrieve(paymentIntentId);
+    if (intent.status === "requires_capture") {
+      await markBookingAuthorized({ bookingId, paymentIntentId, tipCents });
+      return { paid: true, held: true };
+    }
+  }
+
+  // Immediate-capture path (booking beyond the hold window, or a legacy session).
+  if (checkout.payment_status !== "paid") return { paid: false };
+  await markBookingPaid({
+    bookingId,
+    paymentIntentId: paymentIntentId ?? checkout.id,
+    amountCents: checkout.amount_total ?? 0,
+    currency: checkout.currency ?? "cad",
+    tipCents,
+  });
+  return { paid: true, held: false };
 }

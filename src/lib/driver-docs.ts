@@ -88,6 +88,17 @@ export const DOC_LABELS: Record<string, string> = {
   photo: "Driver photo",
 };
 
+/**
+ * Whether a doc_type is one we actually recognise.
+ *
+ * The submit action only checks that the REQUIRED keys are present, so any
+ * extra key a caller invented rode straight into driver_documents. Accepts the
+ * legacy vocabulary too — those rows exist in the live table.
+ */
+export function isKnownDocType(docType: string): boolean {
+  return Object.hasOwn(DOC_LABELS, docType);
+}
+
 /** 10 MB — comfortably above a phone photo, well below a storage bill. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
