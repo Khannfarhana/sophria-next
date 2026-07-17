@@ -8,6 +8,8 @@ import { useSupabase } from "@/hooks/use-supabase";
 import { DEFAULT_DRIVER_PAYOUT_RATE } from "@/lib/pricing";
 import { StatusBadge } from "@/components/site/StatusBadge";
 import { AdminTabs } from "@/components/site/AdminTabs";
+import { PricingConfigPanel } from "@/components/site/PricingConfigPanel";
+import { usePricingConfig } from "@/hooks/use-pricing-config";
 import { DriverReviewDialog } from "@/components/site/DriverReviewDialog";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -137,6 +139,8 @@ interface AdminDriver {
 function AdminPortal() {
   const qc = useQueryClient();
   const supabase = useSupabase();
+  // The live rate card — the fare engine's actual source of truth.
+  const pricingConfig = usePricingConfig();
   const [filter, setFilter] = useState<string>("all");
   const [rejectFor, setRejectFor] = useState<AdminBooking | null>(null);
   const [rejReason, setRejReason] = useState<string>("no_drivers");
@@ -642,6 +646,14 @@ function AdminPortal() {
               </table>
             </div>
           </div>
+
+          {/* Rates. Sits above Fleet because the fare engine reads from here —
+              the vehicles table only supplies base/hourly rates. */}
+          <h2 className="mt-12 mb-1 text-2xl font-light sm:mt-16">Rates</h2>
+          <p className="mb-4 text-sm text-ink-muted">
+            The live rate card. Every change is published as a new version with a reason — nothing is overwritten.
+          </p>
+          <PricingConfigPanel config={pricingConfig} />
 
           {/* Vehicles */}
           <h2 className="mt-12 mb-4 text-2xl font-light sm:mt-16">Fleet</h2>

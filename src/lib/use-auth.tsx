@@ -4,7 +4,12 @@ import { createContext, useContext, type ReactNode } from "react";
 import { useSession, signOut as nextAuthSignOut } from "next-auth/react";
 import type { Session } from "next-auth";
 
-export type AppRole = "customer" | "driver" | "admin";
+/**
+ * Mirrors the app_role enum. `pricing` is deliberately separate from `admin`:
+ * dispatch and repricing the business are different jobs, so an admin can be
+ * created without it (see 20260717200000_pricing_role).
+ */
+export type AppRole = "customer" | "driver" | "admin" | "pricing";
 
 type AuthUser = Session["user"] | null;
 

@@ -1,10 +1,17 @@
 import type { AppRole } from "@/lib/use-auth";
 
-/** Maps each role to its default landing route. */
+/**
+ * Maps each role to its default landing route.
+ *
+ * `pricing` is a CAPABILITY, not a place — it grants the right to publish the
+ * rate card and is always held alongside another role. It has no home of its
+ * own, so it lands where a customer would; getDefaultRoute never picks it.
+ */
 export const ROLE_HOME: Record<AppRole, string> = {
   admin: "/admin",
   driver: "/driver",
   customer: "/dashboard",
+  pricing: "/dashboard",
 };
 
 /** Maps route prefixes to required roles. null = any authenticated user. */

@@ -265,7 +265,9 @@ export async function mockCancelBooking(id: string) {
     refund_amount: refund,
     ...(refund > 0 ? { payment_status: "refunded" as const } : {}),
   });
-  return { success: true, penalty: wasPaid ? quote.penalty : 0, refund, rate: quote.rate };
+  // settlementFailed mirrors cancelBookingAction's shape so callers can read
+  // one result type. No money moves here, so it can never be true.
+  return { success: true, penalty: wasPaid ? quote.penalty : 0, refund, rate: quote.rate, settlementFailed: false };
 }
 
 export async function mockBookingOtp(bookingId: string): Promise<string | null> {

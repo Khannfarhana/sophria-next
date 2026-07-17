@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage, type LegalSection } from "@/components/site/LegalPage";
 import { SITE } from "@/lib/site-config";
-import { HST_RATE, YYZ_AIRPORT_FEE, HOURLY_MIN_HOURS, DEFAULT_TIP_RATE } from "@/lib/pricing";
+import { loadPricingConfig } from "@/lib/pricing-config.server";
+import type { PricingConfig } from "@/lib/pricing-config";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
@@ -13,13 +14,19 @@ export const metadata: Metadata = {
  * Passenger-facing terms.
  *
  * NOT LEGAL ADVICE and not reviewed by counsel. The pricing and payment
- * sections are pulled from the same constants the fare engine uses, so the
- * published terms cannot quietly disagree with what the customer is charged —
- * which is exactly what happened before, when the site advertised 13% HST that
- * the engine never applied.
+ * sections are generated from the LIVE rate card the fare engine quotes from,
+ * so the published terms cannot quietly disagree with what the customer is
+ * charged — which is exactly what happened before, when the site advertised 13%
+ * HST that the engine never applied.
+ *
+ * This reads pricing_config rather than the old hardcoded constants because
+ * those rates are now admin-editable. A static page baked against a constant
+ * would keep publishing "13%" after someone changed HST in the admin — the same
+ * drift as before, but with legal weight. publishPricingConfigAction
+ * revalidates this path, so a published change reprints the terms.
  */
 
-const SECTIONS: LegalSection[] = [
+const sections = (cfg: PricingConfig): LegalSection[] => [
   {
     h: "1. These terms",
     p: [
@@ -37,9 +44,9 @@ const SECTIONS: LegalSection[] = [
   {
     h: "3. Fares, tax and fees",
     p: [
-      `Fares are quoted in Canadian dollars and shown in full before you pay, itemised into the fare, any airport fee, and HST at ${HST_RATE * 100}%. HST applies to every ride.`,
-      `Airport pickups and drop-offs carry a $${YYZ_AIRPORT_FEE.toFixed(2)} airport fee, shown as its own line. Trips to and from Toronto Pearson are priced from the official airport limousine tariff.`,
-      `Hourly bookings have a ${HOURLY_MIN_HOURS}-hour minimum.`,
+      `Fares are quoted in Canadian dollars and shown in full before you pay, itemised into the fare, any airport fee, and HST at ${cfg.hstRate * 100}%. HST applies to every ride.`,
+      `Airport pickups and drop-offs carry a $${cfg.yyzAirportFee.toFixed(2)} airport fee, shown as its own line. Trips to and from Toronto Pearson are priced from the official airport limousine tariff.`,
+      `Hourly bookings have a ${cfg.hourlyMinHours}-hour minimum.`,
       "Highway tolls (including Highway 407), parking, waiting time beyond the complimentary period, and additional stops are charged where they apply. Excessive cleaning or damage to the vehicle may be charged separately.",
       "Where dispatch adjusts a fare before payment, you are told the new amount and the reason before you are asked to pay it.",
     ],
@@ -47,7 +54,7 @@ const SECTIONS: LegalSection[] = [
   {
     h: "4. Gratuity",
     p: [
-      `Gratuity is separate from the fare and entirely your choice. ${DEFAULT_TIP_RATE * 100}% of the pre-tax fare is suggested at payment; you can change it or remove it. 100% of any tip goes to your chauffeur.`,
+      `Gratuity is separate from the fare and entirely your choice. ${cfg.defaultTipRate * 100}% of the pre-tax fare is suggested at payment; you can change it or remove it. 100% of any tip goes to your chauffeur.`,
     ],
   },
   {
@@ -110,14 +117,15 @@ const SECTIONS: LegalSection[] = [
   },
 ];
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  const cfg = await loadPricingConfig();
   return (
     <LegalPage
       title="Terms of"
       accent="Service."
       updated="Last updated 16 July 2026"
       intro={`These terms apply when you book ground transportation with ${SITE.fullName}.`}
-      sections={SECTIONS}
+      sections={sections(cfg)}
       footnote={
         <>
           See also our{" "}

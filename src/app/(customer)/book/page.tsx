@@ -16,7 +16,8 @@ import { TripTypeToggle } from "@/components/site/TripTypeToggle";
 import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
 import { RideMap } from "@/components/site/RideMap";
 import { getDirections, type Place } from "@/lib/mapbox";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, isFuturePickup, minPickupLocalValue } from "@/lib/datetime";
+import { usePricingConfig } from "@/hooks/use-pricing-config";
 import { priceBreakdown, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
 import { MAX_STOPS, isFilledStop, routableStops, type BookingStop } from "@/lib/stops";
 import { resolvePearsonTariff } from "@/lib/tariff";
@@ -57,6 +58,9 @@ type State = {
   vehicleId: string | null;
   passengerName: string;
   passengerPhone: string;
+  /** Party size — drives the tariff's >4 passenger / excess-baggage surcharge. */
+  passengers: number;
+  luggage: number;
   notes: string;
 };
 
@@ -76,6 +80,9 @@ function BookFlow() {
   const searchParams = useSearchParams();
   const supabase = useSupabase();
 
+  // The live rate card. Drives the PREVIEW only — the server recomputes the
+  // fare from its own read and ignores whatever this quotes.
+  const pricingConfig = usePricingConfig();
   const [step, setStep] = useState(1);
   const [reference, setReference] = useState<string | null>(null);
   const [otp, setOtp] = useState<string | null>(null);
@@ -83,7 +90,7 @@ function BookFlow() {
     tripType: "one_way", pickup: "", dropoff: "",
     pickupCoords: null, dropoffCoords: null, stops: [], distanceKm: null, durationMin: null,
     datetime: "", durationHours: HOURLY_MIN_HOURS, flightNumber: "", vehicleId: null,
-    passengerName: "", passengerPhone: "", notes: "",
+    passengerName: "", passengerPhone: "", passengers: 1, luggage: 0, notes: "",
   });
 
   const addStop = () =>
@@ -195,11 +202,18 @@ function BookFlow() {
   // Mirrors the server's authoritative breakdown (actions.ts:computeServerFare).
   // `fare` stays the pre-tax subtotal — the server ignores the client's number
   // and recomputes, so this is display-only.
-  const bd = priceBreakdown(s.tripType, selected, {
-    durationHours: s.durationHours,
-    distanceKm: s.distanceKm ?? undefined,
-    tariff: pearsonTariff,
-  });
+  const bd = priceBreakdown(
+    s.tripType,
+    selected,
+    {
+      durationHours: s.durationHours,
+      distanceKm: s.distanceKm ?? undefined,
+      tariff: pearsonTariff,
+      passengerCount: s.passengers,
+      luggageCount: s.luggage,
+    },
+    pricingConfig,
+  );
   const fare = bd.subtotal;
 
   const confirm = async () => {
@@ -209,6 +223,7 @@ function BookFlow() {
         vehicleId: s.vehicleId, pickup: s.pickup, dropoff: s.dropoff,
         datetime: s.datetime, fare, passengerName: s.passengerName,
         passengerPhone: s.passengerPhone, notes: s.notes,
+        passengerCount: s.passengers, luggageCount: s.luggage,
         tripType: s.tripType,
         // Blank rows are UI scaffolding — never send them.
         stops: s.tripType === "hourly" ? [] : s.stops.filter(isFilledStop),
@@ -444,6 +459,7 @@ function BookFlow() {
                       dropoff={s.dropoff}
                       pickupCoords={s.pickupCoords}
                       dropoffCoords={s.dropoffCoords}
+                      stops={s.stops}
                       height={220}
                     />
                     {s.distanceKm != null && (
@@ -466,9 +482,26 @@ function BookFlow() {
             {step === 2 && (
               <Step title="Date & time">
                 <Field label="Pickup date & time">
-                  <input type="datetime-local" className={inputCls} value={s.datetime} onChange={(e) => setS({ ...s, datetime: e.target.value })} />
+                  <input
+                    type="datetime-local"
+                    className={inputCls}
+                    // Greys out past slots in the picker. The server re-checks:
+                    // `min` is trivially bypassed and is only a convenience.
+                    min={minPickupLocalValue()}
+                    value={s.datetime}
+                    onChange={(e) => setS({ ...s, datetime: e.target.value })}
+                  />
                 </Field>
-                <Nav onBack={() => setStep(1)} onNext={() => s.datetime ? setStep(3) : toast.error("Pick a date and time")} />
+                <Nav
+                  onBack={() => setStep(1)}
+                  onNext={() =>
+                    !s.datetime
+                      ? toast.error("Pick a date and time")
+                      : !isFuturePickup(s.datetime)
+                        ? toast.error("Pick-up time must be in the future")
+                        : setStep(3)
+                  }
+                />
               </Step>
             )}
 
@@ -497,7 +530,7 @@ function BookFlow() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="text-base font-medium text-foreground">${priceBreakdown(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff }).total.toFixed(0)}</div>
+                        <div className="text-base font-medium text-foreground">${priceBreakdown(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff }, pricingConfig).total.toFixed(0)}</div>
                         <div className="text-xs text-ink-soft">{s.tripType === "hourly" ? `incl. HST · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD incl. HST"}</div>
                       </div>
                       {s.vehicleId === v.id && (
@@ -521,10 +554,47 @@ function BookFlow() {
                 <Field label="Phone">
                   <input className={inputCls} value={s.passengerPhone} onChange={(e) => setS({ ...s, passengerPhone: e.target.value })} placeholder="+1 (416) …" />
                 </Field>
+                {/* The airport tariff charges a once-per-trip surcharge for more
+                    than 4 passengers and/or excess baggage. It was implemented
+                    and priced, but this form never asked — so passenger_count
+                    reached the DB as null and the surcharge could never fire. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Passengers">
+                    <input
+                      type="number"
+                      min={1}
+                      max={selected?.capacity ?? 8}
+                      className={inputCls}
+                      value={s.passengers}
+                      onChange={(e) => setS({ ...s, passengers: Math.max(1, Number(e.target.value) || 1) })}
+                    />
+                  </Field>
+                  <Field label="Bags">
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      className={inputCls}
+                      value={s.luggage}
+                      onChange={(e) => setS({ ...s, luggage: Math.max(0, Number(e.target.value) || 0) })}
+                    />
+                  </Field>
+                </div>
+                {selected && s.passengers > selected.capacity && (
+                  <p className="-mt-1 text-xs text-amber-600">
+                    {selected.name} seats {selected.capacity}. Pick a larger vehicle or reduce the party.
+                  </p>
+                )}
                 <Field label="Special requests (optional)">
                   <textarea rows={3} className={inputCls} value={s.notes} onChange={(e) => setS({ ...s, notes: e.target.value })} />
                 </Field>
-                <Nav onBack={() => setStep(3)} onNext={() => s.passengerName && s.passengerPhone ? setStep(5) : toast.error("Please add a name and phone")} />
+                <Nav onBack={() => setStep(3)} onNext={() =>
+                    !s.passengerName || !s.passengerPhone
+                      ? toast.error("Please add a name and phone")
+                      : selected && s.passengers > selected.capacity
+                        ? toast.error(`${selected.name} seats ${selected.capacity}`)
+                        : setStep(5)
+                  } />
               </Step>
             )}
 
@@ -569,7 +639,7 @@ function BookFlow() {
                   </div>
                   {pearsonTariff != null ? (
                     <p className="text-xs text-ink-soft">
-                      Priced from the official Toronto Pearson airport tariff, with the airport fee and 13% HST shown separately above. Highway 407 tolls at cost, requested stops $10 per 10 minutes, and a $15 surcharge for more than 4 passengers or excess baggage may apply.
+                      Priced from the official Toronto Pearson airport tariff, with the airport fee and {(pricingConfig.hstRate * 100).toFixed(0)}% HST shown separately above. Highway 407 tolls at cost, requested stops ${pricingConfig.stopWaitPer10Min} per 10 minutes, and a ${pricingConfig.extraPassengerSurcharge} surcharge for more than 4 passengers or excess baggage may apply.
                     </p>
                   ) : (
                     <p className="text-xs text-ink-soft">
@@ -608,6 +678,7 @@ function BookFlow() {
                       dropoff={s.dropoff}
                       pickupCoords={s.pickupCoords}
                       dropoffCoords={s.dropoffCoords}
+                      stops={s.stops}
                       height={180}
                       className="!rounded-none !border-x-0 !border-t-0 !border-b !border-white/10"
                     />
