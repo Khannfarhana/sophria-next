@@ -8,6 +8,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { SUPABASE_ENABLED } from "@/lib/data-source";
 import {
   profiles as seedProfiles,
   user_roles as seedRoles,
@@ -53,7 +54,37 @@ function seed(): MockDB {
   });
 }
 
+/**
+ * Refuse to touch the mock store when the app is wired to a real database.
+ *
+ * Every function in mock-db/actions.ts is exported from a "use server" module,
+ * so each is a public POST endpoint in EVERY build — a production build
+ * registers 25 of them, reachable on /admin, /book, /dashboard and /driver.
+ * None of them authenticates or checks ownership: they take a caller-supplied
+ * id and act on it (mockPayBooking marks a booking paid; mockVerifyDriver
+ * verifies a driver; mockBookingOtp returns any ride's start code). /dashboard
+ * and /book carry no role requirement, so any signed-in user can reach that
+ * subset.
+ *
+ * With Supabase configured, nothing legitimate calls these — the pages all
+ * branch on SUPABASE_ENABLED first — so failing loudly here costs nothing and
+ * removes the surface entirely. This is the backstop for the case where mock
+ * mode is reached by accident rather than intent.
+ *
+ * Every mock action funnels through readDB/mutateDB (mockRejectBooking via
+ * patchBooking), so this one gate covers all of them.
+ */
+function assertMockMode(): void {
+  if (SUPABASE_ENABLED) {
+    throw new Error(
+      "Mock DB is unavailable: the app is configured to use Supabase. " +
+        "Set NEXT_PUBLIC_USE_MOCK_DB=1 to run against the mock store.",
+    );
+  }
+}
+
 export function readDB(): MockDB {
+  assertMockMode();
   try {
     return JSON.parse(fs.readFileSync(FILE, "utf8")) as MockDB;
   } catch {
@@ -76,6 +107,7 @@ function writeDB(db: MockDB) {
 
 /** Read-modify-write helper. The callback mutates `db` in place. */
 export function mutateDB<T>(fn: (db: MockDB) => T): T {
+  assertMockMode(); // readDB() also asserts; explicit here so writes fail fast.
   const db = readDB();
   const result = fn(db);
   writeDB(db);

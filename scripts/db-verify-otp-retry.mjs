@@ -6,7 +6,9 @@ for (const line of fs.readFileSync(".env.local", "utf8").split("\n")) {
   const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^"|"$/g, "");
 }
-let conn = process.env.POSTGRES_URL_NON_POOLING.replace(/([?&])sslmode=[^&]*/i, "$1").replace(/[?&]$/, "");
+let conn = process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL || process.env.POSTGRES_URL;
+if (!conn) throw new Error("Set POSTGRES_URL_NON_POOLING, DATABASE_URL or POSTGRES_URL in .env.local");
+conn = conn.replace(/([?&])sslmode=[^&]*/i, "$1").replace(/[?&]$/, "");
 const c = new Client({ connectionString: conn, ssl: { rejectUnauthorized: false } });
 await c.connect();
 
@@ -14,6 +16,13 @@ const MARCUS = "00000000-0000-4000-a000-000000000011";
 const { rows: [bk] } = await c.query(
   "select id, status, start_otp from public.bookings where reference='SR-70A8DE02'",
 );
+// Hardcoded seed fixture; absent from any DB not seeded with it (the live one
+// included). Without this it died with a TypeError on `bk.id`.
+if (!bk) {
+  console.error("Fixture booking SR-70A8DE02 not found — seed it (scripts/db-migrate-seed.mjs) or point this script at an existing reference.");
+  await c.end();
+  process.exit(1);
+}
 console.log("booking:", bk.id.slice(0, 8), bk.status, "otp:", bk.start_otp);
 
 await c.query("begin");
