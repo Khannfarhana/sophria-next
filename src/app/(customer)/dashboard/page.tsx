@@ -53,8 +53,14 @@ function Dashboard() {
       // the detail dialog fetches it via getBookingOtpAction.
       const { data, error } = await supabase
         .from("bookings")
-        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, fare_estimate, airport_fee, tax_amount, tip, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name, type, base_rate, hourly_rate)")
-        .order("pickup_datetime", { ascending: false });
+        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, fare_estimate, base_fare, markup_amount, airport_fee, tax_amount, tip, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, stops, vehicles(name, type, base_rate, hourly_rate)")
+        // Filter by owner explicitly. This relied on RLS alone, but the
+        // bookings policy also (correctly) grants a driver their ASSIGNED
+        // rides — so anyone holding both roles saw their driver work listed
+        // under "My Bookings". RLS still backstops this; the filter is what
+        // makes the query mean "bookings I placed".
+        .eq("customer_id", user!.id)
+        .order("created_at", { ascending: false });
       if (error) throw error;
 
       const rows = (data ?? []).map((b) => {
@@ -75,7 +81,12 @@ function Dashboard() {
       // predicted — the tier is resolved against the server's clock.
       const refund = Number(res?.refund ?? 0);
       const penalty = Number(res?.penalty ?? 0);
-      if (penalty > 0) {
+      // The ride is cancelled either way; only the money is unresolved. Say so
+      // rather than report a $0 fee as though everything settled — an admin has
+      // been emailed and will pick it up.
+      if (res?.settlementFailed) {
+        toast.success("Booking cancelled — we'll confirm the payment details with you by email.");
+      } else if (penalty > 0) {
         toast.success(
           `Booking cancelled — $${penalty.toFixed(2)} cancellation fee applied` +
             (refund > 0 ? `, $${refund.toFixed(2)} refunded` : ""),

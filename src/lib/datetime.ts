@@ -105,3 +105,63 @@ export function isSameUtcDay(value: string, ref: Date = new Date()): boolean {
   if (isNaN(d.getTime())) return false;
   return d.toISOString().slice(0, 10) === ref.toISOString().slice(0, 10);
 }
+
+/**
+ * Whether a picked wall clock is a usable, still-in-the-future pickup.
+ *
+ * Resolves through pickupInstant rather than comparing the raw value to
+ * Date.now(). That distinction is the whole point: the stored form of "6pm" is
+ * "18:00Z", which as a bare instant is 2pm Toronto in summer — a direct
+ * comparison would reject a perfectly valid 6pm booking made at 3pm, and
+ * accept a 9am one made at 10am. Rejects NaN, so the empty/garbage input that
+ * toStorageIso would otherwise silently coerce to "now" is caught here.
+ */
+export function isFuturePickup(wallClock: string | null | undefined, now: number = Date.now()): boolean {
+  if (!wallClock) return false;
+  const t = pickupInstant(wallClock).getTime();
+  return Number.isFinite(t) && t > now;
+}
+
+/** Now, as OPERATING_TZ's wall clock: { date: "2026-07-17", time: "15:00" }. */
+function operatingWallClock(now: Date = new Date()): { date: string; time: string } {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: OPERATING_TZ,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    })
+      .formatToParts(now)
+      .filter((x) => x.type !== "literal")
+      .map((x) => [x.type, x.value]),
+  );
+  return {
+    date: `${p.year}-${p.month}-${p.day}`,
+    time: `${String(Number(p.hour) % 24).padStart(2, "0")}:${p.minute}`,
+  };
+}
+
+/**
+ * The earliest pickup a customer may choose, as a `datetime-local` value in
+ * OPERATING_TZ — for the `min` attribute on the picker. Toronto's wall clock,
+ * not the browser's: the form's values are read as Toronto time regardless of
+ * where the customer's device is set.
+ */
+export function minPickupLocalValue(now: Date = new Date()): string {
+  const { date, time } = operatingWallClock(now);
+  return `${date}T${time}`;
+}
+
+/**
+ * True when a stored pickup falls on TODAY in Toronto.
+ *
+ * Replaces isSameUtcDay for pickup comparisons, which compared the stored
+ * wall-clock day against the UTC day and so broke every evening: after 8pm EDT
+ * the UTC date has already rolled over, so a driver's remaining rides for
+ * tonight compared "2026-07-17" against "2026-07-18" and vanished from Today.
+ */
+export function isPickupToday(value: string | null | undefined, now: Date = new Date()): boolean {
+  if (!value) return false;
+  const d = toUtcInstant(value);
+  if (isNaN(d.getTime())) return false;
+  return d.toISOString().slice(0, 10) === operatingWallClock(now).date;
+}

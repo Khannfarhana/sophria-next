@@ -31,6 +31,28 @@ declare module "next-auth" {
 
 const SUPABASE_TOKEN_TTL = "1d"; // Must match session.maxAge below
 
+/**
+ * How long a JWT may serve `roles` before they are re-read from user_roles.
+ *
+ * Roles used to be captured at sign-in and never refreshed, which broke both
+ * directions of a role change for the life of the session (1 day):
+ *   * Granting — an admin approves a chauffeur, verifyDriverAction writes the
+ *     'driver' row, but the applicant's existing token still has no 'driver'
+ *     role, so proxy.ts bounces /driver to /dashboard. The approved driver is
+ *     told to sign out and back in, or waits a day.
+ *   * Revoking — the security half. A de-verified driver keeps accepting rides
+ *     and a removed admin keeps confirming bookings and setting commissions,
+ *     with no way to force a logout.
+ * One minute bounds both at the cost of one indexed lookup per user per minute.
+ */
+const ROLES_TTL_MS = 60_000;
+
+async function fetchRoles(userId: string): Promise<string[]> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin.from("user_roles").select("role").eq("user_id", userId);
+  return (data || []).map((r) => r.role);
+}
+
 async function getSupabaseJwtSecret(): Promise<Uint8Array> {
   const secretStr = process.env.SUPABASE_JWT_SECRET;
   if (!secretStr) {
@@ -239,6 +261,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id;
         token.roles = user.roles || [];
         token.accessToken = user.accessToken;
+      }
+
+      // Both sign-in paths above have just read roles; stamp them so the
+      // refresh below doesn't immediately re-query.
+      if (user) token.rolesRefreshedAt = Date.now();
+
+      // --- Role refresh: see ROLES_TTL_MS. Keeps an approved chauffeur from
+      // having to sign out and back in, and bounds how long a revoked role
+      // stays usable. On failure we keep the existing roles and leave the
+      // timestamp alone, so the next request retries rather than silently
+      // running on stale roles forever.
+      if (token.id && Date.now() - Number(token.rolesRefreshedAt ?? 0) > ROLES_TTL_MS) {
+        try {
+          token.roles = await fetchRoles(token.id as string);
+          token.rolesRefreshedAt = Date.now();
+        } catch (err) {
+          console.error("Failed to refresh roles:", err);
+        }
       }
 
       // --- C3: Token refresh on subsequent requests ---
