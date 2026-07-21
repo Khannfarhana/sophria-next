@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteLayout } from "@/components/site/SiteLayout";
+import { PageHero } from "@/components/site/PageHero";
 import { ArrowRight, Plane } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -68,47 +69,39 @@ const ADDITIONAL_CHARGES = [
 export default function PricingPage() {
   return (
     <SiteLayout>
-      {/* Dark page header */}
-      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">Pricing</div>
-          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
-            No surge. <span className="text-[#e7d3a8]">No surprises.</span>
-          </h1>
-          <p className="mt-5 max-w-xl text-base text-white/70">
-            Luxury limousine &amp; chauffeur services across Toronto, Hamilton, Burlington, Oakville,
-            Mississauga, the Niagara Region and Southern Ontario. All rates in Canadian Dollars.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        eyebrow="Pricing"
+        title={<>No surge. <span className="text-gold-soft">No surprises.</span></>}
+        sub="Luxury limousine &amp; chauffeur services across Toronto, Hamilton, Burlington, Oakville, Mississauga, the Niagara Region and Southern Ontario. All rates in Canadian Dollars."
+      />
 
       {/* Pricing table */}
-      <section className="bg-background px-6 py-20">
+      <section className="bg-night px-6 py-20 text-white">
         <div className="mx-auto max-w-4xl">
-          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <div className="overflow-hidden rounded-sm bg-night-card">
             <table className="w-full text-sm">
-              <thead className="border-b border-border bg-surface text-left">
+              <thead className="border-b border-white/10 bg-white/5 text-left">
                 <tr>
-                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">Vehicle</th>
-                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">Hourly from</th>
-                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-ink-muted">Airport from</th>
+                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-white/60">Vehicle</th>
+                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-white/60">Hourly from</th>
+                  <th className="px-6 py-4 text-xs uppercase tracking-wider text-white/60">Airport from</th>
                 </tr>
               </thead>
               <tbody>
                 {FLEET_RATES.map((r, i) => (
                   <tr
                     key={r.name}
-                    className={`transition-colors hover:bg-surface ${i < FLEET_RATES.length - 1 ? "border-b border-border" : ""}`}
+                    className={`transition-colors hover:bg-white/5 ${i < FLEET_RATES.length - 1 ? "border-b border-white/10" : ""}`}
                   >
-                    <td className="px-6 py-4 font-light text-foreground">{r.name}</td>
-                    <td className="px-6 py-4 text-foreground">${r.hr} <span className="text-xs text-ink-soft">/hr</span></td>
-                    <td className="px-6 py-4 text-foreground">${r.airport}</td>
+                    <td className="px-6 py-4 font-light text-white">{r.name}</td>
+                    <td className="px-6 py-4 text-white">${r.hr} <span className="text-xs text-gold-soft">/hr</span></td>
+                    <td className="px-6 py-4 text-white">${r.airport}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-4 text-xs text-ink-soft">
+          <p className="mt-4 text-xs text-white/50">
             Hourly service has a 2-hour minimum booking. Airport transfer pricing starts at $110 and
             depends on pickup and destination.
           </p>
@@ -116,26 +109,26 @@ export default function PricingPage() {
       </section>
 
       {/* Packages */}
-      <section className="bg-surface px-6 py-20">
+      <section className="bg-night-panel px-6 py-20 text-white">
         <div className="mx-auto max-w-4xl">
           <div className="mb-8">
-            <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Signature Packages</div>
-            <h2 className="text-3xl font-light text-foreground">Occasions, taken care of.</h2>
+            <div className="mb-3 flex items-center gap-3 text-xs uppercase tracking-[0.22em] text-white/70"><span className="h-px w-8 bg-gold" aria-hidden />Signature Packages</div>
+            <h2 className="text-3xl font-light md:text-4xl">Occasions, taken care of.</h2>
           </div>
           <div className="grid gap-6 md:grid-cols-2">
             {PACKAGES.map((p) => (
-              <div key={p.title} className="rounded-2xl border border-border bg-card p-8">
+              <div key={p.title} className="rounded-sm bg-night-card p-8">
                 <div className="flex items-baseline justify-between gap-3">
-                  <h3 className="text-lg font-light text-foreground">{p.title}</h3>
+                  <h3 className="text-lg font-light text-white">{p.title}</h3>
                 </div>
-                <div className="mt-1 text-sm font-medium text-foreground">{p.price}</div>
-                <p className="mt-3 text-sm leading-relaxed text-ink-muted">{p.detail}</p>
+                <div className="mt-1 text-sm font-medium text-gold-soft">{p.price}</div>
+                <p className="mt-3 text-sm leading-relaxed text-white/70">{p.detail}</p>
               </div>
             ))}
-            <div className="rounded-2xl border border-border bg-card p-8">
-              <h3 className="text-lg font-light text-foreground">Corporate Transportation</h3>
-              <div className="mt-1 text-sm font-medium text-foreground">accounts available</div>
-              <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+            <div className="rounded-sm bg-night-card p-8">
+              <h3 className="text-lg font-light text-white">Corporate Transportation</h3>
+              <div className="mt-1 text-sm font-medium text-gold-soft">accounts available</div>
+              <p className="mt-3 text-sm leading-relaxed text-white/70">
                 Airport transfers, executive meetings, conferences, corporate events and client
                 transportation. Corporate accounts and monthly billing are available upon approval.
               </p>
@@ -145,39 +138,39 @@ export default function PricingPage() {
       </section>
 
       {/* Airports + adjustments */}
-      <section className="bg-background px-6 py-20">
+      <section className="bg-night px-6 py-20 text-white">
         <div className="mx-auto max-w-4xl">
           <div className="grid gap-10 md:grid-cols-2">
-            <div className="rounded-2xl border border-border bg-card p-8">
-              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.22em] text-ink-muted">
+            <div className="rounded-sm bg-night-card p-8">
+              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.22em] text-white/70">
                 <Plane className="h-3.5 w-3.5" /> Airports We Serve
               </div>
-              <ul className="space-y-2 text-sm leading-relaxed text-ink-muted">
+              <ul className="space-y-2 text-sm leading-relaxed text-white/70">
                 <li>Toronto Pearson International (YYZ)</li>
                 <li>Billy Bishop Toronto City (YTZ)</li>
                 <li>John C. Munro Hamilton International (YHM)</li>
                 <li>Buffalo Niagara International (BUF)</li>
               </ul>
-              <p className="mt-3 text-xs text-ink-soft">Transfers start at $110, depending on pickup and destination. Live flight tracking when flight details are provided.</p>
-              <p className="mt-2 text-xs text-ink-soft">
+              <p className="mt-3 text-xs text-white/50">Transfers start at $110, depending on pickup and destination. Live flight tracking when flight details are provided.</p>
+              <p className="mt-2 text-xs text-white/50">
                 Pearson transfers are priced by the official Toronto Pearson airport tariff (taxes included), scaled by vehicle class. Requested stops $10 per 10 minutes; more than 4 passengers or excess baggage +$15 once per trip; Highway 407 tolls passed through at cost.
               </p>
             </div>
-            <div className="rounded-2xl border border-border bg-card p-8">
-              <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Dynamic Adjustments</div>
-              <p className="text-sm leading-relaxed text-ink-muted">
+            <div className="rounded-sm bg-night-card p-8">
+              <div className="mb-3 text-xs uppercase tracking-[0.22em] text-white/70">Dynamic Adjustments</div>
+              <p className="text-sm leading-relaxed text-white/70">
                 During major events (TIFF, Caribana, NYE), evening rates may apply. We will always quote the final fare before confirming. We do not use surge pricing.
               </p>
             </div>
           </div>
 
           {/* Additional charges */}
-          <div className="mt-10 rounded-2xl border border-border bg-card p-8">
-            <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Additional Charges</div>
-            <ul className="grid gap-2 text-sm leading-relaxed text-ink-muted md:grid-cols-2">
+          <div className="mt-10 rounded-sm bg-night-card p-8">
+            <div className="mb-3 text-xs uppercase tracking-[0.22em] text-white/70">Additional Charges</div>
+            <ul className="grid gap-2 text-sm leading-relaxed text-white/70 md:grid-cols-2">
               {ADDITIONAL_CHARGES.map((c) => (
                 <li key={c} className="flex gap-2">
-                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-[#c9a76a]" />
+                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-gold" />
                   {c}
                 </li>
               ))}
@@ -187,7 +180,7 @@ export default function PricingPage() {
           <div className="mt-12 text-center">
             <Link
               href="/book"
-              className="inline-flex items-center gap-2 rounded-sm bg-primary px-8 py-3.5 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]"
+              className="group inline-flex items-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-medium text-black transition hover:bg-gold-soft"
             >
               Reserve a Vehicle <ArrowRight className="h-4 w-4" />
             </Link>

@@ -17,6 +17,7 @@ const cormorant = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://sophria.ca"),
   title: {
     default: `${SITE.fullName} — Chauffeur Service in the Greater Toronto Area`,
     template: `%s — ${SITE.fullName}`,
@@ -32,9 +33,6 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
   },
-  icons: {
-    icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230A0A0A'/%3E%3Ctext x='50' y='70' font-family='serif' font-size='70' font-weight='300' text-anchor='middle' fill='white'%3ES%3C/text%3E%3C/svg%3E",
-  },
 };
 
 export default function RootLayout({
@@ -43,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${cormorant.variable}`} style={{ backgroundColor: '#0d0d0e' }}>
+    <html lang="en" className={`${inter.variable} ${cormorant.variable}`}>
       <body className="bg-background text-foreground min-h-screen flex flex-col antialiased">
         <Providers>{children}</Providers>
       </body>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteLayout } from "@/components/site/SiteLayout";
+import { PageHero } from "@/components/site/PageHero";
 
 export const metadata: Metadata = {
   title: "About",
@@ -13,32 +14,25 @@ export const metadata: Metadata = {
 export default function AboutPage() {
   return (
     <SiteLayout>
-      {/* Dark page header */}
-      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">About</div>
-          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
-            A standard, <span className="text-[#e7d3a8]">quietly held.</span>
-          </h1>
-          <p className="mt-5 max-w-xl text-base text-white/70">
-            SophRia was founded in 2018 on a simple idea: that arriving somewhere should feel as considered as the destination itself.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        eyebrow="About"
+        title={<>A standard, <span className="text-gold-soft">quietly held.</span></>}
+        sub="SophRia was founded in 2018 on a simple idea: that arriving somewhere should feel as considered as the destination itself."
+      />
 
       {/* Mission + Promise */}
-      <section className="bg-background px-6 py-20">
+      <section className="bg-night px-6 py-20 text-white">
         <div className="mx-auto max-w-7xl">
           <div className="grid gap-6 md:grid-cols-2">
-            <div className="rounded-2xl border border-border bg-card p-10">
-              <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Mission</div>
-              <p className="text-lg font-light leading-relaxed text-foreground">
+            <div className="rounded-sm bg-night-card p-10">
+              <div className="mb-3 text-xs uppercase tracking-[0.22em] text-white/70">Mission</div>
+              <p className="font-display text-xl leading-relaxed text-white">
                 To deliver private ground transportation that feels effortless — for the people who notice the difference.
               </p>
             </div>
-            <div className="rounded-2xl border border-border bg-card p-10">
-              <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Promise</div>
-              <p className="text-lg font-light leading-relaxed text-foreground">
+            <div className="rounded-sm bg-night-card p-10">
+              <div className="mb-3 text-xs uppercase tracking-[0.22em] text-white/70">Promise</div>
+              <p className="font-display text-xl leading-relaxed text-white">
                 Discretion, punctuality, and a vehicle that arrives as advertised. Every reservation, every time.
               </p>
             </div>
@@ -47,9 +41,9 @@ export default function AboutPage() {
       </section>
 
       {/* Values */}
-      <section className="bg-surface px-6 py-20">
+      <section className="bg-night-panel px-6 py-20 text-white">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Values</div>
+          <div className="mb-3 flex items-center gap-3 text-xs uppercase tracking-[0.22em] text-white/70"><span className="h-px w-8 bg-gold" aria-hidden />Values</div>
           <h2 className="mb-10 text-3xl font-light md:text-4xl">Three principles.</h2>
           <div className="grid gap-6 md:grid-cols-3">
             {[
@@ -57,9 +51,9 @@ export default function AboutPage() {
               { t: "Precision", b: "Routes planned, traffic monitored, timings rehearsed." },
               { t: "Composure", b: "Calm professionalism — without exception, without performance." },
             ].map((v) => (
-              <div key={v.t} className="rounded-2xl border border-border bg-card p-8">
-                <h3 className="text-xl font-light text-foreground">{v.t}</h3>
-                <p className="mt-3 text-sm leading-relaxed text-ink-muted">{v.b}</p>
+              <div key={v.t} className="rounded-sm bg-night-card p-8">
+                <h3 className="font-display text-2xl text-white">{v.t}</h3>
+                <p className="mt-3 text-sm leading-relaxed text-white/70">{v.b}</p>
               </div>
             ))}
           </div>
@@ -67,9 +61,9 @@ export default function AboutPage() {
       </section>
 
       {/* Team */}
-      <section className="bg-background px-6 py-20">
+      <section className="bg-night px-6 py-20 text-white">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-3 text-xs uppercase tracking-[0.22em] text-ink-muted">Team</div>
+          <div className="mb-3 flex items-center gap-3 text-xs uppercase tracking-[0.22em] text-white/70"><span className="h-px w-8 bg-gold" aria-hidden />Team</div>
           <h2 className="mb-10 text-3xl font-light md:text-4xl">The people behind the service.</h2>
           <div className="grid gap-6 md:grid-cols-3">
             {[
@@ -77,11 +71,16 @@ export default function AboutPage() {
               { n: "Marcus Chen", r: "Head of Operations" },
               { n: "Priya Anand", r: "Client Experience" },
             ].map((m) => (
-              <div key={m.n} className="flex items-center gap-5 rounded-2xl border border-border bg-card p-6">
-                <div className="h-14 w-14 shrink-0 rounded-full bg-surface" />
+              <div key={m.n} className="flex items-center gap-5 rounded-sm bg-night-card p-6">
+                <div
+                  aria-hidden
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gold/15 font-display text-lg text-gold-soft"
+                >
+                  {m.n.split(" ").map((part) => part[0]).join("")}
+                </div>
                 <div>
-                  <div className="text-base font-medium text-foreground">{m.n}</div>
-                  <div className="text-sm text-ink-muted">{m.r}</div>
+                  <div className="text-base font-medium text-white">{m.n}</div>
+                  <div className="text-sm text-white/60">{m.r}</div>
                 </div>
               </div>
             ))}

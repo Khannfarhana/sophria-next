@@ -43,9 +43,9 @@ export function CancelBookingDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !pending && onClose()}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-md gap-0 overflow-hidden border-white/10 bg-[#0d0d0e] p-0 text-white">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-md gap-0 overflow-hidden border-white/10 bg-night p-0 text-white">
         <DialogHeader className="space-y-0 border-b border-white/10 px-6 py-4 pr-12">
-          <DialogTitle className="font-display text-2xl font-normal tracking-wide text-[#e7d3a8]">
+          <DialogTitle className="font-display text-2xl font-normal tracking-wide text-gold-soft">
             Cancel this ride?
           </DialogTitle>
           <div className="mt-1.5 font-mono text-xs tracking-wide text-white/50">{b.reference}</div>
@@ -65,11 +65,11 @@ export function CancelBookingDialog({
               : "This cancellation is free. Nothing has been charged."}
           </div>
         ) : (
-          <div className="bg-[#141416] px-6 py-4">
-            <div className="flex items-start gap-2.5 rounded-lg border border-[#c9a76a]/30 bg-[#c9a76a]/5 p-3">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#e7d3a8]" />
+          <div className="bg-night-panel px-6 py-4">
+            <div className="flex items-start gap-2.5 rounded-lg border border-gold/30 bg-gold/5 p-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />
               <p className="text-xs leading-relaxed text-white/70">
-                A <span className="text-[#e7d3a8]">{Math.round(q.rate * 100)}% cancellation fee</span> may apply —
+                A <span className="text-gold-soft">{Math.round(q.rate * 100)}% cancellation fee</span> may apply —
                 this ride is inside the {Math.round(q.rate * 100)}% window.
               </p>
             </div>
@@ -82,11 +82,11 @@ export function CancelBookingDialog({
                 </div>
                 <div className="flex items-center justify-between text-sm text-white/60">
                   <span>Cancellation fee</span>
-                  <span className="text-[#e7d3a8]">−${q.penalty.toFixed(2)}</span>
+                  <span className="text-gold-soft">−${q.penalty.toFixed(2)}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
                   <span className="text-[10px] uppercase tracking-[0.18em] text-white/45">Refund to you</span>
-                  <span className="font-display text-2xl text-[#e7d3a8]">
+                  <span className="font-display text-2xl text-gold-soft">
                     ${q.refund.toFixed(2)}
                     <span className="ml-1 text-sm text-white/50">CAD</span>
                   </span>
@@ -122,7 +122,7 @@ export function CancelBookingDialog({
           <button
             onClick={confirm}
             disabled={pending}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-[#e7d3a8] px-4 py-3 text-sm font-medium text-[#0d0d0e] transition hover:bg-[#f0e2c0] disabled:opacity-60 cursor-pointer"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-gold-soft px-4 py-3 text-sm font-medium text-night transition hover:bg-[#f0e2c0] disabled:opacity-60 cursor-pointer"
           >
             {pending && <Loader2 className="h-4 w-4 animate-spin" />}
             {free || !paid ? "Cancel this ride" : `Cancel and refund $${q.refund.toFixed(2)}`}

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { z } from "zod";
 import { getProviders, signIn } from "next-auth/react";
@@ -23,8 +23,22 @@ const signInSchema = z.object({
 });
 
 export default function AuthPage() {
+  // useSearchParams (inside AuthForm) requires a Suspense boundary to prerender.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-night" />}>
+      <AuthForm />
+    </Suspense>
+  );
+}
+
+function AuthForm() {
   const { user, roles, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Same-origin paths only — never follow an absolute/protocol-relative URL.
+  const rawCallback = searchParams.get("callbackUrl") ?? "";
+  const callbackUrl =
+    rawCallback.startsWith("/") && !rawCallback.startsWith("//") ? rawCallback : null;
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [form, setForm] = useState({ fullName: "", email: "", password: "" });
   const [busy, setBusy] = useState(false);
@@ -32,8 +46,8 @@ export default function AuthPage() {
 
   // Redirect already-authenticated users to their role-appropriate dashboard
   useEffect(() => {
-    if (!loading && user) router.push(getDefaultRoute(roles));
-  }, [user, roles, loading, router]);
+    if (!loading && user) router.push(callbackUrl ?? getDefaultRoute(roles));
+  }, [user, roles, loading, router, callbackUrl]);
 
   useEffect(() => {
     let mounted = true;
@@ -52,22 +66,22 @@ export default function AuthPage() {
         const { error } = await supabase.auth.signUp({
           email: v.email,
           password: v.password,
-          options: { emailRedirectTo: `${window.location.origin}/dashboard`, data: { full_name: v.fullName } },
+          options: { emailRedirectTo: `${window.location.origin}${callbackUrl ?? "/dashboard"}`, data: { full_name: v.fullName } },
         });
         if (error) throw error;
         const result = await signIn("credentials", { email: v.email, password: v.password, redirect: false });
         if (result?.error) throw new Error(result.error);
         toast.success("Account created — you're signed in.");
         // New sign-ups default to "customer" role
-        router.push("/dashboard");
+        router.push(callbackUrl ?? "/dashboard");
       } else {
         const v = signInSchema.parse(form);
         const result = await signIn("credentials", { email: v.email, password: v.password, redirect: false });
         if (result?.error) throw new Error(result.error || "Authentication failed");
         toast.success("Welcome back.");
-        // Session won't update until next render; redirect to dashboard
-        // and the proxy/layout will handle role-appropriate access
-        router.push("/dashboard");
+        // Session won't update until next render; redirect onward and let the
+        // proxy/layout handle role-appropriate access.
+        router.push(callbackUrl ?? "/dashboard");
         router.refresh();
       }
     } catch (err: unknown) {
@@ -88,7 +102,7 @@ export default function AuthPage() {
     if (!googleEnabled) { toast.error("Google sign-in is not configured."); return; }
     setBusy(true);
     try {
-      await signIn("google", { callbackUrl: "/dashboard" });
+      await signIn("google", { callbackUrl: callbackUrl ?? "/dashboard" });
     } catch (err: unknown) {
       if (err instanceof Error) {
         toast.error(err.message || "Google auth failed.");
@@ -99,19 +113,19 @@ export default function AuthPage() {
     }
   };
 
-  const inputCls = "w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-white placeholder:text-white/30 transition focus:border-white/30 focus:outline-none";
+  const inputCls = "w-full rounded-sm border border-white/15 bg-white/[0.07] px-4 py-3 text-sm text-white placeholder:text-white/40 transition focus:border-gold";
 
   return (
-    <div className="relative min-h-screen bg-[#0d0d0e] px-6 py-10 flex flex-col">
-      {/* Ambient glow */}
-      <div className="pointer-events-none absolute left-1/2 top-0 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-white/[0.03] blur-3xl" />
+    <div className="relative min-h-screen bg-night px-6 py-10 flex flex-col">
+      {/* Ambient gold glow */}
+      <div className="pointer-events-none absolute left-1/2 top-0 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-gold/[0.06] blur-3xl" />
 
       {/* Top bar */}
       <div className="relative flex items-center justify-between">
         <Link href="/" className="font-display text-2xl tracking-wide text-white">
-          SophRia
+          Soph<span className="text-gold-soft">Ria</span>
         </Link>
-        <Link href="/" className="flex items-center gap-1.5 text-xs text-white/40 transition hover:text-white/70">
+        <Link href="/" className="flex items-center gap-1.5 text-xs text-white/60 transition hover:text-white">
           <ArrowLeft className="h-3.5 w-3.5" /> Back to home
         </Link>
       </div>
@@ -119,13 +133,13 @@ export default function AuthPage() {
       {/* Centered card */}
       <div className="relative mx-auto mt-16 w-full max-w-md flex-1">
         {/* Mode tabs */}
-        <div className="mb-8 flex rounded-xl border border-white/10 bg-white/[0.04] p-1">
+        <div className="mb-8 flex rounded-sm border border-white/12 bg-white/[0.05] p-1">
           {(["signin", "signup"] as const).map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors cursor-pointer ${
-                mode === m ? "bg-white text-black" : "text-white/50 hover:text-white/80"
+              className={`flex-1 rounded-sm py-2 text-sm font-medium transition-colors cursor-pointer ${
+                mode === m ? "bg-white text-black" : "text-white/60 hover:text-white"
               }`}
             >
               {m === "signin" ? "Sign in" : "Create account"}
@@ -133,11 +147,11 @@ export default function AuthPage() {
           ))}
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-sm">
+        <div className="rounded-sm border border-white/12 bg-white/[0.05] p-8 backdrop-blur-sm">
           <h1 className="mb-1 text-2xl font-light text-white">
             {mode === "signin" ? "Welcome back." : "Join SophRia."}
           </h1>
-          <p className="mb-8 text-sm text-white/45">
+          <p className="mb-8 text-sm text-white/60">
             {mode === "signin" ? "Sign in to manage your bookings." : "Create your account to get started."}
           </p>
 
@@ -146,11 +160,11 @@ export default function AuthPage() {
               <button
                 onClick={handleGoogle}
                 disabled={busy}
-                className="mb-4 w-full cursor-pointer rounded-xl border border-white/10 bg-white/[0.06] py-3 text-sm text-white/80 transition hover:bg-white/10 disabled:opacity-50"
+                className="mb-4 w-full cursor-pointer rounded-sm border border-white/15 bg-white/[0.07] py-3 text-sm text-white/90 transition hover:bg-white/10 disabled:opacity-50"
               >
                 Continue with Google
               </button>
-              <div className="my-5 flex items-center gap-3 text-xs text-white/20">
+              <div className="my-5 flex items-center gap-3 text-xs text-white/40">
                 <div className="h-px flex-1 bg-white/10" /> or <div className="h-px flex-1 bg-white/10" />
               </div>
             </>
@@ -191,11 +205,11 @@ export default function AuthPage() {
           </form>
         </div>
 
-        <p className="mt-6 text-center text-xs text-white/25">
+        <p className="mt-6 text-center text-xs text-white/50">
           By continuing you agree to our{" "}
-          <Link href="/terms" className="underline hover:text-white/50">Terms of Service</Link>{" "}
+          <Link href="/terms" className="underline hover:text-white">Terms of Service</Link>{" "}
           and{" "}
-          <Link href="/privacy" className="underline hover:text-white/50">Privacy Policy</Link>
+          <Link href="/privacy" className="underline hover:text-white">Privacy Policy</Link>
         </p>
       </div>
     </div>

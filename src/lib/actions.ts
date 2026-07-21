@@ -1,6 +1,9 @@
 "use server";
 
 import { auth } from "@/auth";
+import type { Database } from "@/integrations/supabase/types";
+
+type BookingStatus = Database["public"]["Enums"]["booking_status"];
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
@@ -199,8 +202,10 @@ export async function createBookingAction(data: {
   // Nothing else rejects a past pickup: toStorageIso only guards NaN, and
   // silently coerces garbage to `new Date()`, so an empty datetime used to
   // book a ride for the instant it was submitted.
+  // Expected failures are RETURNED, not thrown — Next.js redacts thrown
+  // Server Action messages in production, and the user needs to read these.
   if (!isFuturePickup(data.datetime)) {
-    throw new Error("Pick-up time must be in the future.");
+    return { error: "Pick-up time must be in the future — go back to Date & time and pick a new slot." } as const;
   }
 
   const tripType = data.tripType ?? "one_way";
@@ -212,7 +217,9 @@ export async function createBookingAction(data: {
   const startOtp = generateOtp();
 
   // Never trust the client-supplied fare/distance — recompute from DB rates.
-  const pricing = await computeServerFare(getServiceClient(), {
+  let pricing: Awaited<ReturnType<typeof computeServerFare>>;
+  try {
+    pricing = await computeServerFare(getServiceClient(), {
     vehicleId: data.vehicleId,
     tripType,
     durationHours: data.durationHours,
@@ -224,7 +231,13 @@ export async function createBookingAction(data: {
     passengerCount: data.passengerCount,
     luggageCount: data.luggageCount,
     stops,
-  });
+    });
+  } catch (err) {
+    console.error("[createBookingAction] pricing failed", err);
+    return { error: err instanceof Error && err.message === "Vehicle not found"
+      ? "That vehicle class is no longer available — please pick another."
+      : "We couldn't price this trip. Please check the addresses and try again." } as const;
+  }
 
   const { data: booking, error } = await supabase
     .from("bookings")
@@ -262,12 +275,13 @@ export async function createBookingAction(data: {
     .single();
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[createBookingAction] insert failed", error);
+    return { error: "We couldn't create the booking. Please try again in a moment." } as const;
   }
 
   after(() => notifyBookingCreated(booking.id));
   revalidatePath("/dashboard");
-  return { reference: booking.reference, start_otp: startOtp };
+  return { reference: booking.reference, start_otp: startOtp } as const;
 }
 
 /** 4-digit pickup verification code. */
@@ -794,7 +808,7 @@ export async function confirmBookingAction(bookingId: string) {
   // double-confirm/double-email and confirming a cancelled booking).
   const { data, error } = await supabase
     .from("bookings")
-    .update({ status: "confirmed" as any })
+    .update({ status: "confirmed" as BookingStatus })
     .eq("id", bookingId)
     .eq("status", "pending")
     .select("id");
@@ -818,10 +832,10 @@ export async function rejectBookingAction(bookingId: string, reason: string, not
   const { error } = await supabase
     .from("bookings")
     .update({
-      status: "rejected" as any,
+      status: "rejected" as BookingStatus,
       rejection_reason: reason,
       rejection_notes: notes || null,
-    } as any)
+    })
     .eq("id", bookingId);
 
   if (error) {
@@ -881,7 +895,7 @@ export async function assignDriverAction(
   // would make every held booking undispatchable.
   const { data, error } = await supabase
     .from("bookings")
-    .update({ driver_id: driverId, status: "driver_assigned" as any, driver_payout: payout })
+    .update({ driver_id: driverId, status: "driver_assigned" as BookingStatus, driver_payout: payout })
     .eq("id", bookingId)
     .in("status", ["confirmed", "driver_assigned", "accepted"])
     .in("payment_status", ["authorized", "paid"])
@@ -1117,4 +1131,102 @@ export async function completeRideAction(rideId: string) {
   after(() => notifyRideCompleted(rideId));
   revalidatePath("/driver");
   return { success: true, earned };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Fleet management (admin)
+ * ------------------------------------------------------------------ */
+
+export interface VehiclePatch {
+  name?: string;
+  base_rate?: number;
+  hourly_rate?: number | null;
+  capacity?: number;
+  luggage?: number;
+  description?: string | null;
+  is_active?: boolean;
+  /**
+   * Convention (shared with the public fleet page): features[0] is the model
+   * line — the vehicles in this class ("Cadillac LYRIQ · Lexus ES") — and the
+   * rest are amenities.
+   */
+  features?: string[];
+}
+
+function validateVehicleNumbers(patch: VehiclePatch) {
+  if (patch.base_rate !== undefined && (!Number.isFinite(patch.base_rate) || patch.base_rate <= 0)) {
+    throw new Error("Base rate must be a positive amount.");
+  }
+  if (patch.hourly_rate !== undefined && patch.hourly_rate !== null && (!Number.isFinite(patch.hourly_rate) || patch.hourly_rate <= 0)) {
+    throw new Error("Hourly rate must be a positive amount (or empty).");
+  }
+  if (patch.capacity !== undefined && (!Number.isInteger(patch.capacity) || patch.capacity < 1 || patch.capacity > 60)) {
+    throw new Error("Capacity must be between 1 and 60.");
+  }
+  if (patch.luggage !== undefined && (!Number.isInteger(patch.luggage) || patch.luggage < 0 || patch.luggage > 60)) {
+    throw new Error("Luggage must be between 0 and 60.");
+  }
+  if (patch.name !== undefined && !patch.name.trim()) {
+    throw new Error("Name is required.");
+  }
+  if (patch.features !== undefined) {
+    if (!Array.isArray(patch.features) || patch.features.length > 25) {
+      throw new Error("Too many feature entries.");
+    }
+    if (patch.features.some((f) => typeof f !== "string" || !f.trim() || f.length > 120)) {
+      throw new Error("Each vehicle or amenity must be 1–120 characters.");
+    }
+  }
+}
+
+/** Admin: edit a vehicle class (name, rates, capacity, status). */
+export async function updateVehicleAction(vehicleId: string, patch: VehiclePatch) {
+  await requireSession("admin");
+  validateVehicleNumbers(patch);
+  // Whitelist — never spread a client object into an update. `type` is
+  // deliberately absent: it is fixed after creation.
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  for (const key of ["name", "base_rate", "hourly_rate", "capacity", "luggage", "description", "is_active", "features"] as const) {
+    if (patch[key] !== undefined) update[key] = patch[key];
+  }
+  const { error } = await getServiceClient()
+    .from("vehicles")
+    .update(update)
+    .eq("id", vehicleId);
+  if (error) throw new Error(error.message);
+  // The public fleet page is prerendered — refresh it so edits go live.
+  revalidatePath("/fleet");
+  return { success: true };
+}
+
+/** Admin: add a new vehicle class to the fleet. */
+export async function createVehicleAction(input: {
+  name: string;
+  type: Database["public"]["Enums"]["vehicle_type"];
+  base_rate: number;
+  hourly_rate: number | null;
+  capacity: number;
+  luggage: number;
+  description: string | null;
+  features?: string[];
+}) {
+  await requireSession("admin");
+  validateVehicleNumbers(input);
+  const admin = getServiceClient();
+  // New classes go to the end of the display order.
+  const { data: last } = await admin
+    .from("vehicles")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const { error } = await admin.from("vehicles").insert({
+    ...input,
+    name: input.name.trim(),
+    sort_order: (last?.sort_order ?? 0) + 1,
+    is_active: true,
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/fleet");
+  return { success: true };
 }

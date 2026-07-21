@@ -84,15 +84,15 @@ export function PaymentRequiredDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-md gap-0 overflow-hidden border-white/10 bg-[#0d0d0e] p-0 text-white">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-md gap-0 overflow-hidden border-white/10 bg-night p-0 text-white">
         {/* Header */}
         <DialogHeader className="space-y-0 border-b border-white/10 px-6 py-4 pr-12">
-          <DialogTitle className="font-display text-2xl font-normal tracking-wide text-[#e7d3a8]">
+          <DialogTitle className="font-display text-2xl font-normal tracking-wide text-gold-soft">
             Complete your payment
           </DialogTitle>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <span className="font-mono text-xs tracking-wide text-white/50">{b.reference}</span>
-            <span className="rounded-full border border-[#c9a76a]/40 bg-[#c9a76a]/10 px-2.5 py-0.5 text-[11px] text-[#e7d3a8]">
+            <span className="rounded-full border border-gold/40 bg-gold/10 px-2.5 py-0.5 text-[11px] text-gold-soft">
               Confirmed — awaiting payment
             </span>
           </div>
@@ -109,7 +109,7 @@ export function PaymentRequiredDialog({
           </div>
           <div className="ml-[3px] my-1.5 h-3 w-px bg-white/15" />
           <div className="flex items-start gap-3">
-            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#c9a76a]" />
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-gold" />
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Drop-off</div>
               <div className="break-words text-sm leading-snug">{b.dropoff_location}</div>
@@ -119,13 +119,13 @@ export function PaymentRequiredDialog({
 
         {/* Meta */}
         <div className="grid min-w-0 grid-cols-2 gap-px border-b border-white/10 bg-white/10">
-          <div className="min-w-0 bg-[#0d0d0e] px-6 py-3.5">
+          <div className="min-w-0 bg-night px-6 py-3.5">
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-white/45">
               <CalendarClock className="h-3.5 w-3.5" /> Date &amp; time
             </div>
             <div className="mt-1 break-words text-sm">{formatDateTime(b.pickup_datetime)}</div>
           </div>
-          <div className="min-w-0 bg-[#0d0d0e] px-6 py-3.5">
+          <div className="min-w-0 bg-night px-6 py-3.5">
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-white/45">
               <Car className="h-3.5 w-3.5" /> Vehicle
             </div>
@@ -149,7 +149,7 @@ export function PaymentRequiredDialog({
                 disabled={pending}
                 className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition cursor-pointer ${
                   tipChoice === t.value
-                    ? "bg-[#e7d3a8] text-[#0d0d0e]"
+                    ? "bg-gold-soft text-night"
                     : "border border-white/15 text-white/70 hover:bg-white/5"
                 }`}
               >
@@ -175,7 +175,7 @@ export function PaymentRequiredDialog({
         </div>
 
         {/* Fare + total */}
-        <div className="bg-[#141416] px-6 py-4">
+        <div className="bg-night-panel px-6 py-4">
           <div className="flex items-center justify-between text-sm text-white/60">
             <span>Fare</span>
             <span>${fare.toFixed(2)}</span>
@@ -199,7 +199,7 @@ export function PaymentRequiredDialog({
                 {willHold ? "Held now, charged after your ride" : "Charged now to secure your chauffeur"}
               </div>
             </div>
-            <div className="shrink-0 font-display text-3xl text-[#e7d3a8]">
+            <div className="shrink-0 font-display text-3xl text-gold-soft">
               ${total.toFixed(2)}
               <span className="ml-1 text-sm text-white/50">CAD</span>
             </div>
@@ -211,7 +211,7 @@ export function PaymentRequiredDialog({
           <button
             onClick={pay}
             disabled={pending}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-[#e7d3a8] px-4 py-3 text-sm font-medium text-[#0d0d0e] transition hover:bg-[#f0e2c0] disabled:opacity-60 cursor-pointer"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-gold-soft px-4 py-3 text-sm font-medium text-night transition hover:bg-[#f0e2c0] disabled:opacity-60 cursor-pointer"
           >
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
             {willHold ? `Hold $${total.toFixed(2)}` : `Pay $${total.toFixed(2)} now`}

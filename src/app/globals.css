@@ -46,6 +46,16 @@
   --color-ink-muted: var(--ink-muted);
   --color-ink-soft: var(--ink-soft);
 
+  /* Brand accents */
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-cream: var(--cream);
+  --color-night: var(--night);
+  --color-night-panel: var(--night-panel);
+  --color-night-card: var(--night-card);
+  --color-night-hover: var(--night-hover);
+  --color-primary-hover: var(--primary-hover);
+
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -86,7 +96,7 @@
   --muted-foreground: oklch(0.5 0 0);          /* #6B6B6B */
   --accent: oklch(0.97 0 0);                    /* #F6F6F6 */
   --accent-foreground: oklch(0.16 0 0);
-  --destructive: oklch(0.35 0 0);
+  --destructive: oklch(0.54 0.19 25);           /* #C33 — errors must read as errors */
   --destructive-foreground: oklch(1 0 0);
 
   --border: oklch(0.91 0 0);                    /* #E5E5E5 */
@@ -101,7 +111,17 @@
   /* Type scale colors */
   --ink: oklch(0.16 0 0);                       /* #101010 primary text */
   --ink-muted: oklch(0.5 0 0);                  /* #6B6B6B secondary */
-  --ink-soft: oklch(0.66 0 0);                  /* #9B9B9B captions */
+  --ink-soft: oklch(0.55 0 0);                  /* #767676 captions — 4.5:1 on white (AA) */
+
+  /* Brand accents — the single source of truth for the gold/cream identity */
+  --gold: #c9a76a;                              /* primary gold accent */
+  --gold-soft: #e7d3a8;                         /* pale gold — serif hero highlights on dark */
+  --cream: #f1efe9;                             /* warm section background */
+  --night: #0d0d0e;                             /* the one near-black for dark sections */
+  --night-panel: #131315;                       /* raised panel on night */
+  --night-card: #18181b;                        /* card on night */
+  --night-hover: #1e1e22;                       /* hover state on night cards */
+  --primary-hover: #2a2a2a;                     /* hover for black CTAs */
 
   /* Greyscale chart palette (black bars on white) */
   --chart-1: oklch(0.16 0 0);
@@ -110,42 +130,6 @@
   --chart-4: oklch(0.66 0 0);
   --chart-5: oklch(0.82 0 0);
 
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.16 0 0);
-  --sidebar-primary: oklch(0.16 0 0);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.16 0 0);
-  --sidebar-border: oklch(0.91 0 0);
-  --sidebar-ring: oklch(0.16 0 0);
-}
-
-.dark { /* site is light-only; mirror root */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.16 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.16 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.16 0 0);
-  --primary: oklch(0.16 0 0);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.16 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.5 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.16 0 0);
-  --destructive: oklch(0.35 0 0);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.91 0 0);
-  --input: oklch(1 0 0);
-  --ring: oklch(0.16 0 0);
-  --surface: oklch(0.97 0 0);
-  --surface-border: oklch(0.91 0 0);
-  --hairline: oklch(0.91 0 0);
-  --ink: oklch(0.16 0 0);
-  --ink-muted: oklch(0.5 0 0);
-  --ink-soft: oklch(0.66 0 0);
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.16 0 0);
   --sidebar-primary: oklch(0.16 0 0);
@@ -183,6 +167,12 @@
   input:focus, textarea:focus, select:focus {
     border-color: var(--foreground);
     outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 30%, transparent);
+  }
+  /* Keyboard focus must be visible on every interactive element */
+  :focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
   }
 }
 
@@ -249,6 +239,17 @@
   animation: shimmer 6s linear infinite;
 }
 
+/* Splash intro: line-art draws itself (paths use pathLength=1) */
+@keyframes splash-draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+@utility splash-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: splash-draw 1.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
 @utility delay-100 { animation-delay: 0.1s; }
 @utility delay-200 { animation-delay: 0.2s; }
 @utility delay-300 { animation-delay: 0.3s; }
@@ -264,6 +265,23 @@
     transform: translateY(-4px);
     border-color: oklch(0.76 0 0);
     box-shadow: 0 20px 40px -20px oklch(0 0 0 / 0.18);
+  }
+}
+
+/* ——— Shared recipes ——— */
+
+/* Clears the fixed navbar on hero sections — keep in sync with Navbar height. */
+@utility hero-offset {
+  padding-top: calc(var(--nav-height, 5rem) + 4rem);
+}
+
+/* Reduced motion: show the finished artwork immediately */
+@media (prefers-reduced-motion: reduce) {
+  .splash-draw, .animate-rise, .animate-kenburns {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+    transform: none;
   }
 }
 

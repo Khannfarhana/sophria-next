@@ -92,6 +92,7 @@ export function BookingDetailDialog({
   // (a stable primitive) so it runs once per booking — never mid-edit, and never
   // loops on new object identities the way a render-phase setState would.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate per-booking reset, keyed on a stable id
     setEditing(false);
     setPickup(b?.pickup_location ?? "");
     setDropoff(b?.dropoff_location ?? "");
@@ -220,13 +221,13 @@ export function BookingDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg gap-0 overflow-hidden border-white/10 bg-[#0d0d0e] p-0 text-white">
+      <DialogContent className="max-w-lg gap-0 overflow-hidden border-white/10 bg-night p-0 text-white">
         <DialogHeader className="flex-row items-center justify-between border-b border-white/10 px-6 py-4 space-y-0">
           <div>
-            <DialogTitle className="font-display text-2xl tracking-wide text-[#e7d3a8]">{b.reference}</DialogTitle>
+            <DialogTitle className="font-display text-2xl tracking-wide text-gold-soft">{b.reference}</DialogTitle>
             <div className="mt-1 flex items-center gap-2">
               <StatusBadge status={b.status} />
-              <span className="rounded-full border border-[#c9a76a]/40 bg-[#c9a76a]/10 px-2.5 py-0.5 text-[11px] text-[#e7d3a8]">
+              <span className="rounded-full border border-gold/40 bg-gold/10 px-2.5 py-0.5 text-[11px] text-gold-soft">
                 {tripTypeLabel(tripType)}
               </span>
             </div>
@@ -249,7 +250,7 @@ export function BookingDetailDialog({
 
           {/* Assigned driver */}
           {b.driver_id && driverInfo && (
-            <div className="flex items-center gap-4 border-b border-white/10 bg-[#141416] px-6 py-4">
+            <div className="flex items-center gap-4 border-b border-white/10 bg-night-panel px-6 py-4">
               <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/10 text-sm font-medium text-white/80 ring-1 ring-white/15">
                 {(driverInfo.name ?? "D").slice(0, 1).toUpperCase()}
               </div>
@@ -261,7 +262,7 @@ export function BookingDetailDialog({
                   {driverInfo.experience_years != null && <> · {driverInfo.experience_years}y exp</>}
                 </div>
                 {driverInfo.phone ? (
-                  <a href={`tel:${driverInfo.phone}`} className="mt-1 inline-flex items-center gap-1.5 text-xs text-[#e7d3a8] hover:text-white">
+                  <a href={`tel:${driverInfo.phone}`} className="mt-1 inline-flex items-center gap-1.5 text-xs text-gold-soft hover:text-white">
                     <Phone className="h-3.5 w-3.5" /> {driverInfo.phone}
                   </a>
                 ) : (
@@ -272,7 +273,7 @@ export function BookingDetailDialog({
                 <a
                   href={`tel:${driverInfo.phone}`}
                   aria-label="Call driver"
-                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#e7d3a8] text-[#0d0d0e] transition hover:bg-[#f0e2c0]"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gold-soft text-night transition hover:bg-[#f0e2c0]"
                 >
                   <Phone className="h-4 w-4" />
                 </a>
@@ -287,7 +288,7 @@ export function BookingDetailDialog({
                 <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Pickup code</div>
                 <div className="mt-0.5 text-xs text-white/55">Share with your driver to start the ride</div>
               </div>
-              <div className="font-mono text-2xl tracking-[0.3em] text-[#e7d3a8]">{otp}</div>
+              <div className="font-mono text-2xl tracking-[0.3em] text-gold-soft">{otp}</div>
             </div>
           )}
 
@@ -296,7 +297,7 @@ export function BookingDetailDialog({
             <div className="mb-3 flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">Route</span>
               {canEdit && !editing && (
-                <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 text-xs text-[#e7d3a8] hover:text-white">
+                <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 text-xs text-gold-soft hover:text-white">
                   <Pencil className="h-3.5 w-3.5" /> Edit
                 </button>
               )}
@@ -309,7 +310,7 @@ export function BookingDetailDialog({
                   onChange={(v) => { setPickup(v); setPickupCoords(null); }}
                   onSelect={(p: Place) => { setPickup(p.address); setPickupCoords({ lng: p.lng, lat: p.lat }); }}
                   placeholder="Pickup location"
-                  inputClassName="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/40 focus:border-[#c9a76a] focus:outline-none"
+                  inputClassName="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/40 focus:border-gold focus:outline-none"
                   mapInitial={dropoffCoords}
                   mapTitle="Choose pickup on map"
                 />
@@ -319,7 +320,7 @@ export function BookingDetailDialog({
                     onChange={(v) => { setDropoff(v); setDropoffCoords(null); }}
                     onSelect={(p: Place) => { setDropoff(p.address); setDropoffCoords({ lng: p.lng, lat: p.lat }); }}
                     placeholder="Drop-off location"
-                    inputClassName="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/40 focus:border-[#c9a76a] focus:outline-none"
+                    inputClassName="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/40 focus:border-gold focus:outline-none"
                     mapInitial={pickupCoords}
                     mapTitle="Choose drop-off on map"
                   />
@@ -328,7 +329,7 @@ export function BookingDetailDialog({
                   <button
                     onClick={save}
                     disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-sm bg-[#e7d3a8] px-4 py-2 text-sm font-medium text-[#0d0d0e] transition hover:bg-[#f0e2c0] disabled:opacity-60"
+                    className="inline-flex items-center gap-1.5 rounded-sm bg-gold-soft px-4 py-2 text-sm font-medium text-night transition hover:bg-[#f0e2c0] disabled:opacity-60"
                   >
                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                     Save changes
@@ -358,7 +359,7 @@ export function BookingDetailDialog({
                 </div>
                 {!isHourly && (
                   <div className="flex items-start gap-3">
-                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#c9a76a]" />
+                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-gold" />
                     <div className="min-w-0">
                       <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Drop-off</div>
                       <div className="text-sm">{dropoff || "—"}</div>
@@ -403,7 +404,7 @@ export function BookingDetailDialog({
           {/* Fare breakdown. This used to be a single "Estimated fare" showing
               fare_estimate — the PRE-TAX subtotal — so the number the customer
               read back was less than what Stripe actually charged them. */}
-          <div className="bg-[#141416] px-6 py-4">
+          <div className="bg-night-panel px-6 py-4">
             <dl className="space-y-1.5 text-sm">
               {/* Base fare folds in the tariff markup deliberately. The markup
                   is SophRia's margin on the GTAA tariff, not a tax or a fee —
@@ -418,7 +419,7 @@ export function BookingDetailDialog({
             </dl>
             <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
               <span className="text-sm text-white/60">{editing ? "Updated total" : "Total"}</span>
-              <span className="font-display text-2xl text-[#e7d3a8]">${grandTotal.toFixed(2)}</span>
+              <span className="font-display text-2xl text-gold-soft">${grandTotal.toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -438,7 +439,7 @@ function FareRow({ label, value }: { label: string; value: number }) {
 
 function MetaCell({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="bg-[#0d0d0e] px-6 py-4">
+    <div className="bg-night px-6 py-4">
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-white/45">
         {icon}
         {label}

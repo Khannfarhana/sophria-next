@@ -136,7 +136,7 @@ export function Navbar({ solid = false }: { solid?: boolean }) {
             href="/book"
             className={`rounded-sm px-5 py-2 text-sm font-medium shadow-sm transition-all duration-500 ${
               onLight
-                ? "bg-primary text-primary-foreground hover:bg-[#2A2A2A]"
+                ? "bg-primary text-primary-foreground hover:bg-primary-hover"
                 : "bg-white text-black hover:bg-white/90"
             }`}
           >
@@ -145,13 +145,14 @@ export function Navbar({ solid = false }: { solid?: boolean }) {
         </div>
 
         {/* Mobile toggle */}
-        <div className="flex items-center gap-3 lg:hidden">
+        <div className="flex items-center lg:hidden">
           <button
-            className={`transition-colors duration-500 ${onLight ? "text-foreground" : "text-white"}`}
+            className={`-mr-2 flex h-11 w-11 items-center justify-center transition-colors duration-500 ${onLight ? "text-foreground" : "text-white"}`}
             onClick={() => setOpen(!open)}
-            aria-label="Menu"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
           >
-            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
         </div>
       </div>

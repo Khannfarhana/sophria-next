@@ -64,6 +64,7 @@ export function MapPicker({ open, onClose, onConfirm, initial, title = "Choose l
     if (!MAPBOX_TOKEN) return;
     if (skipNextQuery.current) { skipNextQuery.current = false; return; }
     const q = debouncedQuery.trim();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing debounced results synchronously is intentional
     if (q.length < 3) { setSuggestions([]); setSearching(false); return; }
     const controller = new AbortController();
     setSearching(true);
@@ -88,6 +89,7 @@ export function MapPicker({ open, onClose, onConfirm, initial, title = "Choose l
 
   // Reset search whenever the dialog reopens.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate reset on reopen
     if (open) { setQuery(""); setSuggestions([]); sessionRef.current = newSessionToken(); }
   }, [open]);
 
@@ -259,7 +261,7 @@ export function MapPicker({ open, onClose, onConfirm, initial, title = "Choose l
               onConfirm({ address, lng: coords.lng, lat: coords.lat });
               onClose();
             }}
-            className="rounded-sm bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A] disabled:opacity-50"
+            className="rounded-sm bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary-hover disabled:opacity-50"
           >
             Use this location
           </button>

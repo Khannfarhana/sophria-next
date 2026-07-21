@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { SiteLayout } from "@/components/site/SiteLayout";
+import { PageHero } from "@/components/site/PageHero";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
 import { submitDriverApplicationAction } from "@/lib/actions";
@@ -60,6 +61,7 @@ export default function BecomeChauffeurPage() {
 
   // On load, check whether this account already has an application on file.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional signed-out reset; runs once per user change
     if (!user) { setApplication(null); return; }
     let cancelled = false;
     supabase
@@ -74,12 +76,12 @@ export default function BecomeChauffeurPage() {
   // Object URLs are revoked on replace/remove; this covers unmount.
   useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
 
-  const inputCls = "w-full rounded-xl border bg-input px-4 py-3 text-sm text-foreground transition focus:border-foreground focus:outline-none";
-  const selectCls = (value: string) => `${inputCls} cursor-pointer ${value ? "text-foreground" : "text-ink-soft"}`;
+  const inputCls = "w-full rounded-sm border border-white/15 bg-white/[0.06] px-4 py-3 text-sm text-white placeholder:text-white/40 transition focus:border-gold focus:outline-none";
+  const selectCls = (value: string) => `${inputCls} cursor-pointer ${value ? "text-white" : "text-white/50"}`;
 
   const field = (label: string, node: React.ReactNode) => (
     <div>
-      <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-ink-muted">{label}</label>
+      <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-white/60">{label}</label>
       {node}
     </div>
   );
@@ -185,19 +187,19 @@ export default function BecomeChauffeurPage() {
     return (
       <label
         key={d.key}
-        className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border bg-surface px-5 py-4 transition-colors ${
-          f ? "border-foreground/40" : "border-border hover:border-foreground/30"
+        className={`flex cursor-pointer items-center justify-between gap-3 rounded-sm border bg-white/[0.04] px-5 py-4 transition-colors ${
+          f ? "border-gold/50" : "border-white/20 hover:border-gold"
         }`}
       >
         <div className="min-w-0">
-          <div className="text-sm font-medium text-foreground">
-            {d.label} <span className="text-ink-soft">*</span>
+          <div className="text-sm font-medium text-white">
+            {d.label} <span className="text-white/50">*</span>
           </div>
-          <div className="mt-0.5 truncate text-xs text-ink-soft">{f ? f.name : d.hint}</div>
+          <div className="mt-0.5 truncate text-xs text-white/50">{f ? f.name : d.hint}</div>
         </div>
         <div
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
-            f ? "border-foreground bg-foreground text-background" : "border-border text-ink-muted"
+            f ? "border-gold bg-gold text-night" : "border-white/20 text-white/60"
           }`}
         >
           {f ? <Check className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
@@ -216,33 +218,26 @@ export default function BecomeChauffeurPage() {
 
   return (
     <SiteLayout>
-      {/* Dark page header */}
-      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
-        <div className="mx-auto max-w-3xl">
-          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">Drive with SophRia</div>
-          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
-            Become a <span className="text-[#e7d3a8]">chauffeur.</span>
-          </h1>
-          <p className="mt-5 max-w-xl text-base text-white/70">
-            Join Toronto&apos;s most discerning private fleet. Vetted professionals only — a full Ontario G licence with
-            {" "}{MIN_EXPERIENCE_YEARS}+ years, a luxury sedan or SUV on a limousine plate, and commercial coverage.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        narrow
+        eyebrow="Drive with SophRia"
+        title={<>Become a <span className="text-gold-soft">chauffeur.</span></>}
+        sub={<>Join Toronto&apos;s most discerning private fleet. Vetted professionals only — a full Ontario G licence with{" "}{MIN_EXPERIENCE_YEARS}+ years, a luxury sedan or SUV on a limousine plate, and commercial coverage.</>}
+      />
 
-      <section className="bg-background px-6 py-20">
+      <section className="bg-night px-6 py-20 text-white">
         <div className="mx-auto max-w-3xl space-y-8">
           {!user ? (
-            <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-sm">
-              <p className="text-ink-muted">
+            <div className="rounded-sm bg-night-card p-10 text-center">
+              <p className="text-white/70">
                 Please{" "}
-                <Link href="/auth" className="font-medium text-foreground underline underline-offset-2">sign in</Link>{" "}
+                <Link href="/auth" className="font-medium text-gold-soft underline underline-offset-2 hover:text-gold">sign in</Link>{" "}
                 to submit your application.
               </p>
             </div>
           ) : application === undefined ? (
-            <div className="flex items-center justify-center rounded-2xl border border-border bg-card p-16">
-              <Loader2 className="h-5 w-5 animate-spin text-ink-muted" />
+            <div className="rounded-sm bg-night-card flex items-center justify-center p-16">
+              <Loader2 className="h-5 w-5 animate-spin text-white/70" />
             </div>
           ) : application ? (
             /* Already applied — show status instead of the form */
@@ -251,38 +246,38 @@ export default function BecomeChauffeurPage() {
               const activeIdx = approved ? 2 : 1; // 0 Submitted · 1 Under Review · 2 Approved
               return (
                 <div className="space-y-8">
-                  <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-sm">
-                    <div className={`mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full shadow-lg ${approved ? "bg-gradient-to-br from-[#e7d3a8] to-[#c9a76a]" : "bg-muted"}`}>
-                      {approved ? <ShieldCheck className="h-8 w-8 text-[#0d0d0e]" strokeWidth={2} /> : <Clock className="h-7 w-7 text-ink-muted" />}
+                  <div className="rounded-sm bg-night-card p-10 text-center">
+                    <div className={`mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full shadow-lg ${approved ? "bg-gradient-to-br from-gold-soft to-gold" : "bg-white/5"}`}>
+                      {approved ? <ShieldCheck className="h-8 w-8 text-night" strokeWidth={2} /> : <Clock className="h-7 w-7 text-white/70" />}
                     </div>
-                    <h2 className="text-2xl font-light text-foreground">
+                    <h2 className="text-2xl font-light text-white">
                       {approved ? "You're a SophRia chauffeur" : "Application under review"}
                     </h2>
-                    <p className="mt-2 text-sm text-ink-muted">
+                    <p className="mt-2 text-sm text-white/70">
                       {approved
                         ? "Your application has been approved. You can now access the driver portal and start accepting rides."
                         : "Thanks for applying. Our team is reviewing your details and will be in touch — you don't need to submit again."}
                     </p>
-                    <div className="mt-5 text-xs text-ink-soft">
+                    <div className="mt-5 text-xs text-white/50">
                       Applied {formatDate(application.created_at)} · License {application.license_number}
                     </div>
                     {approved && (
-                      <Link href="/driver" className="mt-6 inline-flex items-center gap-2 rounded-sm bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]">
+                      <Link href="/driver" className="mt-6 inline-flex items-center gap-2 rounded-sm bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-gold-soft">
                         Go to Driver Portal <ArrowRight className="h-4 w-4" />
                       </Link>
                     )}
                   </div>
-                  <div className="flex items-center rounded-2xl border border-border bg-card p-6 shadow-sm">
+                  <div className="rounded-sm bg-night-card flex items-center p-6">
                     {STATUS_STEPS.map((s, i) => {
                       const done = i < activeIdx;
                       const current = i === activeIdx;
                       return (
                         <div key={s} className="flex flex-1 items-center">
-                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${done || current ? "border-foreground" : "border-border text-ink-soft"} ${done ? "bg-foreground text-background" : current ? "text-foreground" : ""}`}>
+                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${done || current ? "border-gold" : "border-white/15 text-white/50"} ${done ? "bg-gold text-night" : current ? "text-white" : ""}`}>
                             {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
                           </div>
-                          <span className={`ml-2.5 text-xs font-medium ${done || current ? "text-foreground" : "text-ink-soft"}`}>{s}</span>
-                          {i < STATUS_STEPS.length - 1 && <div className={`mx-4 h-px flex-1 ${i < activeIdx ? "bg-foreground" : "bg-border"}`} />}
+                          <span className={`ml-2.5 text-xs font-medium ${done || current ? "text-white" : "text-white/50"}`}>{s}</span>
+                          {i < STATUS_STEPS.length - 1 && <div className={`mx-4 h-px flex-1 ${i < activeIdx ? "bg-gold" : "bg-white/15"}`} />}
                         </div>
                       );
                     })}
@@ -296,20 +291,20 @@ export default function BecomeChauffeurPage() {
               <div>
                 <div className="flex items-center gap-1.5">
                   {FORM_STEPS.map((_, i) => (
-                    <div key={i} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${i + 1 <= step ? "bg-foreground" : "bg-border"}`} />
+                    <div key={i} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${i + 1 <= step ? "bg-gold" : "bg-white/15"}`} />
                   ))}
                 </div>
                 <div className="mt-2.5 flex items-center justify-between">
-                  <span className="text-xs text-ink-soft">Step {step} of {LAST_STEP}</span>
-                  <span className="text-xs font-medium text-ink-muted">{FORM_STEPS[step - 1]}</span>
+                  <span className="text-xs text-white/50">Step {step} of {LAST_STEP}</span>
+                  <span className="text-xs font-medium text-white/70">{FORM_STEPS[step - 1]}</span>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+              <div className="rounded-sm bg-night-card p-8">
                 {/* Step 1 — Personal details */}
                 {step === 1 && (
                   <>
-                    <div className="mb-6 text-xs uppercase tracking-[0.22em] text-ink-muted">Personal Details</div>
+                    <div className="mb-6 text-xs uppercase tracking-[0.22em] text-white/60">Personal Details</div>
                     <div className="grid gap-5 md:grid-cols-2">
                       {field("Full Name *", <input className={inputCls} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />)}
                       {field("Email *", <input type="email" className={inputCls} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />)}
@@ -344,7 +339,7 @@ export default function BecomeChauffeurPage() {
                 {/* Step 2 — Professional */}
                 {step === 2 && (
                   <>
-                    <div className="mb-6 text-xs uppercase tracking-[0.22em] text-ink-muted">Professional Details</div>
+                    <div className="mb-6 text-xs uppercase tracking-[0.22em] text-white/60">Professional Details</div>
                     <div className="grid gap-5 md:grid-cols-2">
                       {field("Driver's Licence Number *", <input className={inputCls} value={form.license} onChange={(e) => setForm({ ...form, license: e.target.value })} required />)}
                       {field("Licence Class *",
@@ -359,7 +354,7 @@ export default function BecomeChauffeurPage() {
                         )}
                       </div>
                     </div>
-                    <p className="mt-5 text-xs text-ink-soft">
+                    <p className="mt-5 text-xs text-white/50">
                       A full Ontario G licence held for at least {MIN_EXPERIENCE_YEARS} years is required, along with a
                       licence to operate as a vehicle-for-hire driver and a clean driver&apos;s abstract.
                     </p>
@@ -369,7 +364,7 @@ export default function BecomeChauffeurPage() {
                 {/* Step 3 — Vehicle */}
                 {step === 3 && (
                   <>
-                    <div className="mb-6 text-xs uppercase tracking-[0.22em] text-ink-muted">Your Vehicle</div>
+                    <div className="mb-6 text-xs uppercase tracking-[0.22em] text-white/60">Your Vehicle</div>
                     <div className="grid gap-5 md:grid-cols-2">
                       {field("Vehicle Class *",
                         <select className={selectCls(form.vehicleClass)} value={form.vehicleClass} onChange={(e) => setForm({ ...form, vehicleClass: e.target.value })} required>
@@ -382,7 +377,7 @@ export default function BecomeChauffeurPage() {
                       {field("Model *", <input className={inputCls} value={form.vehicleModel} onChange={(e) => setForm({ ...form, vehicleModel: e.target.value })} placeholder="Escalade" required />)}
                       {field("Year *", <input type="number" min={1980} max={2027} className={inputCls} value={form.vehicleYear} onChange={(e) => setForm({ ...form, vehicleYear: e.target.value })} placeholder="2023" required />)}
                     </div>
-                    <p className="mt-5 text-xs text-ink-soft">
+                    <p className="mt-5 text-xs text-white/50">
                       Your vehicle must be a late-model luxury sedan or SUV carrying a limousine plate, with commercial
                       insurance in good standing and a valid safety certificate.
                     </p>
@@ -392,14 +387,14 @@ export default function BecomeChauffeurPage() {
                 {/* Step 4 — Photo & Documents */}
                 {step === 4 && (
                   <>
-                    <div className="mb-6 text-xs uppercase tracking-[0.22em] text-ink-muted">Driver Photo *</div>
+                    <div className="mb-6 text-xs uppercase tracking-[0.22em] text-white/60">Driver Photo *</div>
                     <div className="flex flex-col items-center gap-3">
-                      <div className="relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-border bg-surface">
+                      <div className="relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-white/20 bg-white/[0.04]">
                         {photoPreview ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={photoPreview} alt="Driver" className="h-full w-full object-cover" />
                         ) : (
-                          <div className="flex flex-col items-center gap-1 text-ink-soft">
+                          <div className="flex flex-col items-center gap-1 text-white/60">
                             <Camera className="h-6 w-6" />
                             <span className="text-[11px]">No photo yet</span>
                           </div>
@@ -410,48 +405,48 @@ export default function BecomeChauffeurPage() {
                           forces the selfie camera on mobile and removes the
                           library option entirely — the client asked for both. */}
                       <div className="flex flex-wrap items-center justify-center gap-2">
-                        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-border px-4 py-2 text-xs text-foreground transition hover:bg-muted">
+                        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-white/25 px-4 py-2 text-xs text-white transition hover:border-gold hover:text-gold-soft">
                           <Camera className="h-3.5 w-3.5" /> Take photo
                           <input type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => onPhoto(e.target.files?.[0] ?? null)} />
                         </label>
-                        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-border px-4 py-2 text-xs text-foreground transition hover:bg-muted">
+                        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-white/25 px-4 py-2 text-xs text-white transition hover:border-gold hover:text-gold-soft">
                           <ImageIcon className="h-3.5 w-3.5" /> Upload from photos or files
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => onPhoto(e.target.files?.[0] ?? null)} />
                         </label>
                         {photo && (
-                          <button type="button" onClick={() => onPhoto(null)} className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-foreground">
+                          <button type="button" onClick={() => onPhoto(null)} className="inline-flex items-center gap-1 text-xs text-white/70 hover:text-white">
                             <X className="h-3.5 w-3.5" /> Remove
                           </button>
                         )}
                       </div>
-                      <p className="text-xs text-ink-soft">A clear, front-facing headshot.</p>
+                      <p className="text-xs text-white/50">A clear, front-facing headshot.</p>
                     </div>
 
-                    <div className="mt-8 border-t border-border pt-7">
+                    <div className="mt-8 border-t border-white/10 pt-7">
                       <div className="mb-1 flex items-center justify-between">
-                        <div className="text-xs uppercase tracking-[0.22em] text-ink-muted">Documents — all required</div>
-                        <span className="text-xs text-ink-soft">{uploadedCount}/{ALL_DOCS.length}</span>
+                        <div className="text-xs uppercase tracking-[0.22em] text-white/60">Documents — all required</div>
+                        <span className="text-xs text-white/50">{uploadedCount}/{ALL_DOCS.length}</span>
                       </div>
-                      <p className="mb-5 text-xs text-ink-soft">Images or PDF, up to 10 MB each.</p>
+                      <p className="mb-5 text-xs text-white/50">Images or PDF, up to 10 MB each.</p>
                       <div className="space-y-3">{DRIVER_DOCS.map(docRow)}</div>
 
-                      <div className="mb-4 mt-8 text-xs uppercase tracking-[0.22em] text-ink-muted">
+                      <div className="mb-4 mt-8 text-xs uppercase tracking-[0.22em] text-white/60">
                         Vehicle Photos — all four sides
                       </div>
                       <div className="space-y-3">{VEHICLE_PHOTOS.map(docRow)}</div>
                     </div>
 
-                    <div className="mt-8 border-t border-border pt-7">
+                    <div className="mt-8 border-t border-white/10 pt-7">
                       <label className="flex cursor-pointer items-start gap-3">
                         <input
                           type="checkbox"
                           checked={termsAccepted}
                           onChange={(e) => setTermsAccepted(e.target.checked)}
-                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#0d0d0e]"
+                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#c9a76a]"
                         />
-                        <span className="text-xs leading-relaxed text-ink-muted">
+                        <span className="text-xs leading-relaxed text-white/70">
                           I confirm the information and documents above are accurate and mine, and I accept the{" "}
-                          <Link href="/chauffeur-terms" target="_blank" className="font-medium text-foreground underline underline-offset-2">
+                          <Link href="/chauffeur-terms" target="_blank" className="font-medium text-gold-soft underline underline-offset-2 hover:text-gold">
                             Chauffeur Terms
                           </Link>
                           . I understand I drive as an independent contractor, that I am responsible for my vehicle,
@@ -466,16 +461,16 @@ export default function BecomeChauffeurPage() {
                 {/* Nav */}
                 <div className="mt-8 flex items-center justify-between gap-3">
                   {step > 1 ? (
-                    <button type="button" onClick={() => setStep((s) => s - 1)} disabled={submitting} className="inline-flex items-center gap-2 rounded-sm border border-border px-5 py-3 text-sm text-foreground transition hover:bg-muted disabled:opacity-60">
+                    <button type="button" onClick={() => setStep((s) => s - 1)} disabled={submitting} className="inline-flex items-center gap-2 rounded-sm border border-white/25 px-5 py-3 text-sm text-white transition hover:border-gold hover:text-gold-soft disabled:opacity-60">
                       <ArrowLeft className="h-4 w-4" /> Back
                     </button>
                   ) : <span />}
                   {step < LAST_STEP ? (
-                    <button type="button" onClick={next} className="inline-flex items-center gap-2 rounded-sm bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]">
+                    <button type="button" onClick={next} className="inline-flex items-center gap-2 rounded-sm bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-gold-soft">
                       Continue <ArrowRight className="h-4 w-4" />
                     </button>
                   ) : (
-                    <button type="button" onClick={onSubmit} disabled={submitting} className="inline-flex items-center gap-2 rounded-sm bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A] disabled:opacity-60">
+                    <button type="button" onClick={onSubmit} disabled={submitting} className="inline-flex items-center gap-2 rounded-sm bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-gold-soft disabled:opacity-60">
                       {submitting ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" />

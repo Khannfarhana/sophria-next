@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { SiteLayout } from "@/components/site/SiteLayout";
-import { ProtectedRoute } from "@/components/site/ProtectedRoute";
+import { PageHero } from "@/components/site/PageHero";
 import { useAuth } from "@/lib/use-auth";
 import { useSupabase } from "@/hooks/use-supabase";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
@@ -64,13 +64,16 @@ type State = {
   notes: string;
 };
 
-const STEP_LABELS = ["Trip", "Date & Time", "Vehicle", "Passenger", "Payment", "Confirmed"];
+const STEP_LABELS = ["Trip", "Date & Time", "Vehicle", "Passenger", "Review", "Confirmed"];
 
 export default function BookPage() {
+  // Quoting is public — sign-in is required only at the confirm step, and
+  // createBookingAction enforces auth server-side regardless. The Suspense
+  // boundary is required to prerender a page that reads useSearchParams.
   return (
-    <ProtectedRoute>
+    <Suspense fallback={<div className="min-h-screen bg-night" />}>
       <BookFlow />
-    </ProtectedRoute>
+    </Suspense>
   );
 }
 
@@ -92,6 +95,45 @@ function BookFlow() {
     datetime: "", durationHours: HOURLY_MIN_HOURS, flightNumber: "", vehicleId: null,
     passengerName: "", passengerPhone: "", passengers: 1, luggage: 0, notes: "",
   });
+
+  // Guest quotes survive the sign-in round-trip: state is stashed under this
+  // key before redirecting to /auth and restored (once) on return.
+  const PENDING_KEY = "sophria-pending-booking";
+
+  // Interlocks between the two mount-time state writers (stash restore vs the
+  // ?q= handoff): whichever applies first wins, and q is applied at most once.
+  const restoredRef = useRef(false);
+  const qAppliedRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(PENDING_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(PENDING_KEY);
+      const saved = JSON.parse(raw);
+      if (saved && typeof saved === "object" && saved.s) {
+        // Synchronous flag: the q effect below runs after this one in the same
+        // commit and must not clobber a restored quote.
+        restoredRef.current = true;
+        // Deferred so the restore doesn't set state synchronously inside the effect.
+        Promise.resolve().then(() => {
+          setS((prev) => ({ ...prev, ...saved.s }));
+          setStep(5);
+        });
+      }
+    } catch {
+      /* corrupt stash — start fresh */
+    }
+  }, []);
+
+  const signInToConfirm = () => {
+    try {
+      sessionStorage.setItem(PENDING_KEY, JSON.stringify({ s }));
+    } catch {
+      /* storage unavailable — the user just re-enters details */
+    }
+    router.push("/auth?callbackUrl=%2Fbook");
+  };
 
   const addStop = () =>
     setS((prev) =>
@@ -118,7 +160,9 @@ function BookFlow() {
         setS(prev => ({
           ...prev,
           passengerName: prev.passengerName || ("name" in user ? (user.name ?? "") : ""),
-          passengerPhone: "",
+          // Never clear what the user already typed — this effect also fires
+          // when a guest returns from the sign-in-to-confirm round-trip.
+          passengerPhone: prev.passengerPhone,
         }));
       });
     }
@@ -126,36 +170,48 @@ function BookFlow() {
 
   useEffect(() => {
     const q = searchParams.get("q");
-    if (q) {
-      try {
-        const params = new URLSearchParams(decodeURIComponent(q));
+    // A restored quote always outranks the URL handoff.
+    if (!q || restoredRef.current) return;
+    try {
+      // searchParams.get() already decoded once — do NOT decode again, or
+      // addresses containing & / = / % get corrupted.
+      const params = new URLSearchParams(q);
+
+      if (!qAppliedRef.current) {
+        qAppliedRef.current = true;
         Promise.resolve().then(() => {
           setS(prev => {
             const tt = (params.get("tripType") as TripType) || prev.tripType;
             const num = (k: string) => (params.get(k) != null ? Number(params.get(k)) : null);
             const pLng = num("pickupLng"), pLat = num("pickupLat");
             const dLng = num("dropoffLng"), dLat = num("dropoffLat");
-            const next = {
+            return {
               ...prev,
               tripType: ["one_way", "hourly", "airport"].includes(tt) ? tt : prev.tripType,
-              pickup: params.get("pickup") || "",
-              dropoff: params.get("dropoff") || "",
-              pickupCoords: pLng != null && pLat != null ? { lng: pLng, lat: pLat } : null,
-              dropoffCoords: dLng != null && dLat != null ? { lng: dLng, lat: dLat } : null,
-              datetime: params.get("datetime") || "",
+              pickup: params.get("pickup") || prev.pickup,
+              dropoff: params.get("dropoff") || prev.dropoff,
+              pickupCoords: pLng != null && pLat != null ? { lng: pLng, lat: pLat } : prev.pickupCoords,
+              dropoffCoords: dLng != null && dLat != null ? { lng: dLng, lat: dLat } : prev.dropoffCoords,
+              datetime: params.get("datetime") || prev.datetime,
               durationHours: Number(params.get("duration")) || prev.durationHours,
-              flightNumber: params.get("flight") || "",
+              flightNumber: params.get("flight") || prev.flightNumber,
             };
-            const vehicleType = params.get("vehicle") || "";
-            if (vehicles && vehicleType) {
-              const match = vehicles.find((v) => v.type === vehicleType);
-              if (match) next.vehicleId = match.id;
-            }
-            return next;
           });
         });
-      } catch (err) { console.error(err); }
-    }
+      }
+
+      // The vehicle preselect has to wait for the vehicles query — it may run
+      // on a later pass, but never overwrites a choice the user already made.
+      const vehicleType = params.get("vehicle") || "";
+      if (vehicles && vehicleType) {
+        const match = vehicles.find((v) => v.type === vehicleType);
+        if (match) {
+          Promise.resolve().then(() =>
+            setS((prev) => (prev.vehicleId ? prev : { ...prev, vehicleId: match.id })),
+          );
+        }
+      }
+    } catch (err) { console.error(err); }
   }, [searchParams, vehicles]);
 
   // Stable dep for the directions effect below: it must re-route when a stop's
@@ -216,8 +272,11 @@ function BookFlow() {
   );
   const fare = bd.subtotal;
 
+  const [confirming, setConfirming] = useState(false);
+
   const confirm = async () => {
-    if (!user || !s.vehicleId) return;
+    if (!user || !s.vehicleId || confirming) return;
+    setConfirming(true);
     try {
       const payload = {
         vehicleId: s.vehicleId, pickup: s.pickup, dropoff: s.dropoff,
@@ -236,14 +295,20 @@ function BookFlow() {
         distanceKm: s.distanceKm,
         durationMin: s.durationMin,
       };
-      const data = SUPABASE_ENABLED
+      const res = SUPABASE_ENABLED
         ? await createBookingAction(payload)
         : await mockCreateBooking({ ...payload, customerId: user.id });
-      setReference(data.reference);
-      setOtp(data.start_otp ?? null);
+      if ("error" in res) {
+        toast.error(res.error);
+        return;
+      }
+      setReference(res.reference);
+      setOtp(res.start_otp ?? null);
       setStep(6);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to create booking");
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -329,21 +394,18 @@ function BookFlow() {
     }
   };
 
-  const inputCls = "w-full rounded-xl border bg-input px-4 py-3 text-sm text-foreground transition focus:border-foreground focus:outline-none";
+  const inputCls = "w-full rounded-sm border border-white/15 bg-white/[0.06] px-4 py-3 text-sm text-white placeholder:text-white/40 transition focus:border-gold";
 
   return (
     <SiteLayout>
-      {/* Dark page header */}
-      <section className="bg-[#0d0d0e] px-6 pb-16 pt-36 text-white">
-        <div className="mx-auto max-w-3xl">
-          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">Reserve</div>
-          <h1 className="text-4xl font-light leading-[1.05] md:text-5xl">
-            Book your <span className="text-[#e7d3a8]">ride.</span>
-          </h1>
-        </div>
-      </section>
+      <PageHero
+        narrow
+        eyebrow="Reserve"
+        title={<>Book your <span className="text-gold-soft">ride.</span></>}
+        sub="See your fare up front — sign in only when you confirm."
+      />
 
-      <section className="bg-background px-6 py-16">
+      <section className="bg-night px-6 py-16 text-white">
         <div className="mx-auto max-w-3xl">
 
           {/* Step indicator */}
@@ -352,25 +414,25 @@ function BookFlow() {
               {[1,2,3,4,5,6].map((n) => (
                 <div
                   key={n}
-                  className={`h-1 flex-1 rounded-full transition-colors duration-300 ${n <= step ? "bg-foreground" : "bg-border"}`}
+                  className={`h-1 flex-1 rounded-full transition-colors duration-300 ${n <= step ? "bg-gold" : "bg-white/15"}`}
                 />
               ))}
             </div>
             <div className="mt-2.5 flex items-center justify-between">
-              <span className="text-xs text-ink-soft">Step {Math.min(step, 6)} of 6</span>
-              <span className="text-xs font-medium text-ink-muted">{STEP_LABELS[Math.min(step, 6) - 1]}</span>
+              <span className="text-xs text-white/50">Step {Math.min(step, 6)} of 6</span>
+              <span className="text-xs font-medium text-white/70">{STEP_LABELS[Math.min(step, 6) - 1]}</span>
             </div>
           </div>
 
           {/* Step card */}
-          <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+          <div className="rounded-sm bg-night-card p-8">
 
             {/* Step 1 — Trip details */}
             {step === 1 && (
               <Step title="Trip details">
                 <div>
-                  <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-ink-muted">Trip type</label>
-                  <TripTypeToggle value={s.tripType} onChange={(t) => setS({ ...s, tripType: t })} />
+                  <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-white/60">Trip type</label>
+                  <TripTypeToggle variant="dark" value={s.tripType} onChange={(t) => setS({ ...s, tripType: t })} />
                 </div>
                 <Field label="Pickup location">
                   <AddressAutocomplete
@@ -405,7 +467,7 @@ function BookFlow() {
                           type="button"
                           onClick={() => removeStop(i)}
                           aria-label={`Remove stop ${i + 1}`}
-                          className="mt-2.5 shrink-0 rounded-full p-1.5 text-ink-soft transition hover:bg-muted hover:text-foreground"
+                          className="mt-2.5 shrink-0 rounded-full p-1.5 text-white/50 transition hover:bg-white/10 hover:text-white"
                         >
                           <X className="h-4 w-4" />
                         </button>
@@ -416,11 +478,11 @@ function BookFlow() {
                   <button
                     type="button"
                     onClick={addStop}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted transition hover:text-foreground"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-white/70 transition hover:text-white"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Add a stop
-                    <span className="text-ink-soft">
+                    <span className="text-white/50">
                       ({s.stops.length}/{MAX_STOPS})
                     </span>
                   </button>
@@ -463,8 +525,8 @@ function BookFlow() {
                       height={220}
                     />
                     {s.distanceKm != null && (
-                      <p className="text-sm text-ink-muted">
-                        Approx. <span className="font-medium text-foreground">{s.distanceKm.toFixed(1)} km</span>
+                      <p className="text-sm text-white/70">
+                        Approx. <span className="font-medium text-white">{s.distanceKm.toFixed(1)} km</span>
                         {s.durationMin != null && <> · {Math.round(s.durationMin)} min drive</>}
                       </p>
                     )}
@@ -512,10 +574,10 @@ function BookFlow() {
                   {vehicles?.map((v) => (
                     <label
                       key={v.id}
-                      className={`flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-all ${
+                      className={`flex cursor-pointer items-center gap-4 rounded-sm border p-4 transition-all ${
                         s.vehicleId === v.id
-                          ? "border-foreground bg-surface shadow-sm"
-                          : "border-border hover:border-foreground/30"
+                          ? "border-gold bg-white/5"
+                          : "border-white/10 hover:border-white/30"
                       }`}
                     >
                       <input type="radio" name="v" checked={s.vehicleId === v.id} onChange={() => setS({ ...s, vehicleId: v.id })} className="sr-only" />
@@ -523,19 +585,19 @@ function BookFlow() {
                         <Image src={VEHICLE_IMAGES[v.type] ?? VEHICLE_IMAGES.sedan} alt={v.name} fill sizes="96px" className="object-cover" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-foreground">{v.name}</div>
-                        <div className="mt-1 flex items-center gap-3 text-xs text-ink-soft">
+                        <div className="text-sm font-medium text-white">{v.name}</div>
+                        <div className="mt-1 flex items-center gap-3 text-xs text-white/50">
                           <span className="flex items-center gap-1"><Users className="h-3 w-3" />{v.capacity}</span>
                           <span className="flex items-center gap-1"><Luggage className="h-3 w-3" />{v.luggage}</span>
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="text-base font-medium text-foreground">${priceBreakdown(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff }, pricingConfig).total.toFixed(0)}</div>
-                        <div className="text-xs text-ink-soft">{s.tripType === "hourly" ? `incl. HST · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD incl. HST"}</div>
+                        <div className="text-base font-medium text-white">${priceBreakdown(s.tripType, v, { durationHours: s.durationHours, distanceKm: s.distanceKm ?? undefined, tariff: pearsonTariff }, pricingConfig).total.toFixed(0)}</div>
+                        <div className="text-xs text-white/50">{s.tripType === "hourly" ? `incl. HST · ${Math.max(HOURLY_MIN_HOURS, s.durationHours)}h` : "CAD incl. HST"}</div>
                       </div>
                       {s.vehicleId === v.id && (
-                        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground">
-                          <Check className="h-3 w-3 text-background" />
+                        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold">
+                          <Check className="h-3 w-3 text-night" />
                         </div>
                       )}
                     </label>
@@ -581,7 +643,7 @@ function BookFlow() {
                   </Field>
                 </div>
                 {selected && s.passengers > selected.capacity && (
-                  <p className="-mt-1 text-xs text-amber-600">
+                  <p className="-mt-1 text-xs text-amber-400">
                     {selected.name} seats {selected.capacity}. Pick a larger vehicle or reduce the party.
                   </p>
                 )}
@@ -602,7 +664,7 @@ function BookFlow() {
             {step === 5 && (
               <Step title="Review & confirm">
                 <div className="space-y-3">
-                  <div className="rounded-xl border border-border bg-surface p-5 text-sm">
+                  <div className="rounded-sm bg-white/5 p-5 text-sm">
                     {([
                       ["Trip type", tripTypeLabel(s.tripType)],
                       ["Pickup", s.pickup],
@@ -627,27 +689,37 @@ function BookFlow() {
                       ["HST (13%)", `$${bd.hst.toFixed(2)}`],
                       ["Estimated total", `$${bd.total.toFixed(2)} CAD`],
                     ] as [string, string][]).map(([k, v]) => (
-                      <div key={k} className={`flex justify-between py-2.5 ${k !== "Estimated total" ? "border-b border-border" : "font-medium text-foreground"}`}>
-                        <span className="text-ink-muted">{k}</span>
-                        <span className="text-right text-foreground">{v}</span>
+                      <div key={k} className={`flex justify-between py-2.5 ${k !== "Estimated total" ? "border-b border-white/10" : "font-medium text-white"}`}>
+                        <span className="text-white/60">{k}</span>
+                        <span className="text-right text-white">{v}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4 text-sm text-ink-muted">
-                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
+                  <div className="flex items-start gap-3 rounded-sm bg-white/5 p-4 text-sm text-white/70">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
                     <span>Once dispatch confirms your reservation, you&apos;ll receive a secure payment link to complete your booking online.</span>
                   </div>
                   {pearsonTariff != null ? (
-                    <p className="text-xs text-ink-soft">
+                    <p className="text-xs text-white/50">
                       Priced from the official Toronto Pearson airport tariff, with the airport fee and {(pricingConfig.hstRate * 100).toFixed(0)}% HST shown separately above. Highway 407 tolls at cost, requested stops ${pricingConfig.stopWaitPer10Min} per 10 minutes, and a ${pricingConfig.extraPassengerSurcharge} surcharge for more than 4 passengers or excess baggage may apply.
                     </p>
                   ) : (
-                    <p className="text-xs text-ink-soft">
+                    <p className="text-xs text-white/50">
                       The total above includes 13% HST. Highway tolls (incl. 407), parking, waiting time beyond the complimentary period and additional stops are extra where applicable. Gratuity is added at payment.
                     </p>
                   )}
                 </div>
-                <Nav onBack={() => setStep(4)} onNext={confirm} nextLabel="Confirm Booking" />
+                {!user && (
+                  <p className="mt-4 text-xs text-white/60">
+                    You&apos;ll be asked to sign in to confirm — your quote is saved and you&apos;ll return right here.
+                  </p>
+                )}
+                <Nav
+                  onBack={() => setStep(4)}
+                  onNext={user ? confirm : signInToConfirm}
+                  nextLabel={user ? (confirming ? "Confirming…" : "Confirm Booking") : "Sign in to confirm"}
+                  busy={confirming}
+                />
               </Step>
             )}
 
@@ -657,20 +729,20 @@ function BookFlow() {
                 {/* Success mark */}
                 <div className="text-center">
                   <div className="relative mx-auto mb-5 flex h-20 w-20 items-center justify-center">
-                    <span className="absolute inset-0 rounded-full bg-[#c9a76a]/20 animate-pulse-ring" />
-                    <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#e7d3a8] to-[#c9a76a] shadow-lg">
-                      <Check className="h-8 w-8 text-[#0d0d0e]" strokeWidth={2.5} />
+                    <span className="absolute inset-0 rounded-full bg-gold/20 animate-pulse-ring" />
+                    <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-gold-soft to-gold shadow-lg">
+                      <Check className="h-8 w-8 text-night" strokeWidth={2.5} />
                     </div>
                   </div>
-                  <div className="text-xs uppercase tracking-[0.22em] text-[#b08d4c]">Reservation confirmed</div>
-                  <h2 className="mt-2 text-3xl font-light text-foreground">
+                  <div className="text-xs uppercase tracking-[0.22em] text-gold-soft">Reservation confirmed</div>
+                  <h2 className="mt-2 text-3xl font-light text-white">
                     You&apos;re all set{s.passengerName ? `, ${s.passengerName.split(" ")[0]}` : ""}.
                   </h2>
-                  <p className="mt-2 text-sm text-ink-muted">A SophRia coordinator will confirm your chauffeur shortly.</p>
+                  <p className="mt-2 text-sm text-white/70">A SophRia coordinator will confirm your chauffeur shortly.</p>
                 </div>
 
                 {/* Boarding-pass style ticket */}
-                <div className="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-[#0d0d0e] text-white shadow-[0_24px_60px_-30px_rgba(0,0,0,0.7)]">
+                <div className="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-night text-white shadow-[0_24px_60px_-30px_rgba(0,0,0,0.7)]">
                   {/* Route map */}
                   {s.tripType !== "hourly" && s.pickupCoords && s.dropoffCoords && (
                     <RideMap
@@ -688,21 +760,21 @@ function BookFlow() {
                   <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Booking reference</div>
-                      <div className="font-display text-2xl tracking-wide text-[#e7d3a8]">{reference}</div>
+                      <div className="font-display text-2xl tracking-wide text-gold-soft">{reference}</div>
                     </div>
-                    <span className="rounded-full border border-[#c9a76a]/40 bg-[#c9a76a]/10 px-3 py-1 text-xs text-[#e7d3a8]">
+                    <span className="rounded-full border border-gold/40 bg-gold/10 px-3 py-1 text-xs text-gold-soft">
                       {tripTypeLabel(s.tripType)}
                     </span>
                   </div>
 
                   {/* Pickup code */}
                   {otp && (
-                    <div className="flex items-center justify-between border-b border-white/10 bg-[#141416] px-6 py-4">
+                    <div className="flex items-center justify-between border-b border-white/10 bg-night-panel px-6 py-4">
                       <div>
                         <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Pickup code</div>
                         <div className="mt-0.5 text-xs text-white/60">Share with your driver to start the ride</div>
                       </div>
-                      <div className="font-mono text-2xl tracking-[0.3em] text-[#e7d3a8]">{otp}</div>
+                      <div className="font-mono text-2xl tracking-[0.3em] text-gold-soft">{otp}</div>
                     </div>
                   )}
 
@@ -732,7 +804,7 @@ function BookFlow() {
                   {/* Route */}
                   <div className="space-y-3 border-b border-white/10 px-6 py-4">
                     <div className="flex items-start gap-3">
-                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#4ade80]" />
+                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
                       <div className="min-w-0">
                         <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Pickup</div>
                         <div className="truncate text-sm">{s.pickup || "—"}</div>
@@ -740,7 +812,7 @@ function BookFlow() {
                     </div>
                     {s.tripType !== "hourly" && (
                       <div className="flex items-start gap-3">
-                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#c9a76a]" />
+                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-gold" />
                         <div className="min-w-0">
                           <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Drop-off</div>
                           <div className="truncate text-sm">{s.dropoff || "—"}</div>
@@ -751,13 +823,13 @@ function BookFlow() {
 
                   {/* Meta grid */}
                   <div className="grid grid-cols-2 gap-px bg-white/10">
-                    <div className="bg-[#0d0d0e] px-6 py-4">
+                    <div className="bg-night px-6 py-4">
                       <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Date &amp; time</div>
                       <div className="mt-1 text-sm">
                         {formatDateTime(s.datetime)}
                       </div>
                     </div>
-                    <div className="bg-[#0d0d0e] px-6 py-4">
+                    <div className="bg-night px-6 py-4">
                       <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">
                         {s.tripType === "hourly" ? "Duration" : "Distance"}
                       </div>
@@ -772,9 +844,9 @@ function BookFlow() {
                   </div>
 
                   {/* Fare */}
-                  <div className="flex items-center justify-between bg-[#141416] px-6 py-4">
+                  <div className="flex items-center justify-between bg-night-panel px-6 py-4">
                     <span className="text-sm text-white/60">Estimated fare</span>
-                    <span className="font-display text-2xl text-[#e7d3a8]">${fare.toFixed(2)}</span>
+                    <span className="font-display text-2xl text-gold-soft">${fare.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -782,14 +854,14 @@ function BookFlow() {
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                   <button
                     onClick={downloadReceipt}
-                    className="group inline-flex flex-1 items-center justify-center gap-2 rounded-sm border border-border py-3 text-sm font-medium text-foreground transition hover:border-foreground/40 hover:bg-muted"
+                    className="group inline-flex flex-1 items-center justify-center gap-2 rounded-sm border border-white/25 py-3 text-sm font-medium text-white transition hover:border-gold hover:text-gold-soft"
                   >
                     <Download className="h-4 w-4 transition-transform group-hover:translate-y-0.5" />
                     Download receipt
                   </button>
                   <button
                     onClick={() => router.push("/dashboard")}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-sm bg-primary py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]"
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-sm bg-white py-3 text-sm font-medium text-black transition hover:bg-gold-soft"
                   >
                     View My Bookings
                     <ArrowRight className="h-4 w-4" />
@@ -807,7 +879,7 @@ function BookFlow() {
 function Step({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      {title && <h2 className="mb-6 text-xl font-light text-foreground">{title}</h2>}
+      {title && <h2 className="mb-6 font-display text-2xl text-white">{title}</h2>}
       <div className="space-y-4">{children}</div>
     </div>
   );
@@ -816,23 +888,24 @@ function Step({ title, children }: { title: string; children: React.ReactNode })
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-ink-muted">{label}</label>
+      <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-white/60">{label}</label>
       {children}
     </div>
   );
 }
 
-function Nav({ onBack, onNext, nextLabel = "Continue" }: { onBack?: () => void; onNext: () => void; nextLabel?: string }) {
+function Nav({ onBack, onNext, nextLabel = "Continue", busy = false }: { onBack?: () => void; onNext: () => void; nextLabel?: string; busy?: boolean }) {
   return (
-    <div className="mt-8 flex items-center justify-between border-t border-border pt-6">
+    <div className="mt-8 flex items-center justify-between border-t border-white/10 pt-6">
       {onBack ? (
-        <button onClick={onBack} className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink-muted transition hover:text-foreground">
+        <button onClick={onBack} disabled={busy} className="inline-flex cursor-pointer items-center gap-2 text-sm text-white/60 transition hover:text-white disabled:opacity-50">
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
       ) : <div />}
       <button
         onClick={onNext}
-        className="inline-flex cursor-pointer items-center gap-2 rounded-sm bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]"
+        disabled={busy}
+        className="inline-flex cursor-pointer items-center gap-2 rounded-sm bg-white px-6 py-2.5 text-sm font-medium text-black transition hover:bg-gold-soft disabled:opacity-60"
       >
         {nextLabel} <ArrowRight className="h-4 w-4" />
       </button>

@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function Unauthorized() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#0d0d0e] px-6">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-night px-6">
       {/* Ambient glow */}
       <div className="pointer-events-none absolute left-1/2 top-0 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-white/[0.03] blur-3xl" />
 

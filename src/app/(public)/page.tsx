@@ -6,11 +6,11 @@ import { BookingWidget } from "@/components/site/BookingWidget";
 import { ShieldCheck, Clock, Sparkles, ArrowRight, Star } from "lucide-react";
 import heroImgDesktop from "@/assets/hero.jpg";
 import heroImgMobile from "@/assets/hero.webp";
-import { VEHICLE_IMAGES } from "@/lib/vehicles";
+import { VEHICLE_CUTOUTS } from "@/lib/vehicles";
 import { testimonials } from "@/data/data";
 import Image from "next/image";
 
-/* Palette: dark base #0d0d0e · dark panel #131315 · card #18181b · cream #f1efe9 · gold #c9a76a */
+/* Brand colors come from the tokens in globals.css: night / night-panel / night-card / cream / gold */
 
 function Eyebrow({
   children,
@@ -26,10 +26,10 @@ function Eyebrow({
   return (
     <div
       className={`mb-4 flex items-center gap-3 text-xs uppercase tracking-[0.22em] ${
-        dark ? "text-white/55" : "text-ink-muted"
+        dark ? "text-white/70" : "text-ink-muted"
       } ${center ? "justify-center" : ""} ${className}`}
     >
-      <span className="h-px w-8 bg-[#c9a76a]" aria-hidden />
+      <span className="h-px w-8 bg-gold" aria-hidden />
       {children}
     </div>
   );
@@ -39,7 +39,7 @@ export default function Home() {
   return (
     <SiteLayout>
       {/* Hero */}
-      <section className="relative isolate overflow-hidden bg-[#0d0d0e] text-white md:min-h-screen">
+      <section className="relative isolate overflow-hidden bg-night text-white md:min-h-screen">
         <div className="absolute inset-0 animate-kenburns">
           {/* Mobile: portrait hero */}
           <Image
@@ -48,7 +48,7 @@ export default function Home() {
             fill
             priority
             sizes="100vw"
-            className="object-cover opacity-45 lg:hidden"
+            className="object-cover opacity-60 lg:hidden"
           />
           {/* Desktop: original landscape hero */}
           <Image
@@ -57,10 +57,12 @@ export default function Home() {
             fill
             priority
             sizes="100vw"
-            className="hidden object-cover opacity-45 lg:block"
+            className="hidden object-cover opacity-60 lg:block"
           />
         </div>
-        <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/70 to-[#0d0d0e]" />
+        {/* Scrims: vertical fade into the next section + left panel for copy legibility */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-night" />
+        <div className="absolute inset-0 hidden bg-gradient-to-r from-black/60 via-black/25 to-transparent md:block" />
 
         <div className="relative mx-auto flex max-w-7xl flex-col justify-start px-6 pb-20 pt-44 md:min-h-screen md:justify-end md:pt-32 md:pb-24">
           <div className="animate-rise">
@@ -70,7 +72,7 @@ export default function Home() {
               rather than just "SophRia". */}
           <h1 className="max-w-3xl text-5xl leading-[1.05] md:text-7xl animate-rise delay-100">
             <span className="font-semibold">SophRia</span> <br />
-            <span className="font-semibold text-[#e7d3a8]">Limousine Services.</span>
+            <span className="font-semibold text-gold-soft">Limousine Services.</span>
           </h1>
           <p className="mt-6 max-w-xl text-base text-white/80 md:text-lg animate-rise delay-200">
             Reserve a chauffeur in under a minute, available 24/7 across the Greater Toronto Area, Niagara and Toronto
@@ -96,14 +98,14 @@ export default function Home() {
       </section>
 
       {/* Booking widget — gradient lands exactly on the next section's colour */}
-      <section className="relative -mt-16 md:-mt-12 bg-gradient-to-b from-[#0d0d0e] to-[#131315] px-6 pb-16">
+      <section className="relative -mt-16 md:-mt-12 bg-gradient-to-b from-night to-night-panel px-6 pb-16">
         <div className="mx-auto max-w-6xl animate-rise delay-500">
           <BookingWidget />
         </div>
       </section>
 
       {/* Why SophRia */}
-      <section className="relative overflow-hidden bg-[#131315] px-6 py-20 text-white md:py-32">
+      <section className="relative overflow-hidden bg-night-panel px-6 py-20 text-white md:py-32">
         <div className="mx-auto max-w-7xl">
           <div className="relative mb-12 max-w-2xl md:mb-16">
             <Eyebrow dark>Why SophRia</Eyebrow>
@@ -117,29 +119,29 @@ export default function Home() {
             ].map(({ Icon, title, body }) => (
               <div
                 key={title}
-                className="group relative bg-[#18181b] p-8 transition-colors duration-500 hover:bg-[#1e1e22] md:p-10"
+                className="group relative bg-night-card p-8 transition-colors duration-500 hover:bg-night-hover md:p-10"
               >
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-sm border border-white/20 transition-colors duration-500 group-hover:border-[#c9a76a]">
-                  <Icon className="h-5 w-5 text-white transition-colors duration-500 group-hover:text-[#e7d3a8]" />
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-sm border border-white/20 transition-colors duration-500 group-hover:border-gold">
+                  <Icon className="h-5 w-5 text-white transition-colors duration-500 group-hover:text-gold-soft" />
                 </div>
                 <h3 className="mt-8 text-2xl">{title}</h3>
                 <p className="mt-3 text-sm text-white/70">{body}</p>
-                <div className="absolute bottom-0 left-0 h-px w-0 bg-[#c9a76a] transition-all duration-700 group-hover:w-full" />
+                <div className="absolute bottom-0 left-0 h-px w-0 bg-gold transition-all duration-700 group-hover:w-full" />
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Fleet preview */}
-      <section className="bg-[#f1efe9] px-6 py-20 md:py-32">
+      {/* Fleet preview — mini showroom stages, matching /fleet */}
+      <section className="bg-night px-6 py-20 text-white md:py-32">
         <div className="mx-auto max-w-7xl">
           <div className="mb-12 flex items-end justify-between md:mb-16">
             <div>
-              <Eyebrow>The Fleet</Eyebrow>
+              <Eyebrow dark>The Fleet</Eyebrow>
               <h2 className="text-4xl md:text-5xl">Choose your moment.</h2>
             </div>
-            <Link href="/fleet" className="reveal-underline hidden text-sm text-[#444] hover:text-black md:inline-block">View all →</Link>
+            <Link href="/fleet" className="reveal-underline hidden text-sm text-white/60 hover:text-gold-soft md:inline-block">View all →</Link>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
             {/* SUV leads — asked for twice: "In place of luxury sedan first must
@@ -151,24 +153,27 @@ export default function Home() {
               { key: "business", name: "Business Class", cap: "1–3 guests", desc: "Mercedes S-Class. First-class comfort." },
             ].map((v) => (
               <Link href="/fleet" key={v.key} className="group block">
-                <div className="card-lift overflow-hidden rounded-sm border border-black/10 bg-white shadow-[0_10px_30px_-18px_rgba(0,0,0,0.45)]">
-                  <div className="aspect-[4/3] overflow-hidden bg-black relative">
+                <div className="card-lift overflow-hidden rounded-sm bg-night-card">
+                  <div className="relative flex aspect-[16/10] items-center justify-center p-6">
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 bg-[radial-gradient(65%_55%_at_50%_60%,rgba(201,167,106,0.13),transparent_70%)]"
+                    />
                     <Image
-                      src={VEHICLE_IMAGES[v.key]}
+                      src={VEHICLE_CUTOUTS[v.key]}
                       alt={v.name}
-                      fill
                       sizes="(max-width: 768px) 100vw, 33vw"
-                      className="object-cover transition duration-[1200ms] ease-out group-hover:scale-110"
+                      className="relative max-h-full w-auto object-contain drop-shadow-[0_25px_20px_rgba(0,0,0,0.55)] transition-transform duration-700 ease-out group-hover:scale-[1.03]"
                     />
                   </div>
-                  <div className="p-6">
+                  <div className="p-6 pt-2">
                     <div className="flex items-baseline justify-between">
-                      <h3 className="text-xl transition-colors group-hover:text-foreground">{v.name}</h3>
-                      <span className="text-xs text-ink-soft">{v.cap}</span>
+                      <h3 className="text-xl">{v.name}</h3>
+                      <span className="text-xs text-white/50">{v.cap}</span>
                     </div>
-                    <p className="mt-2 text-sm text-ink-muted">{v.desc}</p>
+                    <p className="mt-2 text-sm text-white/65">{v.desc}</p>
                     {/* Visible on touch; hover-reveal on pointer devices */}
-                    <div className="mt-4 flex items-center gap-2 text-xs text-ink-soft transition-all duration-500 md:-translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100">
+                    <div className="mt-4 flex items-center gap-2 text-xs text-gold-soft transition-all duration-500 md:-translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100">
                       Explore <ArrowRight className="h-3 w-3" />
                     </div>
                   </div>
@@ -177,7 +182,7 @@ export default function Home() {
             ))}
           </div>
           <div className="mt-10 text-center md:hidden">
-            <Link href="/fleet" className="inline-flex items-center gap-2 text-sm text-[#444] underline underline-offset-4 hover:text-black">
+            <Link href="/fleet" className="inline-flex items-center gap-2 text-sm text-white/60 underline underline-offset-4 hover:text-gold-soft">
               View the full fleet <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -185,31 +190,35 @@ export default function Home() {
       </section>
 
       {/* Testimonials */}
-      <section className="bg-background px-6 py-20 md:py-28">
+      <section className="bg-night-panel px-6 py-20 text-white md:py-32">
         <div className="mx-auto max-w-7xl">
           <div className="mb-12 text-center md:mb-16">
-            <Eyebrow center>Client Notes</Eyebrow>
+            <Eyebrow dark center>Client Notes</Eyebrow>
             <h2 className="text-4xl md:text-5xl">Quietly exceptional.</h2>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
             {testimonials.slice(0, 3).map((t) => (
               <figure
                 key={t.id}
-                className="flex flex-col justify-between rounded-sm border border-black/10 bg-card p-8 shadow-[0_10px_30px_-22px_rgba(0,0,0,0.35)]"
+                className="flex flex-col justify-between rounded-sm bg-night-card p-8"
               >
                 <div>
-                  <div className="flex gap-1" aria-label={`${t.rating} out of 5 stars`}>
-                    {Array.from({ length: t.rating }).map((_, i) => (
-                      <Star key={i} className="h-3.5 w-3.5 fill-[#c9a76a] text-[#c9a76a]" />
+                  <div className="flex gap-1" role="img" aria-label={`${t.rating} out of 5 stars`}>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star
+                        key={i}
+                        aria-hidden
+                        className={`h-3.5 w-3.5 ${i < t.rating ? "fill-gold text-gold" : "text-white/20"}`}
+                      />
                     ))}
                   </div>
-                  <blockquote className="mt-5 font-display text-xl leading-relaxed text-foreground">
+                  <blockquote className="mt-5 font-display text-xl leading-relaxed text-white">
                     &ldquo;{t.quote}&rdquo;
                   </blockquote>
                 </div>
-                <figcaption className="mt-6 flex items-center justify-between border-t border-border pt-4 text-xs">
-                  <span className="font-medium text-foreground">{t.author}</span>
-                  <span className="text-ink-soft">via {t.source}</span>
+                <figcaption className="mt-6 flex items-center justify-between border-t border-white/10 pt-4 text-xs">
+                  <span className="font-medium text-white">{t.author}</span>
+                  <span className="text-white/50">via {t.source}</span>
                 </figcaption>
               </figure>
             ))}
@@ -218,13 +227,13 @@ export default function Home() {
       </section>
 
       {/* Drive with us */}
-      <section className="bg-gradient-to-b from-[#131315] to-[#0d0d0e] px-6 py-20 text-white md:py-32">
+      <section className="bg-gradient-to-b from-night-panel to-night px-6 py-20 text-white md:py-32">
         <div className="mx-auto grid max-w-7xl gap-12 md:grid-cols-2 md:items-center md:gap-16">
           <div>
             <Eyebrow dark>Drive with us</Eyebrow>
             <h2 className="text-4xl md:text-5xl">Become a SophRia chauffeur.</h2>
             <p className="mt-6 text-white/75">
-              Join Toronto's most discerning private fleet. We partner with vetted, licensed professionals who share our standard of discretion and craft.
+              Join Toronto&apos;s most discerning private fleet. We partner with vetted, licensed professionals who share our standard of discretion and craft.
             </p>
             <ul className="mt-8 space-y-3 text-sm text-white/75">
               {[
@@ -233,7 +242,7 @@ export default function Home() {
                 "Full support from our 24/7 dispatch",
               ].map((item) => (
                 <li key={item} className="flex items-center gap-3">
-                  <span className="h-px w-5 shrink-0 bg-[#c9a76a]" aria-hidden />
+                  <span className="h-px w-5 shrink-0 bg-gold" aria-hidden />
                   {item}
                 </li>
               ))}
@@ -266,14 +275,14 @@ export default function Home() {
       </section>
 
       {/* CTA */}
-      <section className="bg-[#f1efe9] px-6 py-24 md:py-32">
+      <section className="bg-night px-6 py-20 text-white md:py-32">
         <div className="mx-auto flex max-w-4xl flex-col items-center text-center">
-          <Eyebrow center>Reserve</Eyebrow>
-          <h2 className="text-4xl md:text-5xl">Ready when <span className="shimmer-text">you</span> are.</h2>
-          <p className="mt-4 max-w-lg text-[#555]">Reserve a chauffeur in under a minute. Available 24/7 across Toronto, Hamilton, Niagara and Southern Ontario.</p>
+          <Eyebrow dark center>Reserve</Eyebrow>
+          <h2 className="text-4xl md:text-5xl">Ready when <span className="text-gold-soft">you</span> are.</h2>
+          <p className="mt-4 max-w-lg text-white/70">Reserve a chauffeur in under a minute. Available 24/7 across Toronto, Hamilton, Niagara and Southern Ontario.</p>
           <Link
             href="/book"
-            className="group mt-10 inline-flex items-center gap-2 rounded-sm bg-primary px-8 py-4 text-sm font-medium text-primary-foreground transition-all duration-300 hover:gap-3 hover:bg-[#2A2A2A]"
+            className="group mt-10 inline-flex items-center gap-2 rounded-full bg-white px-8 py-4 text-sm font-medium text-black transition-all duration-300 hover:gap-3 hover:bg-gold-soft"
           >
             Book Now
             <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />

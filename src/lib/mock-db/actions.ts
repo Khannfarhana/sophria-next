@@ -19,7 +19,7 @@ import {
 import { refundQuote } from "@/lib/cancellation";
 import { parseStops } from "@/lib/stops";
 import { resolvePearsonTariff } from "@/lib/tariff";
-import { toStorageIso } from "@/lib/datetime";
+import { isFuturePickup, toStorageIso } from "@/lib/datetime";
 import type { Booking } from "@/data/data";
 
 const now = () => new Date().toISOString();
@@ -145,6 +145,8 @@ export async function mockCreateBooking(input: {
   passengerName: string;
   passengerPhone: string;
   notes: string;
+  passengerCount?: number | null;
+  luggageCount?: number | null;
   tripType?: "one_way" | "hourly" | "airport";
   durationHours?: number | null;
   flightNumber?: string | null;
@@ -156,6 +158,10 @@ export async function mockCreateBooking(input: {
   durationMin?: number | null;
   stops?: unknown;
 }) {
+  // Parity with createBookingAction: expected failures return, not throw.
+  if (!isFuturePickup(input.datetime)) {
+    return { error: "Pick-up time must be in the future — go back to Date & time and pick a new slot." } as const;
+  }
   const reference = newReference();
   const tt = input.tripType ?? "one_way";
   const stops = tt === "hourly" ? [] : parseStops(input.stops);
@@ -185,6 +191,8 @@ export async function mockCreateBooking(input: {
           durationHours: input.durationHours ?? undefined,
           distanceKm: input.distanceKm ?? undefined,
           tariff,
+          passengerCount: input.passengerCount ?? undefined,
+          luggageCount: input.luggageCount ?? undefined,
         })
       : null;
 
@@ -204,8 +212,8 @@ export async function mockCreateBooking(input: {
       stops,
       duration_hours: tt === "hourly" ? input.durationHours ?? null : null,
       flight_number: tt === "airport" ? input.flightNumber ?? null : null,
-      passenger_count: null,
-      luggage_count: null,
+      passenger_count: input.passengerCount ?? null,
+      luggage_count: input.luggageCount ?? null,
       pickup_lat: input.pickupLat ?? null,
       pickup_lng: input.pickupLng ?? null,
       dropoff_lat: input.dropoffLat ?? null,
@@ -241,7 +249,7 @@ export async function mockCreateBooking(input: {
       updated_at: now(),
     });
   });
-  return { reference, start_otp: startOtp };
+  return { reference, start_otp: startOtp } as const;
 }
 
 const CANCELLABLE = new Set(["pending", "confirmed", "driver_assigned", "accepted"]);
@@ -436,9 +444,9 @@ export async function mockAssignDriver(id: string, driverId: string, payoutOverr
   if (
     !booking ||
     !["confirmed", "driver_assigned", "accepted"].includes(booking.status) ||
-    booking.payment_status !== "paid"
+    !["authorized", "paid"].includes(booking.payment_status)
   ) {
-    throw new Error("A driver can only be assigned after the customer has paid.");
+    throw new Error("A driver can only be assigned after the customer's payment is secured.");
   }
   const driver = db.drivers.find((d) => d.id === driverId);
   if (!driver) throw new Error("Driver not found");
@@ -573,4 +581,38 @@ export async function mockCompleteRide(id: string) {
     }
   });
   return { success: true, earned };
+}
+
+export async function mockUpdateVehicle(vehicleId: string, patch: Partial<{
+  name: string; base_rate: number; hourly_rate: number | null;
+  capacity: number; luggage: number; description: string | null; is_active: boolean;
+  features: string[];
+}>) {
+  mutateDB((db) => {
+    const v = db.vehicles.find((x) => x.id === vehicleId);
+    if (v) Object.assign(v, patch, { updated_at: now() });
+  });
+  return { success: true };
+}
+
+export async function mockCreateVehicle(input: {
+  name: string; type: "sedan" | "business" | "suv" | "limousine" | "party_bus";
+  base_rate: number; hourly_rate: number | null;
+  capacity: number; luggage: number; description: string | null;
+  features?: string[];
+}) {
+  mutateDB((db) => {
+    const sort = Math.max(0, ...db.vehicles.map((v) => v.sort_order ?? 0)) + 1;
+    db.vehicles.push({
+      ...input,
+      id: crypto.randomUUID(),
+      features: input.features ?? [],
+      image_url: null,
+      sort_order: sort,
+      is_active: true,
+      created_at: now(),
+      updated_at: now(),
+    });
+  });
+  return { success: true };
 }
