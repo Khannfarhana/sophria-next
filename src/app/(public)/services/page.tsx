@@ -1,7 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image, { type StaticImageData } from "next/image";
 import { SiteLayout } from "@/components/site/SiteLayout";
-import { Plane, Briefcase, Heart, Clock, ArrowRight, ShoppingBag, Flower2, Wine, GraduationCap } from "lucide-react";
+import { PageHero } from "@/components/site/PageHero";
+import { ArrowRight } from "lucide-react";
+import airportImg from "@/assets/services/airport.jpg";
+import corporateImg from "@/assets/services/corporate.jpg";
+import weddingImg from "@/assets/services/wedding.jpg";
+import promImg from "@/assets/services/prom.jpg";
+import shoppingImg from "@/assets/services/shopping.jpg";
+import spaImg from "@/assets/services/spa.jpg";
+import wineImg from "@/assets/services/wine.jpg";
+import hourlyImg from "@/assets/services/hourly.jpg";
 
 export const metadata: Metadata = {
   title: "Chauffeur Services",
@@ -12,59 +22,70 @@ export const metadata: Metadata = {
   },
 };
 
-const SERVICES = [
-  { Icon: Plane, title: "Airport Transfers", body: "Transfers to and from Pearson (YYZ), Billy Bishop (YTZ), Hamilton (YHM) and Buffalo Niagara (BUF). Live flight tracking included.", from: "$110" },
-  { Icon: Briefcase, title: "Corporate Transportation", body: "Executive meetings, conferences, corporate events and client transportation. Corporate accounts and monthly billing available upon approval.", from: "$95" },
-  { Icon: Heart, title: "Wedding Packages", body: "Professional chauffeur, optional decorative ribbons, red carpet on request and multiple photo stops. Custom packages available.", from: "$695" },
-  { Icon: GraduationCap, title: "Prom Packages", body: "Safety-focused transportation with a professional chauffeur and complimentary bottled water. Group pricing available.", from: "$595" },
-  { Icon: ShoppingBag, title: "Luxury Shopping", body: "Private chauffeur to Yorkdale, Eaton Centre, Square One, Sherway Gardens and Vaughan Mills — flexible waiting while you shop. 3-hour minimum.", from: "$95/hr" },
-  { Icon: Flower2, title: "Daily Spa Tours", body: "Quiet luxury travel to Elmwood, Body Blitz, Thermëa Whitby, Ste. Anne's and more — waiting time during your visit included. 4-hour minimum.", from: "$120/hr" },
-  { Icon: Wine, title: "Wine & Niagara Tours", body: "Chauffeured wine-country and Niagara itineraries, customized to your day. 6-hour minimum.", from: "$125/hr" },
-  { Icon: Clock, title: "Hourly Charter", body: "Reserve a chauffeur and vehicle for the hour. Ideal for events with multiple stops. 2-hour minimum.", from: "$85/hr" },
+const SERVICES: {
+  img: StaticImageData;
+  title: string;
+  body: string;
+  from: string;
+}[] = [
+  { img: airportImg, title: "Airport Transfers", body: "Transfers to and from Pearson (YYZ), Billy Bishop (YTZ), Hamilton (YHM) and Buffalo Niagara (BUF). Live flight tracking included.", from: "$110" },
+  { img: corporateImg, title: "Corporate Transportation", body: "Executive meetings, conferences, corporate events and client transportation. Corporate accounts and monthly billing available upon approval.", from: "$95" },
+  { img: weddingImg, title: "Wedding Packages", body: "Professional chauffeur, optional decorative ribbons, red carpet on request and multiple photo stops. Custom packages available.", from: "$695" },
+  { img: promImg, title: "Prom Packages", body: "Safety-focused transportation with a professional chauffeur and complimentary bottled water. Group pricing available.", from: "$595" },
+  { img: shoppingImg, title: "Luxury Shopping", body: "Private chauffeur to Yorkdale, Eaton Centre, Square One, Sherway Gardens and Vaughan Mills — flexible waiting while you shop. 3-hour minimum.", from: "$95/hr" },
+  { img: spaImg, title: "Daily Spa Tours", body: "Quiet luxury travel to Elmwood, Body Blitz, Thermëa Whitby, Ste. Anne's and more — waiting time during your visit included. 4-hour minimum.", from: "$120/hr" },
+  { img: wineImg, title: "Wine & Niagara Tours", body: "Chauffeured wine-country and Niagara itineraries, customized to your day. 6-hour minimum.", from: "$125/hr" },
+  { img: hourlyImg, title: "Hourly Charter", body: "Reserve a chauffeur and vehicle for the hour. Ideal for events with multiple stops. 2-hour minimum.", from: "$85/hr" },
 ];
 
 export default function ServicesPage() {
   return (
     <SiteLayout>
-      {/* Dark page header */}
-      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">Services</div>
-          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
-            For every kind of <span className="text-[#e7d3a8]">arrival.</span>
-          </h1>
-          <p className="mt-5 max-w-xl text-base text-white/70">
-            From airport runs to weddings — one standard of service across Toronto, Hamilton,
-            Burlington, Oakville, Mississauga, the Niagara Region and Southern Ontario.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        eyebrow="Services"
+        title={<>For every kind of <span className="text-gold-soft">arrival.</span></>}
+        sub="From airport runs to weddings — one standard of service across Toronto, Hamilton, Burlington, Oakville, Mississauga, the Niagara Region and Southern Ontario."
+      />
 
-      {/* Service cards */}
-      <section className="bg-background px-6 py-20">
+      {/* Photo cards */}
+      <section className="bg-night px-6 pb-20 text-white md:pb-28">
         <div className="mx-auto max-w-7xl">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {SERVICES.map(({ Icon, title, body, from }) => (
+            {SERVICES.map(({ img, title, body, from }) => (
               <div
                 key={title}
-                className="group flex flex-col rounded-2xl border border-border bg-card p-8 shadow-sm transition-shadow hover:shadow-md"
+                className="group flex flex-col overflow-hidden rounded-sm bg-night-card"
               >
-                <div className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface transition-colors group-hover:border-foreground">
-                  <Icon className="h-5 w-5 text-foreground" />
+                <div className="relative aspect-[16/10] overflow-hidden">
+                  <Image
+                    src={img}
+                    alt={title}
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                    className="object-cover transition duration-700 ease-out group-hover:scale-105"
+                  />
+                  {/* Blend the photo into the card body */}
+                  <div
+                    aria-hidden
+                    className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-night-card"
+                  />
                 </div>
-                <h3 className="mt-6 text-xl font-light text-foreground">{title}</h3>
-                <p className="mt-2 flex-1 text-sm leading-relaxed text-ink-muted">{body}</p>
-                <div className="mt-6 flex items-end justify-between border-t border-border pt-5">
-                  <div>
-                    <div className="text-[10px] text-ink-soft">from</div>
-                    <div className="text-lg text-foreground">{from} <span className="text-xs text-ink-soft">CAD</span></div>
+                <div className="flex flex-1 flex-col p-6 pt-2">
+                  <h3 className="font-display text-2xl">{title}</h3>
+                  <p className="mt-2 flex-1 text-sm leading-relaxed text-white/65">{body}</p>
+                  <div className="mt-6 flex items-center justify-between border-t border-white/10 pt-4">
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-gold-soft">
+                      from <span className="text-white">{from}</span>{" "}
+                      <span className="text-white/50">CAD</span>
+                    </div>
+                    <Link
+                      href="/book"
+                      className="group/cta inline-flex items-center gap-1.5 text-sm text-white transition-colors hover:text-gold-soft"
+                    >
+                      Reserve
+                      <ArrowRight className="h-3.5 w-3.5 transition-transform duration-300 group-hover/cta:translate-x-0.5" />
+                    </Link>
                   </div>
-                  <Link
-                    href="/book"
-                    className="flex items-center gap-1.5 rounded-sm bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition hover:bg-[#2A2A2A]"
-                  >
-                    Reserve <ArrowRight className="h-3 w-3" />
-                  </Link>
                 </div>
               </div>
             ))}
@@ -73,17 +94,23 @@ export default function ServicesPage() {
       </section>
 
       {/* CTA strip */}
-      <section className="bg-surface px-6 py-16">
+      <section className="bg-night-panel px-6 py-16 text-white">
         <div className="mx-auto flex max-w-7xl flex-col items-center gap-6 text-center md:flex-row md:justify-between md:text-left">
           <div>
-            <p className="text-xl font-light text-foreground">Not sure which service fits?</p>
-            <p className="mt-1 text-sm text-ink-muted">Our team is available 24/7 to help you choose.</p>
+            <p className="font-display text-2xl">Not sure which service fits?</p>
+            <p className="mt-1 text-sm text-white/60">Our team is available 24/7 to help you choose.</p>
           </div>
           <div className="flex gap-3">
-            <Link href="/contact" className="rounded-sm border border-border px-6 py-2.5 text-sm font-medium text-foreground transition hover:bg-background">
+            <Link
+              href="/contact"
+              className="rounded-full border border-white/25 px-6 py-2.5 text-sm font-medium text-white transition hover:border-gold hover:text-gold-soft"
+            >
               Get in Touch
             </Link>
-            <Link href="/book" className="rounded-sm bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]">
+            <Link
+              href="/book"
+              className="rounded-full bg-white px-6 py-2.5 text-sm font-medium text-black transition hover:bg-gold-soft"
+            >
               Book Now
             </Link>
           </div>

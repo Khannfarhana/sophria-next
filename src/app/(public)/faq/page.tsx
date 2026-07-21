@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteLayout } from "@/components/site/SiteLayout";
+import { PageHero } from "@/components/site/PageHero";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 export const metadata: Metadata = {
@@ -56,29 +57,23 @@ const SECTIONS = [
 export default function FAQPage() {
   return (
     <SiteLayout>
-      {/* Dark page header */}
-      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
-        <div className="mx-auto max-w-3xl">
-          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">FAQ</div>
-          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
-            Quietly <span className="text-[#e7d3a8]">comprehensive.</span>
-          </h1>
-          <p className="mt-5 max-w-xl text-base text-white/70">
-            Answers about booking, payment, cancellation, drivers, and the SophRia fleet.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        narrow
+        eyebrow="FAQ"
+        title={<>Quietly <span className="text-gold-soft">comprehensive.</span></>}
+        sub="Answers about booking, payment, cancellation, drivers, and the SophRia fleet."
+      />
 
-      <section className="bg-background px-6 pb-32 pt-20">
+      <section className="bg-night px-6 pb-32 pt-20 text-white">
         <div className="mx-auto max-w-3xl space-y-12">
           {SECTIONS.map((sec) => (
             <div key={sec.title}>
-              <h2 className="mb-4 text-2xl font-light text-foreground">{sec.title}</h2>
-              <Accordion type="single" collapsible className="border-t border-border">
+              <h2 className="mb-4 flex items-center gap-3 font-display text-2xl text-white"><span className="h-px w-8 bg-gold" aria-hidden />{sec.title}</h2>
+              <Accordion type="single" collapsible className="border-t border-white/10">
                 {sec.items.map((it, i) => (
-                  <AccordionItem key={i} value={`${sec.title}-${i}`} className="border-b border-border">
-                    <AccordionTrigger className="py-5 text-left text-base hover:no-underline font-light text-foreground">{it.q}</AccordionTrigger>
-                    <AccordionContent className="text-sm text-ink-muted leading-relaxed">{it.a}</AccordionContent>
+                  <AccordionItem key={i} value={`${sec.title}-${i}`} className="border-b border-white/10">
+                    <AccordionTrigger className="py-5 text-left text-base hover:no-underline font-light text-white hover:text-gold-soft">{it.q}</AccordionTrigger>
+                    <AccordionContent className="text-sm text-white/70 leading-relaxed">{it.a}</AccordionContent>
                   </AccordionItem>
                 ))}
               </Accordion>

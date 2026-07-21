@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { SiteLayout } from "@/components/site/SiteLayout";
+import { PageHero } from "@/components/site/PageHero";
 import { supabase } from "@/integrations/supabase/client";
-import { VEHICLE_IMAGES } from "@/lib/vehicles";
-import { Users, Luggage, Check, ArrowRight } from "lucide-react";
+import { VEHICLE_CUTOUTS } from "@/lib/vehicles";
+import { ArrowRight, Users, Luggage } from "lucide-react";
 import Image from "next/image";
 import type { Metadata } from "next";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
@@ -25,69 +26,105 @@ export default async function FleetPage() {
 
   return (
     <SiteLayout>
-      {/* Dark page header */}
-      <section className="bg-[#0d0d0e] px-6 pb-20 pt-36 text-white">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-4 text-xs uppercase tracking-[0.22em] text-white/55">The Fleet</div>
-          <h1 className="text-5xl font-light leading-[1.05] md:text-6xl">
-            Every vehicle, <span className="text-[#e7d3a8]">considered.</span>
-          </h1>
-          <p className="mt-5 max-w-xl text-base text-white/70">
-            Curated and maintained to a single standard — from quiet executive sedans to celebration coaches.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        eyebrow="The Fleet"
+        title={<>Every vehicle, <span className="text-gold-soft">considered.</span></>}
+        sub="Curated and maintained to a single standard — from quiet executive sedans to celebration coaches."
+      />
 
-      {/* Vehicle grid */}
-      <section className="bg-background px-6 py-20">
+      {/* Showroom — each class on its own spotlight stage, alternating sides */}
+      <section className="overflow-hidden bg-night px-6 pb-20 text-white md:pb-28">
         <div className="mx-auto max-w-7xl">
           {!vehicles || vehicles.length === 0 ? (
-            <div className="py-32 text-center text-ink-muted">No vehicles available at this time.</div>
+            <div className="py-32 text-center text-white/60">No vehicles available at this time.</div>
           ) : (
-            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-              {vehicles.map((v) => (
-                <article key={v.id} className="group overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md">
-                  <div className="aspect-[4/3] overflow-hidden bg-black relative">
+            vehicles.map((v, i) => {
+              // Convention: the first feature names the models in the class
+              // ("Cadillac LYRIQ / Lexus ES"); the rest are amenities.
+              const [modelLine, ...amenities] = v.features?.length
+                ? v.features
+                : [v.name];
+              const flip = i % 2 === 1;
+              const index = String(i + 1).padStart(2, "0");
+              return (
+                <article
+                  key={v.id}
+                  className="relative grid items-center gap-10 py-16 md:grid-cols-12 md:gap-6 md:py-24"
+                >
+                  {/* Stage */}
+                  <div className={`relative md:col-span-7 ${flip ? "md:order-2" : ""}`}>
+                    {/* Ghosted index number */}
+                    <span
+                      aria-hidden
+                      className={`pointer-events-none absolute -top-14 select-none font-display text-[9rem] leading-none text-white/[0.05] md:-top-24 md:text-[15rem] ${
+                        flip ? "right-0" : "left-0"
+                      }`}
+                    >
+                      {index}
+                    </span>
+                    {/* Spotlight + floor shadow */}
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_55%_at_50%_62%,rgba(201,167,106,0.16),transparent_70%)]"
+                    />
+                    <div
+                      aria-hidden
+                      className="absolute bottom-4 left-1/2 h-12 w-3/4 -translate-x-1/2 rounded-[100%] bg-black/80 blur-2xl"
+                    />
                     <Image
-                      src={VEHICLE_IMAGES[v.type] ?? VEHICLE_IMAGES.sedan}
-                      alt={v.name}
-                      fill
-                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      className="object-cover transition duration-700 group-hover:scale-105"
+                      src={VEHICLE_CUTOUTS[v.type] ?? VEHICLE_CUTOUTS.sedan}
+                      alt={`${v.name} — ${modelLine}`}
+                      sizes="(max-width: 768px) 100vw, 720px"
+                      className="relative mx-auto w-full max-w-2xl object-contain drop-shadow-[0_40px_35px_rgba(0,0,0,0.6)] transition-transform duration-700 ease-out hover:scale-[1.02]"
                     />
                   </div>
-                  <div className="p-6">
-                    <div className="flex items-baseline justify-between">
-                      <h2 className="text-xl font-light text-foreground">{v.name}</h2>
-                      <div className="text-right">
-                        <div className="text-[10px] text-ink-soft">from</div>
-                        <div className="text-base text-foreground">${Number(v.base_rate).toFixed(0)} <span className="text-xs text-ink-soft">CAD</span></div>
-                      </div>
+
+                  {/* Copy */}
+                  <div className={`relative md:col-span-5 ${flip ? "md:order-1 md:pr-8" : "md:pl-8"}`}>
+                    <div className="flex items-center gap-3 text-xs tracking-[0.3em] text-gold">
+                      {index}
+                      <span aria-hidden className="h-px w-10 bg-gold/40" />
                     </div>
-                    <p className="mt-2 text-sm leading-relaxed text-ink-muted">{v.description}</p>
-                    <div className="mt-4 flex gap-5 border-t border-border pt-4 text-xs text-ink-soft">
-                      <div className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />{v.capacity} guests</div>
-                      <div className="flex items-center gap-1.5"><Luggage className="h-3.5 w-3.5" />{v.luggage} bags</div>
-                    </div>
-                    {v.features && v.features.length > 0 && (
-                      <ul className="mt-3 space-y-1">
-                        {v.features.map((f: string) => (
-                          <li key={f} className="flex items-center gap-2 text-xs text-ink-muted">
-                            <Check className="h-3 w-3 shrink-0" />{f}
-                          </li>
-                        ))}
-                      </ul>
+                    <h2 className="mt-4 font-display text-5xl leading-[1.02] md:text-6xl">
+                      {v.name}
+                    </h2>
+                    <div className="mt-3 text-sm font-medium text-white/60">{modelLine}</div>
+                    <p className="mt-5 max-w-md text-sm leading-relaxed text-white/70">
+                      {v.description}
+                    </p>
+                    {amenities.length > 0 && (
+                      <p className="mt-4 max-w-md text-xs leading-relaxed text-white/45">
+                        {amenities.join("  ·  ")}
+                      </p>
                     )}
+
+                    {/* Spec strip */}
+                    <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-white/10 py-4 text-[11px] uppercase tracking-[0.2em] text-gold-soft">
+                      <span className="flex items-center gap-2">
+                        <Users className="h-3.5 w-3.5 text-gold" aria-hidden />
+                        {v.capacity} passengers
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <Luggage className="h-3.5 w-3.5 text-gold" aria-hidden />
+                        {v.luggage} bags
+                      </span>
+                      <span className="text-white">
+                        from ${Number(v.base_rate).toFixed(0)}{" "}
+                        <span className="text-white/50">CAD</span>
+                      </span>
+                    </div>
+
                     <Link
-                      href="/book"
-                      className="mt-5 flex items-center justify-center gap-2 rounded-sm bg-primary py-2.5 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A]"
+                      href={`/book?q=${encodeURIComponent(`vehicle=${v.type}`)}`}
+                      className="group mt-8 inline-flex items-center gap-2 rounded-full bg-white px-7 py-3 text-sm font-medium text-black transition-all duration-300 hover:gap-3 hover:bg-gold-soft"
                     >
-                      Book This Vehicle <ArrowRight className="h-3.5 w-3.5" />
+                      Book this class
+                      <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" />
                     </Link>
                   </div>
                 </article>
-              ))}
-            </div>
+              );
+            })
           )}
         </div>
       </section>

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { WhatsAppButton } from "./WhatsAppButton";
+import { SplashLoader } from "./SplashLoader";
 
 export function SiteLayout({
   children,
@@ -13,6 +14,7 @@ export function SiteLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      <SplashLoader />
       <Navbar solid={solidNav} />
       <main className="flex-1">{children}</main>
       <Footer />

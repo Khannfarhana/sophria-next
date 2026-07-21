@@ -19,7 +19,8 @@ export const ROUTE_ROLES: Record<string, AppRole | null> = {
   "/admin": "admin",
   "/driver": "driver",
   "/dashboard": null,
-  "/book": null,
+  // "/book" is intentionally absent: quoting is public — auth is required only
+  // at the confirm step (and enforced server-side by createBookingAction).
 };
 
 /** Returns the best landing page for a set of roles. */

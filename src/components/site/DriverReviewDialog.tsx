@@ -62,6 +62,7 @@ export function DriverReviewDialog({
   const d = driver;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when the dialog closes
     if (!open || !d) { setPhotoUrl(null); setDocs([]); return; }
     let cancelled = false;
     setLoading(true);
@@ -137,7 +138,7 @@ export function DriverReviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg gap-0 overflow-hidden border-white/10 bg-[#0d0d0e] p-0 text-white">
+      <DialogContent className="max-w-lg gap-0 overflow-hidden border border-white/10 bg-night-panel p-0 text-white">
         <DialogHeader className="border-b border-white/10 px-6 py-4 space-y-0">
           <DialogTitle className="text-lg text-white">Chauffeur application</DialogTitle>
         </DialogHeader>
@@ -158,7 +159,7 @@ export function DriverReviewDialog({
               {d.profile?.email && <div className="truncate text-xs text-white/55">{d.profile.email}</div>}
               {d.profile?.phone && <div className="truncate text-xs text-white/55">{d.profile.phone}</div>}
             </div>
-            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${d.is_verified ? "bg-[#e7d3a8] text-[#0d0d0e]" : "border border-white/20 text-white/70"}`}>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${d.is_verified ? "bg-gold-soft text-night" : "border border-white/20 text-white/70"}`}>
               {d.is_verified ? "Approved" : "Pending"}
             </span>
           </div>
@@ -166,7 +167,7 @@ export function DriverReviewDialog({
           {/* Details */}
           <div className="grid grid-cols-2 gap-px bg-white/10">
             {rows.map(([k, v]) => (
-              <div key={k} className="bg-[#0d0d0e] px-5 py-3">
+              <div key={k} className="bg-night-panel px-5 py-3">
                 <div className="text-[10px] uppercase tracking-[0.16em] text-white/45">{k}</div>
                 <div className="mt-0.5 break-words text-sm">{v}</div>
               </div>
@@ -198,7 +199,7 @@ export function DriverReviewDialog({
               <button
                 onClick={saveRate}
                 disabled={!rateDirty || savingRate}
-                className="inline-flex items-center gap-1.5 rounded-sm bg-[#e7d3a8] px-4 py-2 text-sm font-medium text-[#0d0d0e] transition hover:bg-[#f0e2c0] disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-sm bg-gold-soft px-4 py-2 text-sm font-medium text-night transition hover:bg-[#f0e2c0] disabled:opacity-50"
               >
                 {savingRate && <Loader2 className="h-4 w-4 animate-spin" />} Save
               </button>
@@ -206,8 +207,8 @@ export function DriverReviewDialog({
             {!rateValid && <p className="mt-2 text-xs text-red-400">Enter a value between 5 and 100.</p>}
             {rateValid && (
               <p className="mt-2 text-xs text-white/55">
-                Driver keeps <span className="text-[#e7d3a8]">{pctNum}%</span> of the pre-tax fare · SophRia
-                commission <span className="text-[#e7d3a8]">{100 - pctNum}%</span>
+                Driver keeps <span className="text-gold-soft">{pctNum}%</span> of the pre-tax fare · SophRia
+                commission <span className="text-gold-soft">{100 - pctNum}%</span>
               </p>
             )}
             <p className="mt-2 text-xs text-white/40">Applies to future ride assignments only — already-assigned rides keep their locked payout.</p>
@@ -226,7 +227,7 @@ export function DriverReviewDialog({
                   <li key={i} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-4 py-2.5">
                     <span className="flex items-center gap-2 text-sm"><FileText className="h-4 w-4 text-white/50" /> {doc.label}</span>
                     {doc.url ? (
-                      <a href={doc.url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-xs text-[#e7d3a8] hover:text-white">
+                      <a href={doc.url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-xs text-gold-soft hover:text-white">
                         View <ExternalLink className="h-3.5 w-3.5" />
                       </a>
                     ) : <span className="text-xs text-white/40">unavailable</span>}
@@ -239,7 +240,7 @@ export function DriverReviewDialog({
           {/* Rating (for already-verified drivers) */}
           {d.is_verified && (
             <div className="flex items-center gap-2 border-t border-white/10 px-6 py-3 text-sm text-white/60">
-              <Star className="h-4 w-4 text-[#e7d3a8]" /> Rating {Number(d.rating).toFixed(2)}
+              <Star className="h-4 w-4 text-gold-soft" /> Rating {Number(d.rating).toFixed(2)}
             </div>
           )}
         </div>
@@ -251,7 +252,7 @@ export function DriverReviewDialog({
               {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} Revoke driver access
             </button>
           ) : (
-            <button onClick={() => decide(true)} disabled={acting} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-sm bg-[#e7d3a8] px-4 py-2.5 text-sm font-medium text-[#0d0d0e] transition hover:bg-[#f0e2c0] disabled:opacity-60">
+            <button onClick={() => decide(true)} disabled={acting} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-sm bg-gold-soft px-4 py-2.5 text-sm font-medium text-night transition hover:bg-[#f0e2c0] disabled:opacity-60">
               {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Approve &amp; grant driver role
             </button>
           )}

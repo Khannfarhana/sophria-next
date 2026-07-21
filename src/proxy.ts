@@ -50,5 +50,5 @@ export default auth((req) => {
 
 export const config = {
   // Run proxy on protected routes only
-  matcher: ["/dashboard/:path*", "/admin/:path*", "/driver/:path*", "/book/:path*"],
+  matcher: ["/dashboard/:path*", "/admin/:path*", "/driver/:path*"],
 };

@@ -7,6 +7,7 @@ import { CustomSelect } from "@/components/ui/custom-select";
 import { TripTypeToggle } from "@/components/site/TripTypeToggle";
 import { AddressAutocomplete } from "@/components/site/AddressAutocomplete";
 import { HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
+import { minPickupLocalValue } from "@/lib/datetime";
 import type { Place } from "@/lib/mapbox";
 
 type Coords = { lng: number; lat: number } | null;
@@ -75,15 +76,16 @@ export function BookingWidget() {
         {tripType === "hourly" ? (
           <label className={`${cell} md:min-w-[150px]`}>
             <Clock className="h-4 w-4 shrink-0 text-ink-muted" />
-            <select
+            <CustomSelect
+              variant="ghost"
               value={duration}
               onChange={(e) => setDuration(Number(e.target.value))}
-              className="w-full cursor-pointer bg-transparent text-sm text-foreground focus:outline-none"
+              wrapperClassName="w-full"
             >
               {Array.from({ length: 11 }, (_, i) => i + HOURLY_MIN_HOURS).map((h) => (
                 <option key={h} value={h}>{h} hours</option>
               ))}
-            </select>
+            </CustomSelect>
           </label>
         ) : (
           <div className={`${cell} md:flex-1 md:min-w-[180px]`}>
@@ -114,7 +116,7 @@ export function BookingWidget() {
               value={flight}
               onChange={(e) => setFlight(e.target.value)}
               placeholder="Flight no."
-              className="w-full bg-transparent text-sm placeholder:text-ink-soft focus:outline-none"
+              className="w-full bg-transparent text-sm placeholder:text-ink-soft"
             />
           </label>
         )}
@@ -125,8 +127,9 @@ export function BookingWidget() {
           <input
             type="datetime-local"
             value={datetime}
+            min={minPickupLocalValue()}
             onChange={(e) => setDatetime(e.target.value)}
-            className="w-full bg-transparent text-sm focus:outline-none"
+            className="w-full bg-transparent text-sm"
             required
           />
         </label>
@@ -148,8 +151,8 @@ export function BookingWidget() {
           </CustomSelect>
         </label>
 
-        <button className="rounded-sm bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-[#2A2A2A] cursor-pointer">
-          View Options
+        <button className="rounded-sm bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-primary-hover cursor-pointer">
+          See Prices
         </button>
       </form>
     </div>

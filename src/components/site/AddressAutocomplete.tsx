@@ -65,8 +65,10 @@ export function AddressAutocomplete({
     if (selectedRef.current === debounced) return;
     const q = debounced.trim();
     if (q.length < 3) {
+      /* eslint-disable react-hooks/set-state-in-effect -- clearing debounced results synchronously is intentional */
       setSuggestions([]);
       setLoading(false);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
     const controller = new AbortController();

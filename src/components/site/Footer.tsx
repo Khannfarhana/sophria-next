@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { Instagram, Facebook, Twitter, Linkedin } from "lucide-react";
+import { MessageCircle, Phone, Mail } from "lucide-react";
 import { BrandMark } from "@/components/site/BrandMark";
 import { SITE } from "@/lib/site-config";
 
 export function Footer() {
   return (
-    <footer className="bg-[#101010] text-white">
+    <footer className="bg-night text-white">
       <div className="mx-auto max-w-7xl px-6 py-16">
         <div className="grid grid-cols-2 gap-x-8 gap-y-10 md:grid-cols-4 md:gap-12">
           <div className="col-span-2">
@@ -16,12 +16,31 @@ export function Footer() {
             <p className="mt-2 max-w-sm text-xs text-white/45">
               Serving the {SITE.serviceArea}.
             </p>
-            <div className="mt-6 flex gap-4">
-              {[Instagram, Facebook, Twitter, Linkedin].map((Icon, i) => (
-                <a key={i} href="#" className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 text-white/70 transition hover:bg-white hover:text-[#101010]">
-                  <Icon className="h-4 w-4" />
-                </a>
-              ))}
+            {/* Real contact channels — social profiles can join once they exist. */}
+            <div className="mt-6 flex gap-3">
+              <a
+                href={SITE.whatsappHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Chat on WhatsApp"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 text-white/70 transition hover:border-gold hover:text-gold"
+              >
+                <MessageCircle className="h-5 w-5" />
+              </a>
+              <a
+                href={SITE.phoneHref}
+                aria-label={`Call ${SITE.phone}`}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 text-white/70 transition hover:border-gold hover:text-gold"
+              >
+                <Phone className="h-5 w-5" />
+              </a>
+              <a
+                href={SITE.emailHref}
+                aria-label={`Email ${SITE.email}`}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 text-white/70 transition hover:border-gold hover:text-gold"
+              >
+                <Mail className="h-5 w-5" />
+              </a>
             </div>
           </div>
 

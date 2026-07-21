@@ -55,7 +55,7 @@ function ErrorCard() {
 
 export default function AuthErrorPage() {
   return (
-    <div className="relative min-h-screen bg-[#0d0d0e] px-6 py-10 flex flex-col justify-center">
+    <div className="relative min-h-screen bg-night px-6 py-10 flex flex-col justify-center">
       {/* Ambient glow */}
       <div className="pointer-events-none absolute left-1/2 top-0 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-white/[0.03] blur-3xl" />
 
