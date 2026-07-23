@@ -12,6 +12,8 @@ import { useSupabase } from "@/hooks/use-supabase";
 import type { Database } from "@/integrations/supabase/types";
 import {
   verifyDriverAction,
+  declineDriverApplicationAction,
+  nudgeDriverApplicantAction,
   confirmBookingAction,
   rejectBookingAction,
   assignDriverAction,
@@ -72,6 +74,7 @@ export interface AdminBooking {
 export interface AdminDriver {
   id: string;
   user_id: string;
+  application_type: string | null;
   license_number: string;
   experience_years: number;
   is_available: boolean;
@@ -173,6 +176,48 @@ export function useAdminDrivers() {
   });
 }
 
+/** An in-progress /become-chauffeur application: someone who started but hasn't submitted. */
+export interface AdminDriverDraft {
+  user_id: string;
+  application_type: string;
+  stage: string;
+  form: Record<string, string> | null;
+  photo_path: string | null;
+  doc_paths: Record<string, { path: string; name: string }> | null;
+  nudged_at: string | null;
+  created_at: string;
+  updated_at: string;
+  profile: {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    phone: string | null;
+  } | null;
+}
+
+export function useAdminDriverDrafts() {
+  const supabase = useSupabase();
+  return useQuery({
+    queryKey: ["admin-driver-drafts"],
+    refetchInterval: 30_000, // funnel view stays fresh alongside the KPIs
+    queryFn: async () => {
+      if (!SUPABASE_ENABLED) return [] as AdminDriverDraft[];
+      const { data } = await supabase
+        .from("driver_application_drafts")
+        .select("user_id, application_type, stage, form, photo_path, doc_paths, nudged_at, created_at, updated_at")
+        .order("updated_at", { ascending: false });
+      if (!data) return [];
+      const ids = data.map((d) => d.user_id);
+      const { data: profs } = ids.length
+        ? await supabase.from("profiles").select("id, full_name, email, phone").in("id", ids)
+        : { data: [] as { id: string; full_name: string | null; email: string | null; phone: string | null }[] };
+      const byId = Object.fromEntries((profs ?? []).map((p) => [p.id, p]));
+      // form/doc_paths come back as generic Json; the draft writer (become-chauffeur) owns the shape.
+      return data.map((d) => ({ ...d, profile: byId[d.user_id] ?? null })) as unknown as AdminDriverDraft[];
+    },
+  });
+}
+
 export function useAdminVehicles() {
   const supabase = useSupabase();
   return useQuery({
@@ -266,5 +311,29 @@ export function useAdminActions() {
     toast.success("Commission updated");
   };
 
-  return { confirmBooking, rejectBooking, updateFare, assignDriver, verifyDriver, setCommission };
+  /** Decline a pending application: removes it and emails the applicant. */
+  const declineApplication = async (driverId: string) => {
+    try {
+      if (SUPABASE_ENABLED) await declineDriverApplicationAction(driverId);
+      qc.invalidateQueries({ queryKey: ["admin-drivers"] });
+      qc.invalidateQueries({ queryKey: ["admin-kpi"] });
+      toast.success("Application declined — the applicant has been emailed");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to decline application");
+      throw err;
+    }
+  };
+
+  /** Email an in-progress applicant a reminder to finish (24h cooldown server-side). */
+  const nudgeApplicant = async (userId: string) => {
+    try {
+      if (SUPABASE_ENABLED) await nudgeDriverApplicantAction(userId);
+      qc.invalidateQueries({ queryKey: ["admin-driver-drafts"] });
+      toast.success("Reminder sent");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to send reminder");
+    }
+  };
+
+  return { confirmBooking, rejectBooking, updateFare, assignDriver, verifyDriver, setCommission, declineApplication, nudgeApplicant };
 }

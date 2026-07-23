@@ -193,6 +193,7 @@ export const vehicles: Vehicle[] = [
  *  drivers
  * ================================================================== */
 const driverExtras = {
+  application_type: null,
   city_of_residence: null, province: null, work_authorization: null,
   languages_spoken: null, time_availability: null, referral_name: null, photo_url: null,
   // Applicant vehicle + terms acceptance (migration 20260716150000). Null on
