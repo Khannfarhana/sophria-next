@@ -363,6 +363,32 @@ export async function settleCheckoutSession(
   const paymentIntentId =
     typeof checkout.payment_intent === "string" ? checkout.payment_intent : checkout.payment_intent?.id ?? null;
   const tipCents = Math.max(0, Number(checkout.metadata?.tip_cents ?? 0) || 0);
+  // Which leg this session is: full fare (default), a reservation deposit, or
+  // the later balance payment on a deposit booking. Server-created metadata.
+  const purpose = checkout.metadata?.purpose ?? "full";
+
+  // Deposit and balance sessions are always immediate charges — no hold branch.
+  if (purpose === "deposit" || purpose === "balance") {
+    if (checkout.payment_status !== "paid") return { paid: false };
+    if (purpose === "deposit") {
+      await markBookingDepositPaid({
+        bookingId,
+        paymentIntentId: paymentIntentId ?? checkout.id,
+        depositCents: Number(checkout.metadata?.deposit_cents ?? checkout.amount_total ?? 0),
+        balanceCents: Number(checkout.metadata?.balance_cents ?? 0),
+        currency: checkout.currency ?? "cad",
+      });
+    } else {
+      await markBookingBalancePaid({
+        bookingId,
+        paymentIntentId: paymentIntentId ?? checkout.id,
+        amountCents: checkout.amount_total ?? 0,
+        currency: checkout.currency ?? "cad",
+        tipCents,
+      });
+    }
+    return { paid: true, held: false };
+  }
 
   if (paymentIntentId) {
     const intent = await getStripe().paymentIntents.retrieve(paymentIntentId);
@@ -382,4 +408,100 @@ export async function settleCheckoutSession(
     tipCents,
   });
   return { paid: true, held: false };
+}
+
+/**
+ * Idempotent "deposit landed" write. The booking becomes dispatchable
+ * (payment_status 'paid' — the dispatch wall's meaning of paid is "funds
+ * secured", and the platform's share IS secured); the outstanding chauffeur
+ * share is recorded in balance_due for cash or online settlement later.
+ */
+export async function markBookingDepositPaid(opts: {
+  bookingId: string;
+  paymentIntentId: string;
+  depositCents: number;
+  balanceCents: number;
+  currency: string;
+}): Promise<{ alreadyPaid: boolean }> {
+  const admin = svc();
+  const deposit = Math.max(0, Math.round(opts.depositCents)) / 100;
+  const balance = Math.max(0, Math.round(opts.balanceCents)) / 100;
+
+  const { data, error } = await admin
+    .from("bookings")
+    .update({
+      payment_status: "paid" as const,
+      payment_mode: "deposit",
+      deposit_amount: deposit,
+      balance_due: balance,
+      stripe_payment_id: opts.paymentIntentId,
+    })
+    .eq("id", opts.bookingId)
+    .eq("payment_status", "pending")
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return { alreadyPaid: true };
+
+  const { error: payErr } = await admin.from("payments").insert({
+    booking_id: opts.bookingId,
+    amount: deposit,
+    currency: opts.currency.toUpperCase(),
+    status: "paid" as const,
+    stripe_id: opts.paymentIntentId,
+  });
+  if (payErr) console.error("[payments] deposit ledger insert failed:", payErr.message);
+
+  const amount = `$${deposit.toFixed(2)} ${opts.currency.toUpperCase()} (deposit — $${balance.toFixed(2)} balance due to chauffeur)`;
+  after(() => notifyPaymentReceived(opts.bookingId, { amount, paymentRef: opts.paymentIntentId, tip: "" }));
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  return { alreadyPaid: false };
+}
+
+/**
+ * Idempotent "balance paid online" write for a deposit booking. The
+ * balance_paid_at-null gate means an online payment and a cash collection at
+ * the ride can race and exactly one wins.
+ */
+export async function markBookingBalancePaid(opts: {
+  bookingId: string;
+  paymentIntentId: string;
+  amountCents: number;
+  currency: string;
+  tipCents?: number;
+}): Promise<{ alreadyPaid: boolean }> {
+  const admin = svc();
+  const tip = Math.max(0, Math.round(Number(opts.tipCents ?? 0))) / 100;
+
+  const { data, error } = await admin
+    .from("bookings")
+    .update({
+      balance_paid_at: new Date().toISOString(),
+      balance_method: "online",
+      // A deposit checkout has no tip step; the balance payment is where an
+      // online tip for a deposit booking arrives.
+      ...(tip > 0 ? { tip } : {}),
+    })
+    .eq("id", opts.bookingId)
+    .eq("payment_mode", "deposit")
+    .is("balance_paid_at", null)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return { alreadyPaid: true };
+
+  const { error: payErr } = await admin.from("payments").insert({
+    booking_id: opts.bookingId,
+    amount: opts.amountCents / 100,
+    currency: opts.currency.toUpperCase(),
+    status: "paid" as const,
+    stripe_id: opts.paymentIntentId,
+  });
+  if (payErr) console.error("[payments] balance ledger insert failed:", payErr.message);
+
+  const amount = `$${(opts.amountCents / 100).toFixed(2)} ${opts.currency.toUpperCase()} (balance)`;
+  const tipStr = tip > 0 ? `$${tip.toFixed(2)} ${opts.currency.toUpperCase()}` : "";
+  after(() => notifyPaymentReceived(opts.bookingId, { amount, paymentRef: opts.paymentIntentId, tip: tipStr }));
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  return { alreadyPaid: false };
 }

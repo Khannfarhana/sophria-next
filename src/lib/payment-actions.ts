@@ -6,11 +6,20 @@ import type { Session } from "next-auth";
 import { getStripe } from "@/lib/stripe";
 import { canHoldUntil, settleCheckoutSession } from "@/lib/payments";
 import { pickupInstant } from "@/lib/datetime";
+import { depositSplit } from "@/lib/pricing";
+import { loadPricingConfig } from "@/lib/pricing-config.server";
 
 /**
  * Stripe Checkout server actions. Payment is collected AFTER the admin
  * confirms a booking and BEFORE a driver can be assigned:
  * pending → confirmed (+ pay email/popup) → paid → driver_assigned → …
+ *
+ * Two ways to secure a booking (both count as payment_status 'paid'/'authorized'
+ * for the dispatch wall):
+ *   full    — the whole fare (held ≤6 days out, charged beyond the window)
+ *   deposit — SophRia's share only (commission + airport fee + HST), charged
+ *             immediately; the chauffeur's share is settled later in cash or
+ *             via createBalanceCheckoutSessionAction.
  */
 
 function getServiceClient() {
@@ -37,9 +46,14 @@ async function requireSession(): Promise<Session> {
 export async function createCheckoutSessionAction(
   bookingId: string,
   tipDollars?: number,
+  paymentMode: "full" | "deposit" = "full",
 ): Promise<{ url: string; hold: boolean }> {
   const session = await requireSession();
   const admin = getServiceClient();
+
+  if (paymentMode !== "full" && paymentMode !== "deposit") {
+    throw new Error("Unknown payment mode.");
+  }
 
   // Tip safety: server-side clamp — never negative (a negative "tip" would
   // discount the fare), whole cents, sane upper bound.
@@ -61,6 +75,10 @@ export async function createCheckoutSessionAction(
   if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
   if (booking.status !== "confirmed" || booking.payment_status !== "pending") {
     throw new Error("This booking is not awaiting payment.");
+  }
+
+  if (paymentMode === "deposit") {
+    return createDepositSession(session, booking);
   }
 
   // fare_estimate is the PRE-TAX subtotal (airport fee included); HST rides on
@@ -162,6 +180,159 @@ export async function createCheckoutSessionAction(
   );
   if (!checkout.url) throw new Error("Stripe did not return a checkout URL");
   return { url: checkout.url, hold };
+}
+
+/**
+ * The deposit leg of deposit-mode payment. NOT exported — reached only through
+ * createCheckoutSessionAction's ownership/state gate above.
+ *
+ * Amounts are computed here from the STORED fare columns and the live config —
+ * never from the client. Always an immediate charge (never a hold): the whole
+ * point of a deposit is a small, non-expiring commitment, which also makes it
+ * the natural choice for bookings beyond the 6-day hold window.
+ */
+async function createDepositSession(
+  session: Session,
+  booking: {
+    id: string;
+    reference: string;
+    fare_estimate: number;
+    airport_fee: number | null;
+    tax_amount: number | null;
+    pickup_location: string;
+    dropoff_location: string;
+  },
+): Promise<{ url: string; hold: boolean }> {
+  const cfg = await loadPricingConfig();
+  const { deposit, balance } = depositSplit({
+    fareEstimate: booking.fare_estimate,
+    airportFee: booking.airport_fee,
+    hst: booking.tax_amount,
+    driverRate: cfg.defaultDriverPayoutRate,
+  });
+  const depositCents = Math.round(deposit * 100);
+  const balanceCents = Math.round(balance * 100);
+  if (depositCents < 50 || balanceCents <= 0) {
+    // Degenerate splits (tiny fares, 100% driver share) can't be deposited.
+    throw new Error("This booking can't be reserved with a deposit — please pay in full.");
+  }
+
+  const appUrl = (process.env.NEXTAUTH_URL || "").replace(/\/$/, "");
+  const checkout = await getStripe().checkout.sessions.create(
+    {
+      mode: "payment",
+      customer_email: session.user.email ?? undefined,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "cad",
+            unit_amount: depositCents,
+            product_data: {
+              name: `Reservation deposit — booking ${booking.reference}`,
+              description:
+                `${booking.pickup_location} → ${booking.dropoff_location}. Covers SophRia's service share, ` +
+                `airport fees and HST. The remaining $${balance.toFixed(2)} is payable to your chauffeur — in cash at the ride, or online any time.`,
+            },
+          },
+        },
+      ],
+      // purpose routes the settle path; amounts ride in SERVER-created metadata
+      // so the split written to the booking is the one Stripe actually charged.
+      metadata: {
+        booking_id: booking.id,
+        purpose: "deposit",
+        deposit_cents: String(depositCents),
+        balance_cents: String(balanceCents),
+      },
+      payment_intent_data: {
+        description: `SophRia booking ${booking.reference} — reservation deposit`,
+        metadata: { booking_id: booking.id, purpose: "deposit" },
+      },
+      success_url: `${appUrl}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/dashboard?payment=cancelled`,
+    },
+    { idempotencyKey: `deposit:${booking.id}:${depositCents}` },
+  );
+  if (!checkout.url) throw new Error("Stripe did not return a checkout URL");
+  return { url: checkout.url, hold: false };
+}
+
+/**
+ * Pay the outstanding chauffeur's share of a deposit booking online, plus an
+ * optional tip. Available until the balance is settled (a cash collection at
+ * the ride settles it too).
+ */
+export async function createBalanceCheckoutSessionAction(
+  bookingId: string,
+  tipDollars?: number,
+): Promise<{ url: string }> {
+  const session = await requireSession();
+  const admin = getServiceClient();
+
+  const tipCents = Math.round(Number(tipDollars ?? 0) * 100);
+  if (!Number.isFinite(tipCents) || tipCents < 0) throw new Error("Tip must be a positive amount.");
+  if (tipCents > 100000) throw new Error("Tip is too large — please contact dispatch.");
+
+  const { data: booking } = await admin
+    .from("bookings")
+    .select("id, reference, customer_id, status, payment_status, payment_mode, balance_due, balance_paid_at, pickup_location, dropoff_location")
+    .eq("id", bookingId)
+    .single();
+  if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
+  if (booking.payment_mode !== "deposit" || booking.payment_status !== "paid") {
+    throw new Error("This booking has no outstanding balance.");
+  }
+  if (booking.balance_paid_at) throw new Error("The balance for this ride is already settled.");
+  if (["cancelled", "rejected"].includes(booking.status)) {
+    throw new Error("This booking is no longer payable.");
+  }
+
+  const balanceCents = Math.round(Number(booking.balance_due ?? 0) * 100);
+  if (balanceCents < 50) throw new Error("This booking's balance cannot be charged online — please contact dispatch.");
+
+  const appUrl = (process.env.NEXTAUTH_URL || "").replace(/\/$/, "");
+  const checkout = await getStripe().checkout.sessions.create(
+    {
+      mode: "payment",
+      customer_email: session.user.email ?? undefined,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "cad",
+            unit_amount: balanceCents,
+            product_data: {
+              name: `Remaining balance — booking ${booking.reference}`,
+              description: `Your chauffeur's share for ${booking.pickup_location} → ${booking.dropoff_location}.`,
+            },
+          },
+        },
+        ...(tipCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "cad",
+                  unit_amount: tipCents,
+                  product_data: { name: "Driver tip", description: "100% goes to your chauffeur" },
+                },
+              },
+            ]
+          : []),
+      ],
+      metadata: { booking_id: booking.id, purpose: "balance", tip_cents: String(tipCents) },
+      payment_intent_data: {
+        description: `SophRia booking ${booking.reference} — balance`,
+        metadata: { booking_id: booking.id, purpose: "balance", tip_cents: String(tipCents) },
+      },
+      success_url: `${appUrl}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/dashboard?payment=cancelled`,
+    },
+    { idempotencyKey: `balance:${booking.id}:${balanceCents}:${tipCents}` },
+  );
+  if (!checkout.url) throw new Error("Stripe did not return a checkout URL");
+  return { url: checkout.url };
 }
 
 /**
