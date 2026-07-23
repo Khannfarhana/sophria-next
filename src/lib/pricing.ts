@@ -311,3 +311,32 @@ export function priceBreakdown(
 export function suggestedTip(subtotal: number, rate: number = DEFAULT_TIP_RATE): number {
   return round2(Math.max(0, subtotal) * rate);
 }
+
+/**
+ * Split a fare into the reservation deposit and the balance for deposit-mode
+ * payment ("pay SophRia's share now, the chauffeur later").
+ *
+ * The line is drawn by WHO the money belongs to, not by a flat percentage of
+ * the total: balance = the driver's share exactly (payout base × driver rate),
+ * and the deposit is everything else — commission, the GTAA airport fee, and
+ * ALL the HST. Tax and the airport pass-through must never ride in cash: the
+ * platform remits them whichever way the driver is paid. Splitting the total
+ * 25/75 instead would put 75% of the HST in the driver's pocket and create a
+ * driver-owes-platform settlement after every cash ride.
+ *
+ * A cash ride therefore needs no reconciliation at all: the driver keeps what
+ * they collect (it IS their payout), and the platform already holds the rest.
+ */
+export function depositSplit(opts: {
+  fareEstimate: number | null | undefined;
+  airportFee: number | null | undefined;
+  hst: number | null | undefined;
+  /** The DRIVER's share of the payout base — cfg.defaultDriverPayoutRate. */
+  driverRate: number;
+}): { deposit: number; balance: number } {
+  const fare = Math.max(0, Number(opts.fareEstimate ?? 0));
+  const hst = Math.max(0, Number(opts.hst ?? 0));
+  const balance = round2(driverPayoutBase(fare, opts.airportFee) * opts.driverRate);
+  const deposit = round2(Math.max(0, fare + hst - balance));
+  return { deposit, balance };
+}

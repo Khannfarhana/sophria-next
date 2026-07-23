@@ -466,7 +466,9 @@ export async function cancelBookingAction(bookingId: string) {
 
   const { data: booking } = await admin
     .from("bookings")
-    .select("id, customer_id, status, payment_status, pickup_datetime, fare_estimate, tax_amount, tip, stripe_payment_id")
+    .select(
+      "id, customer_id, status, payment_status, pickup_datetime, fare_estimate, tax_amount, tip, stripe_payment_id, payment_mode, deposit_amount, balance_due, balance_paid_at, balance_method",
+    )
     .eq("id", bookingId)
     .single();
   if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
@@ -477,13 +479,26 @@ export async function cancelBookingAction(bookingId: string) {
   const wasHeld = booking.payment_status === "authorized";
   const hadFunds = wasPaid || wasHeld;
 
+  // Deposit bookings: the penalty ladder still prices off the taxed fare, but
+  // what we actually HOLD is only the deposit (plus the balance, if it was
+  // paid online pre-ride). The recorded penalty is capped at what was
+  // collected — a fee larger than the money in hand is a fiction.
+  const isDeposit = booking.payment_mode === "deposit";
+  const depositHeld = isDeposit ? Math.max(0, Number(booking.deposit_amount ?? 0)) : 0;
+  const balanceHeldOnline =
+    isDeposit && booking.balance_paid_at && booking.balance_method === "online"
+      ? Math.max(0, Number(booking.balance_due ?? 0)) + Math.max(0, Number(booking.tip ?? 0))
+      : 0;
+  const depositCollected = round2(depositHeld + balanceHeldOnline);
+  const effectivePenalty = isDeposit ? Math.min(quote.penalty, depositCollected) : quote.penalty;
+
   const { data: claimed, error } = await admin
     .from("bookings")
     .update({
       status: "cancelled" as const,
       cancelled_at: new Date(now).toISOString(),
       cancellation_penalty_rate: quote.rate,
-      cancellation_penalty: hadFunds ? quote.penalty : 0,
+      cancellation_penalty: hadFunds ? effectivePenalty : 0,
       refund_amount: 0,
     })
     .eq("id", bookingId)
@@ -529,6 +544,28 @@ export async function cancelBookingAction(bookingId: string) {
       } else {
         await releaseBookingHold(bookingId, booking.stripe_payment_id);
       }
+    } else if (wasPaid && isDeposit) {
+      // Refund what was collected minus the penalty. stripe_payment_id is the
+      // DEPOSIT intent, so a refund through it is capped at the deposit; the
+      // rare remainder (balance paid online, then a nearly-free cancellation)
+      // lives on a different intent and goes to an admin to refund by hand.
+      const refundTotal = Math.max(0, round2(depositCollected - effectivePenalty));
+      const refundNow = Math.min(refundTotal, depositHeld);
+      if (refundNow > 0) {
+        await refundBookingPayment({
+          bookingId,
+          paymentIntentId: booking.stripe_payment_id,
+          amountCents: Math.round(refundNow * 100),
+          penalty: effectivePenalty,
+        });
+        refunded = refundNow;
+      }
+      if (refundTotal > refundNow) {
+        console.error(
+          `[actions] booking ${bookingId}: $${(refundTotal - refundNow).toFixed(2)} of the online balance payment must be refunded manually (separate intent).`,
+        );
+        after(() => notifyPaymentCaptureFailed(bookingId));
+      }
     } else if (wasPaid && quote.refund > 0) {
       await refundBookingPayment({
         bookingId,
@@ -560,7 +597,7 @@ export async function cancelBookingAction(bookingId: string) {
   revalidatePath("/admin");
   return {
     success: true,
-    penalty: hadFunds && !settlementFailed ? quote.penalty : 0,
+    penalty: hadFunds && !settlementFailed ? effectivePenalty : 0,
     refund: refunded,
     /** True when the balance was released from a hold rather than refunded. */
     released: wasHeld && !settlementFailed,
@@ -1007,16 +1044,24 @@ export async function assignDriverAction(
 
     const { data: bk, error: bkErr } = await supabase
       .from("bookings")
-      .select("fare_estimate, airport_fee")
+      .select("fare_estimate, airport_fee, payment_mode, balance_due")
       .eq("id", bookingId)
       .single();
     if (bkErr || !bk) throw new Error("Booking not found");
 
-    // The airport fee is excluded: it is the GTAA's money, not SophRia's
-    // revenue, so no share of it is the driver's. See driverPayoutBase.
-    payout = round2(
-      driverPayoutBase(bk.fare_estimate, bk.airport_fee) * Number(drv.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE),
-    );
+    if (bk.payment_mode === "deposit" && bk.balance_due != null) {
+      // Deposit bookings: the payout defaults to the balance the customer was
+      // QUOTED at deposit time. On a cash ride the driver keeps exactly what
+      // they collect — a payout computed from this driver's own rate could
+      // differ from that frozen figure and leave someone owing someone.
+      payout = round2(Number(bk.balance_due));
+    } else {
+      // The airport fee is excluded: it is the GTAA's money, not SophRia's
+      // revenue, so no share of it is the driver's. See driverPayoutBase.
+      payout = round2(
+        driverPayoutBase(bk.fare_estimate, bk.airport_fee) * Number(drv.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE),
+      );
+    }
   }
 
   // Payment wall: a driver can be assigned (or reassigned, pre-ride) only once
@@ -1184,7 +1229,7 @@ export async function completeRideAction(rideId: string) {
     .eq("id", rideId)
     .eq("driver_id", driver.id)
     .eq("status", "in_progress")
-    .select("id, fare_estimate, airport_fee, driver_payout, tip, payment_status, stripe_payment_id");
+    .select("id, fare_estimate, airport_fee, driver_payout, tip, payment_status, stripe_payment_id, payment_mode, balance_due, balance_paid_at");
 
   if (bookingErr) {
     throw new Error(bookingErr.message);
@@ -1226,6 +1271,19 @@ export async function completeRideAction(rideId: string) {
       if (flagErr) console.error(`[actions] could not flag ${rideId} as failed:`, flagErr.message);
       after(() => notifyPaymentCaptureFailed(rideId));
     }
+  }
+
+  // Deposit booking whose balance was never paid online: the chauffeur
+  // collects it in cash at the ride — completing IS the collection. The
+  // balance_paid_at-null gate keeps a last-minute online payment from being
+  // double-recorded; whichever settles first wins.
+  if (updated[0].payment_mode === "deposit" && !updated[0].balance_paid_at) {
+    const { error: cashErr } = await getServiceClient()
+      .from("bookings")
+      .update({ balance_paid_at: new Date().toISOString(), balance_method: "cash" })
+      .eq("id", rideId)
+      .is("balance_paid_at", null);
+    if (cashErr) console.error(`[actions] could not record cash balance on ${rideId}:`, cashErr.message);
   }
 
   // Credit the payout snapshot taken at assignment (fare × commission rate at

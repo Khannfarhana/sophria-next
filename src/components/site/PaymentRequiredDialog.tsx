@@ -11,15 +11,19 @@ import {
 } from "@/components/ui/dialog";
 import { formatDateTime, pickupInstant } from "@/lib/datetime";
 import { canHoldUntil } from "@/lib/payment-window";
-import { DEFAULT_TIP_RATE, round2, suggestedTip } from "@/lib/pricing";
+import { DEFAULT_TIP_RATE, depositSplit, round2, suggestedTip } from "@/lib/pricing";
+import { usePricingConfig } from "@/hooks/use-pricing-config";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { createCheckoutSessionAction } from "@/lib/payment-actions";
 import { mockPayBooking } from "@/lib/mock-db/actions";
 import type { BookingRow } from "@/components/site/BookingDetailDialog";
 
 /**
- * Shown when a booking is confirmed but unpaid: the customer must pay the
- * full fare (Stripe-hosted Checkout) before dispatch assigns a chauffeur.
+ * Shown when a booking is confirmed but unpaid. Two ways to secure the ride:
+ *   Pay in full — the whole fare via Stripe Checkout (held ≤6 days out).
+ *   Reserve with deposit — SophRia's share (commission + fees + HST) now;
+ *   the chauffeur's share is settled later, in cash or online.
+ * Either unlocks dispatch.
  */
 export function PaymentRequiredDialog({
   booking,
@@ -40,6 +44,8 @@ export function PaymentRequiredDialog({
   // the server and the DB check-constraint enforce tip >= 0 regardless.
   const [tipChoice, setTipChoice] = useState<number | "custom">(DEFAULT_TIP_RATE);
   const [customTip, setCustomTip] = useState("");
+  const [mode, setMode] = useState<"full" | "deposit">("full");
+  const pricingConfig = usePricingConfig();
 
   const b = booking;
   if (!b) return null;
@@ -58,11 +64,23 @@ export function PaymentRequiredDialog({
       : suggestedTip(fare, tipChoice);
   const total = fare + tax + tip;
 
+  // The deposit split — SophRia's share now, the chauffeur's later. Mirrors
+  // the server's computation (createDepositSession) for display only.
+  const split = depositSplit({
+    fareEstimate: fare,
+    airportFee: b.airport_fee,
+    hst: tax,
+    driverRate: pricingConfig.defaultDriverPayoutRate,
+  });
+  // Degenerate splits can't be deposited; mock mode has no deposit path.
+  const depositAvailable = SUPABASE_ENABLED && split.deposit >= 0.5 && split.balance > 0;
+  const isDeposit = mode === "deposit" && depositAvailable;
+
   const pay = () =>
     startTransition(async () => {
       try {
         if (SUPABASE_ENABLED) {
-          const { url } = await createCheckoutSessionAction(b.id, tip);
+          const { url } = await createCheckoutSessionAction(b.id, isDeposit ? 0 : tip, isDeposit ? "deposit" : "full");
           window.location.href = url; // hosted Stripe Checkout
         } else {
           await mockPayBooking(b.id, tip);
@@ -133,7 +151,42 @@ export function PaymentRequiredDialog({
           </div>
         </div>
 
-        {/* Tip */}
+        {/* How to pay */}
+        {depositAvailable && (
+          <div className="border-b border-white/10 px-6 py-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">How would you like to pay?</div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <button
+                onClick={() => setMode("full")}
+                disabled={pending}
+                className={`cursor-pointer rounded-sm border p-3.5 text-left transition ${
+                  !isDeposit ? "border-gold bg-gold/10" : "border-white/15 hover:border-white/35"
+                }`}
+              >
+                <div className="text-sm font-medium text-white">Pay in full</div>
+                <p className="mt-1 text-xs leading-relaxed text-white/55">
+                  {willHold ? "Held on your card now, charged after the ride." : "Charged now."} Nothing to settle later.
+                </p>
+              </button>
+              <button
+                onClick={() => setMode("deposit")}
+                disabled={pending}
+                className={`cursor-pointer rounded-sm border p-3.5 text-left transition ${
+                  isDeposit ? "border-gold bg-gold/10" : "border-white/15 hover:border-white/35"
+                }`}
+              >
+                <div className="text-sm font-medium text-white">Reserve with a deposit</div>
+                <p className="mt-1 text-xs leading-relaxed text-white/55">
+                  ${split.deposit.toFixed(2)} now · ${split.balance.toFixed(2)} to your chauffeur later — cash at the
+                  ride, or online any time.
+                </p>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Tip — full payment only; a deposit booking tips later (balance checkout or cash). */}
+        {!isDeposit && (
         <div className="border-b border-white/10 px-6 py-4">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-white/45">
             <HandCoins className="h-3.5 w-3.5" /> Add a tip for your chauffeur
@@ -173,6 +226,7 @@ export function PaymentRequiredDialog({
             </div>
           )}
         </div>
+        )}
 
         {/* Fare + total */}
         <div className="bg-night-panel px-6 py-4">
@@ -186,21 +240,33 @@ export function PaymentRequiredDialog({
               <span>${tax.toFixed(2)}</span>
             </div>
           )}
-          {tip > 0 && (
+          {!isDeposit && tip > 0 && (
             <div className="mt-1 flex items-center justify-between text-sm text-white/60">
               <span>Driver tip</span>
               <span>${tip.toFixed(2)}</span>
             </div>
           )}
+          {isDeposit && (
+            <div className="mt-1 flex items-center justify-between text-sm text-white/60">
+              <span>Chauffeur&apos;s share — settled later</span>
+              <span>−${split.balance.toFixed(2)}</span>
+            </div>
+          )}
           <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Total</div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">
+                {isDeposit ? "Deposit due now" : "Total"}
+              </div>
               <div className="mt-0.5 text-xs text-white/50">
-                {willHold ? "Held now, charged after your ride" : "Charged now to secure your chauffeur"}
+                {isDeposit
+                  ? `Balance of $${split.balance.toFixed(2)} — cash at the ride, or online any time`
+                  : willHold
+                  ? "Held now, charged after your ride"
+                  : "Charged now to secure your chauffeur"}
               </div>
             </div>
             <div className="shrink-0 font-display text-3xl text-gold-soft">
-              ${total.toFixed(2)}
+              ${(isDeposit ? split.deposit : total).toFixed(2)}
               <span className="ml-1 text-sm text-white/50">CAD</span>
             </div>
           </div>
@@ -214,7 +280,11 @@ export function PaymentRequiredDialog({
             className="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-gold-soft px-4 py-3 text-sm font-medium text-night transition hover:bg-[#f0e2c0] disabled:opacity-60 cursor-pointer"
           >
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-            {willHold ? `Hold $${total.toFixed(2)}` : `Pay $${total.toFixed(2)} now`}
+            {isDeposit
+              ? `Pay $${split.deposit.toFixed(2)} deposit`
+              : willHold
+              ? `Hold $${total.toFixed(2)}`
+              : `Pay $${total.toFixed(2)} now`}
           </button>
           <button
             onClick={onClose}

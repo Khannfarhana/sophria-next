@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { toast } from "sonner";
-import { MapPin, Users, Pencil, X, Check, Loader2, Plane, CalendarClock, Phone } from "lucide-react";
+import { MapPin, Users, Pencil, X, Check, Loader2, Plane, CalendarClock, Phone, CreditCard } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,7 @@ import { parseStops, routableStops } from "@/lib/stops";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
 import { updateBookingLocationAction, getBookingDriverAction, getBookingOtpAction } from "@/lib/actions";
+import { createBalanceCheckoutSessionAction } from "@/lib/payment-actions";
 import { mockUpdateBookingLocation, mockBookingDriver, mockBookingOtp } from "@/lib/mock-db/actions";
 
 type DriverInfo = { name: string | null; phone: string | null; rating: number | string | null; experience_years: number | null };
@@ -54,6 +55,12 @@ export interface BookingRow {
   airport_fee?: number | null;
   tax_amount?: number | null;
   tip?: number | null;
+  /** 'full' (default) or 'deposit' — platform share paid up front, balance later. */
+  payment_mode?: string | null;
+  deposit_amount?: number | null;
+  balance_due?: number | null;
+  balance_paid_at?: string | null;
+  balance_method?: string | null;
   /** Ordered intermediate stops (jsonb). Routed through on the map. */
   stops?: unknown;
   passenger_name: string | null;
@@ -97,8 +104,23 @@ export function BookingDetailDialog({
   const [otp, setOtp] = useState<string | null>(null);
   const pricingConfig = usePricingConfig();
   const tariffDestinations = useTariffDestinations();
+  const [payingBalance, setPayingBalance] = useState(false);
 
   const b = booking;
+
+  // Deposit bookings: send the customer to a hosted checkout for the
+  // chauffeur's share. Tip can be added there (the deposit leg has no tip step).
+  const payBalance = async () => {
+    if (!b) return;
+    setPayingBalance(true);
+    try {
+      const { url } = await createBalanceCheckoutSessionAction(b.id);
+      window.location.href = url;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start payment");
+      setPayingBalance(false);
+    }
+  };
 
   // Reset editing state whenever a DIFFERENT booking is opened. Keyed on the id
   // (a stable primitive) so it runs once per booking — never mid-edit, and never
@@ -449,6 +471,40 @@ export function BookingDetailDialog({
               <span className="text-sm text-white/60">{editing ? "Updated total" : "Total"}</span>
               <span className="font-display text-2xl text-gold-soft">${grandTotal.toFixed(2)}</span>
             </div>
+
+            {/* Deposit bookings: what's paid, what's still owed, and how to settle it. */}
+            {b.payment_mode === "deposit" && b.payment_status === "paid" && (
+              <div className="mt-3 rounded-sm border border-gold/25 bg-gold/5 px-4 py-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-white/70">Deposit paid</span>
+                  <span className="tabular-nums text-white/85">${Number(b.deposit_amount ?? 0).toFixed(2)}</span>
+                </div>
+                {b.balance_paid_at ? (
+                  <div className="mt-1 flex items-center justify-between text-sm">
+                    <span className="text-white/70">Balance settled ({b.balance_method === "cash" ? "cash" : "online"})</span>
+                    <span className="tabular-nums text-white/85">${Number(b.balance_due ?? 0).toFixed(2)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-1 flex items-center justify-between text-sm">
+                      <span className="text-white/70">Balance due to your chauffeur</span>
+                      <span className="tabular-nums font-medium text-gold-soft">${Number(b.balance_due ?? 0).toFixed(2)}</span>
+                    </div>
+                    <div className="mt-2.5 flex items-center justify-between gap-3">
+                      <span className="text-xs text-white/50">Pay in cash at your ride, or online now.</span>
+                      <button
+                        onClick={() => void payBalance()}
+                        disabled={payingBalance}
+                        className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-sm bg-gold-soft px-3.5 py-2 text-xs font-medium text-night transition hover:bg-[#f0e2c0] disabled:opacity-60"
+                      >
+                        {payingBalance ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5" />}
+                        Pay balance online
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>

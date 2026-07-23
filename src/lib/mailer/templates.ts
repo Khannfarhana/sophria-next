@@ -170,7 +170,7 @@ export const templates: Record<string, MailTemplateFn> = {
       <div class="eyebrow">Reservation Confirmed</div>
       <h2>Your booking is confirmed</h2>
       <p>Hello ${esc(d.customerName || "Valued Guest")},</p>
-      <p>Great news — your reservation is confirmed. To secure your booking, please complete payment of the full fare. Your chauffeur will be assigned as soon as payment is received.</p>
+      <p>Great news — your reservation is confirmed. To secure your booking, pay the full fare online — or reserve with a deposit and settle the balance with your chauffeur later, in cash or online. Your chauffeur will be assigned as soon as payment is received.</p>
       ${fareChanged ? `<div class="banner warn"><strong>Fare updated:</strong> ${esc(d.fareChangeReason)}${d.previousFare ? ` — previously ${esc(d.previousFare)}.` : ""}</div>` : ""}
       <div class="banner warn">Payment required — your booking is not secured until the fare is paid.</div>
       ${detailsTable(
@@ -182,7 +182,7 @@ export const templates: Record<string, MailTemplateFn> = {
     `);
     const text = textWrap("Booking confirmed — payment required", [
       `Hello ${d.customerName || "Valued Guest"},`, "",
-      "Your reservation is confirmed. To secure your booking, please complete payment of the full fare — your chauffeur will be assigned as soon as payment is received.", "",
+      "Your reservation is confirmed. To secure your booking, pay the full fare online — or reserve with a deposit and settle the balance with your chauffeur later, in cash or online. Your chauffeur will be assigned as soon as payment is received.", "",
       fareChanged ? `Fare updated: ${d.fareChangeReason}${d.previousFare ? ` (previously ${d.previousFare})` : ""}` : "",
       `Reference: ${d.reference}`, `Date & Time: ${d.datetime}`, `Pickup: ${d.pickup}`,
       d.dropoff ? `Drop-off: ${d.dropoff}` : "", d.vehicle ? `Vehicle: ${d.vehicle}` : "",

@@ -221,6 +221,9 @@ const driverExtras = {
 const cancellationDefaults = {
   cancelled_at: null, cancellation_penalty_rate: null, cancellation_penalty: null,
   refund_amount: null, stripe_refund_id: null,
+  // Deposit payment mode (migration 20260723210000). Seeds all pay in full.
+  payment_mode: "full", deposit_amount: null, balance_due: null,
+  balance_paid_at: null, balance_method: null,
 };
 export const drivers: Driver[] = [
   { id: ID.driver1, user_id: ID.driverUser1, license_number: "ON-DR-44821", experience_years: 8, rating: 4.9, total_earnings: 18250, commission_rate: 0.75, is_available: true, is_verified: true, created_at: NOW, updated_at: NOW, ...driverExtras },

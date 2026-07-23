@@ -48,6 +48,11 @@ export interface AdminBooking {
   fare_estimate: number;
   driver_payout: number | null;
   tip: number;
+  payment_mode?: string | null;
+  deposit_amount?: number | null;
+  balance_due?: number | null;
+  balance_paid_at?: string | null;
+  balance_method?: string | null;
   passenger_name: string | null;
   passenger_phone: string | null;
   special_requests: string | null;
@@ -123,7 +128,7 @@ export function useAdminBookings(filter: string) {
       // Explicit columns — start_otp is not client-readable (column privilege).
       let q = supabase
         .from("bookings")
-        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, passenger_count, luggage_count, fare_estimate, driver_payout, tip, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, updated_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
+        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, passenger_count, luggage_count, fare_estimate, driver_payout, tip, payment_mode, deposit_amount, balance_due, balance_paid_at, balance_method, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, updated_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, vehicles(name)")
         .order("created_at", { ascending: false })
         // Window: the overview's queues read from this. Older items stay
         // reachable through the per-status filters on /admin/bookings.
