@@ -17,6 +17,8 @@ import { getDirections, type Place } from "@/lib/mapbox";
 import { formatDateTime } from "@/lib/datetime";
 import { priceBreakdown, tripTypeLabel, HOURLY_MIN_HOURS, HST_RATE, type TripType } from "@/lib/pricing";
 import { resolvePearsonTariff } from "@/lib/tariff";
+import { usePricingConfig } from "@/hooks/use-pricing-config";
+import { useTariffDestinations } from "@/hooks/use-tariff-destinations";
 import { parseStops, routableStops } from "@/lib/stops";
 import { VEHICLE_IMAGES } from "@/lib/vehicles";
 import { SUPABASE_ENABLED } from "@/lib/data-source";
@@ -59,7 +61,15 @@ export interface BookingRow {
   driver_id?: string | null;
   rejection_reason?: string | null;
   rejection_notes?: string | null;
-  vehicles?: { name?: string | null; type?: string | null; base_rate?: number | string | null; hourly_rate?: number | string | null } | null;
+  vehicles?: {
+    name?: string | null;
+    type?: string | null;
+    base_rate?: number | string | null;
+    hourly_rate?: number | string | null;
+    per_km_rate?: number | string | null;
+    min_fare?: number | string | null;
+    tariff_multiplier?: number | string | null;
+  } | null;
 }
 
 const EDITABLE = new Set(["pending", "confirmed"]);
@@ -85,6 +95,8 @@ export function BookingDetailDialog({
   const [durationMin, setDurationMin] = useState<number | null>(null);
   const [driverInfo, setDriverInfo] = useState<DriverInfo | null>(null);
   const [otp, setOtp] = useState<string | null>(null);
+  const pricingConfig = usePricingConfig();
+  const tariffDestinations = useTariffDestinations();
 
   const b = booking;
 
@@ -146,23 +158,39 @@ export function BookingDetailDialog({
   if (!b) return null;
 
   const vehicleRates = b.vehicles?.base_rate != null
-    ? { base_rate: b.vehicles.base_rate, hourly_rate: b.vehicles.hourly_rate ?? null, type: b.vehicles.type ?? null }
+    ? {
+        base_rate: b.vehicles.base_rate,
+        hourly_rate: b.vehicles.hourly_rate ?? null,
+        type: b.vehicles.type ?? null,
+        per_km_rate: b.vehicles.per_km_rate ?? null,
+        min_fare: b.vehicles.min_fare ?? null,
+        tariff_multiplier: b.vehicles.tariff_multiplier ?? null,
+      }
     : null;
-  // Pearson airport trips are priced by the official GTAA tariff.
+  // Pearson airport trips are priced by the official GTAA tariff, resolved
+  // against the live rate card + destination table (matching the server).
   const editTariff =
     editing && tripType === "airport"
-      ? resolvePearsonTariff({
-          pickup,
-          dropoff,
-          pickupCoords: pickupCoords ?? undefined,
-          dropoffCoords: dropoffCoords ?? undefined,
-          distanceKm,
-        })
+      ? resolvePearsonTariff(
+          {
+            pickup,
+            dropoff,
+            pickupCoords: pickupCoords ?? undefined,
+            dropoffCoords: dropoffCoords ?? undefined,
+            distanceKm,
+          },
+          { cfg: pricingConfig, destinations: tariffDestinations },
+        )
       : null;
   // Live fare: re-quote from distance when we have vehicle rates, else keep the
   // stored fare. Both are pre-tax subtotals, matching bookings.fare_estimate.
   const liveQuote = editing && vehicleRates
-    ? priceBreakdown(tripType, vehicleRates, { durationHours: b.duration_hours ?? HOURLY_MIN_HOURS, distanceKm: distanceKm ?? undefined, tariff: editTariff })
+    ? priceBreakdown(
+        tripType,
+        vehicleRates,
+        { durationHours: b.duration_hours ?? HOURLY_MIN_HOURS, distanceKm: distanceKm ?? undefined, tariff: editTariff },
+        pricingConfig,
+      )
     : null;
   // What the customer is shown. While editing, that's the re-quote; otherwise
   // it's the STORED breakdown — the figures actually billed, not a

@@ -3,6 +3,7 @@
 import { ProtectedRoute } from "@/components/site/ProtectedRoute";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { PricingConfigPanel } from "@/components/site/PricingConfigPanel";
+import { TariffDestinationsPanel } from "@/components/site/TariffDestinationsPanel";
 import { usePricingConfig } from "@/hooks/use-pricing-config";
 
 export default function AdminRatesPage() {
@@ -22,6 +23,9 @@ function Rates() {
       sub="The live rate card. Every change is published as a new version with a reason — nothing is overwritten."
     >
       <PricingConfigPanel config={pricingConfig} />
+      <div className="mt-6">
+        <TariffDestinationsPanel />
+      </div>
     </AdminShell>
   );
 }

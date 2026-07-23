@@ -20,7 +20,7 @@ import {
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { getDirections } from "@/lib/mapbox";
 import { toStorageIso, isFuturePickup } from "@/lib/datetime";
-import { loadPricingConfig } from "@/lib/pricing-config.server";
+import { loadPricingConfig, loadTariffDestinations } from "@/lib/pricing-config.server";
 import {
   notifyBookingCreated,
   notifyBookingConfirmed,
@@ -89,9 +89,10 @@ async function computeServerFare(
   // The authoritative fare — this is what the customer is charged, so both the
   // vehicle rates AND the rate card are read server-side from the database.
   // Never from the client, and never from a constant the client also holds.
-  const [{ data: vehicle }, config] = await Promise.all([
-    admin.from("vehicles").select("base_rate, hourly_rate, type, tariff_multiplier, luggage").eq("id", opts.vehicleId).single(),
+  const [{ data: vehicle }, config, tariffDestinations] = await Promise.all([
+    admin.from("vehicles").select("base_rate, hourly_rate, type, tariff_multiplier, luggage, per_km_rate, min_fare").eq("id", opts.vehicleId).single(),
     loadPricingConfig(),
+    loadTariffDestinations(),
   ]);
   if (!vehicle) throw new Error("Vehicle not found");
 
@@ -102,16 +103,21 @@ async function computeServerFare(
     if (dir) { distanceKm = dir.distanceKm; durationMin = dir.durationMin; }
   }
 
-  // Pearson airport trips are priced by the official GTAA tariff.
+  // Pearson airport trips are priced by the official GTAA tariff — resolved
+  // against the LIVE rate card and destination table, falling back to the
+  // built-in February 2024 card when either is unavailable.
   const tariff =
     opts.tripType === "airport"
-      ? resolvePearsonTariff({
-          pickup: opts.pickupText,
-          dropoff: opts.dropoffText,
-          pickupCoords: opts.pickup ?? undefined,
-          dropoffCoords: opts.dropoff ?? undefined,
-          distanceKm,
-        })
+      ? resolvePearsonTariff(
+          {
+            pickup: opts.pickupText,
+            dropoff: opts.dropoffText,
+            pickupCoords: opts.pickup ?? undefined,
+            dropoffCoords: opts.dropoff ?? undefined,
+            distanceKm,
+          },
+          { cfg: config, destinations: tariffDestinations },
+        )
       : null;
 
   const breakdown = priceBreakdown(
@@ -1265,6 +1271,12 @@ export interface VehiclePatch {
   name?: string;
   base_rate?: number;
   hourly_rate?: number | null;
+  /** One-way $/km for this vehicle. Null = use the global retail rate. */
+  per_km_rate?: number | null;
+  /** Floor for retail quotes. Null = no minimum. */
+  min_fare?: number | null;
+  /** Pearson tariff scale for this class (sedan 1.0, SUV 1.3 …). */
+  tariff_multiplier?: number;
   capacity?: number;
   luggage?: number;
   description?: string | null;
@@ -1283,6 +1295,16 @@ function validateVehicleNumbers(patch: VehiclePatch) {
   }
   if (patch.hourly_rate !== undefined && patch.hourly_rate !== null && (!Number.isFinite(patch.hourly_rate) || patch.hourly_rate <= 0)) {
     throw new Error("Hourly rate must be a positive amount (or empty).");
+  }
+  // Ranges mirror the DB check constraints (20260723190000 / 20260717150000).
+  if (patch.per_km_rate !== undefined && patch.per_km_rate !== null && (!Number.isFinite(patch.per_km_rate) || patch.per_km_rate <= 0 || patch.per_km_rate > 50)) {
+    throw new Error("Per-km rate must be between $0 and $50 (or empty to use the global rate).");
+  }
+  if (patch.min_fare !== undefined && patch.min_fare !== null && (!Number.isFinite(patch.min_fare) || patch.min_fare < 0 || patch.min_fare > 10000)) {
+    throw new Error("Minimum fare must be between $0 and $10,000 (or empty for none).");
+  }
+  if (patch.tariff_multiplier !== undefined && (!Number.isFinite(patch.tariff_multiplier) || patch.tariff_multiplier <= 0 || patch.tariff_multiplier > 10)) {
+    throw new Error("Tariff multiplier must be between 0 and 10.");
   }
   if (patch.capacity !== undefined && (!Number.isInteger(patch.capacity) || patch.capacity < 1 || patch.capacity > 60)) {
     throw new Error("Capacity must be between 1 and 60.");
@@ -1310,7 +1332,7 @@ export async function updateVehicleAction(vehicleId: string, patch: VehiclePatch
   // Whitelist — never spread a client object into an update. `type` is
   // deliberately absent: it is fixed after creation.
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  for (const key of ["name", "base_rate", "hourly_rate", "capacity", "luggage", "description", "is_active", "features"] as const) {
+  for (const key of ["name", "base_rate", "hourly_rate", "per_km_rate", "min_fare", "tariff_multiplier", "capacity", "luggage", "description", "is_active", "features"] as const) {
     if (patch[key] !== undefined) update[key] = patch[key];
   }
   const { error } = await getServiceClient()
@@ -1329,6 +1351,9 @@ export async function createVehicleAction(input: {
   type: Database["public"]["Enums"]["vehicle_type"];
   base_rate: number;
   hourly_rate: number | null;
+  per_km_rate?: number | null;
+  min_fare?: number | null;
+  tariff_multiplier?: number;
   capacity: number;
   luggage: number;
   description: string | null;
