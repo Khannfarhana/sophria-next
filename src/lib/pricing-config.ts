@@ -36,6 +36,8 @@ export interface PricingConfig {
   airportFreeKm: number;
   tariffMarkupRate: number;
   retailPerKm: number;
+  /** Km included in the base fare on one-way trips before per-km billing starts. */
+  onewayFreeKm: number;
   hourlyMinHours: number;
   tariffPerKm: number;
   tariffInZoneBase: number;
@@ -71,6 +73,7 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
   airportFreeKm: 20,
   tariffMarkupRate: 0.3,
   retailPerKm: 2.75,
+  onewayFreeKm: 0,
   hourlyMinHours: 2,
   tariffPerKm: 2.01,
   tariffInZoneBase: 28,
@@ -102,6 +105,7 @@ export function toPricingConfig(row: Record<string, unknown> | null | undefined)
     airportFreeKm: num(row.airport_free_km, d.airportFreeKm),
     tariffMarkupRate: num(row.tariff_markup_rate, d.tariffMarkupRate),
     retailPerKm: num(row.retail_per_km, d.retailPerKm),
+    onewayFreeKm: num(row.oneway_free_km, d.onewayFreeKm),
     hourlyMinHours: num(row.hourly_min_hours, d.hourlyMinHours),
     tariffPerKm: num(row.tariff_per_km, d.tariffPerKm),
     tariffInZoneBase: num(row.tariff_in_zone_base, d.tariffInZoneBase),
@@ -120,7 +124,7 @@ export function toPricingConfig(row: Record<string, unknown> | null | undefined)
 /** Columns to select. Kept here so the server and client reads cannot diverge. */
 export const PRICING_CONFIG_COLUMNS =
   "id, hst_rate, tariff_tax_inclusive, yyz_airport_fee, airport_meet_greet, airport_free_km, tariff_markup_rate, " +
-  "retail_per_km, hourly_min_hours, tariff_per_km, tariff_in_zone_base, tariff_min, " +
+  "retail_per_km, oneway_free_km, hourly_min_hours, tariff_per_km, tariff_in_zone_base, tariff_min, " +
   "pearson_radius_km, extra_passenger_surcharge, multi_dropoff_charge, stop_wait_per_10min, " +
   "default_driver_payout_rate, default_tip_rate, stripe_pct, stripe_fixed, created_at, reason";
 

@@ -598,6 +598,7 @@ export async function mockUpdateVehicle(vehicleId: string, patch: Partial<{
 export async function mockCreateVehicle(input: {
   name: string; type: "sedan" | "business" | "suv" | "limousine" | "party_bus";
   base_rate: number; hourly_rate: number | null;
+  per_km_rate?: number | null; min_fare?: number | null; tariff_multiplier?: number;
   capacity: number; luggage: number; description: string | null;
   features?: string[];
 }) {
@@ -605,6 +606,9 @@ export async function mockCreateVehicle(input: {
     const sort = Math.max(0, ...db.vehicles.map((v) => v.sort_order ?? 0)) + 1;
     db.vehicles.push({
       ...input,
+      per_km_rate: input.per_km_rate ?? null,
+      min_fare: input.min_fare ?? null,
+      tariff_multiplier: input.tariff_multiplier ?? 1.0,
       id: crypto.randomUUID(),
       features: input.features ?? [],
       image_url: null,

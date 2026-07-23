@@ -23,6 +23,12 @@ interface VehicleForm {
   type: VehicleType;
   base_rate: string;
   hourly_rate: string;
+  /** One-way $/km for this class. Blank = the global rate from Admin → Rates. */
+  per_km_rate: string;
+  /** Floor for retail quotes. Blank = no minimum. */
+  min_fare: string;
+  /** Pearson tariff scale (sedan 1.0, SUV 1.3, limo 2.5 …). */
+  tariff_multiplier: string;
   capacity: string;
   luggage: string;
   description: string;
@@ -36,6 +42,9 @@ const EMPTY_FORM: VehicleForm = {
   type: "sedan",
   base_rate: "",
   hourly_rate: "",
+  per_km_rate: "",
+  min_fare: "",
+  tariff_multiplier: "1.0",
   capacity: "3",
   luggage: "2",
   description: "",
@@ -146,6 +155,9 @@ function Fleet() {
       type: v.type as VehicleType,
       base_rate: String(v.base_rate),
       hourly_rate: v.hourly_rate != null ? String(v.hourly_rate) : "",
+      per_km_rate: v.per_km_rate != null ? String(v.per_km_rate) : "",
+      min_fare: v.min_fare != null ? String(v.min_fare) : "",
+      tariff_multiplier: v.tariff_multiplier != null ? String(v.tariff_multiplier) : "1.0",
       capacity: String(v.capacity),
       luggage: String(v.luggage),
       description: v.description ?? "",
@@ -166,11 +178,17 @@ function Fleet() {
   const parseForm = () => {
     const base = Number(form.base_rate);
     const hourly = form.hourly_rate.trim() === "" ? null : Number(form.hourly_rate);
+    const perKm = form.per_km_rate.trim() === "" ? null : Number(form.per_km_rate);
+    const minFare = form.min_fare.trim() === "" ? null : Number(form.min_fare);
+    const multiplier = Number(form.tariff_multiplier);
     const capacity = Number(form.capacity);
     const luggage = Number(form.luggage);
     if (!form.name.trim()) throw new Error("Give the class a name.");
     if (!Number.isFinite(base) || base <= 0) throw new Error("Base rate must be a positive amount.");
     if (hourly !== null && (!Number.isFinite(hourly) || hourly <= 0)) throw new Error("Hourly rate must be positive, or left empty.");
+    if (perKm !== null && (!Number.isFinite(perKm) || perKm <= 0 || perKm > 50)) throw new Error("Per-km rate must be between $0 and $50, or left empty to use the global rate.");
+    if (minFare !== null && (!Number.isFinite(minFare) || minFare < 0)) throw new Error("Minimum fare can't be negative — leave it empty for no floor.");
+    if (!Number.isFinite(multiplier) || multiplier <= 0 || multiplier > 10) throw new Error("Tariff multiplier must be between 0 and 10 (sedan is 1.0).");
     if (!Number.isInteger(capacity) || capacity < 1) throw new Error("Capacity must be at least 1.");
     if (!Number.isInteger(luggage) || luggage < 0) throw new Error("Luggage can't be negative.");
     // Shared convention: features[0] = model line, the rest are amenities.
@@ -186,6 +204,9 @@ function Fleet() {
       type: form.type,
       base_rate: base,
       hourly_rate: hourly,
+      per_km_rate: perKm,
+      min_fare: minFare,
+      tariff_multiplier: multiplier,
       capacity,
       luggage,
       description: form.description.trim() || null,
@@ -387,6 +408,27 @@ function Fleet() {
                     <span className="mt-1 block text-center text-[10px] uppercase tracking-wider text-white/45">Per hour</span>
                   </label>
                   <label className="block">
+                    <div className="flex items-center gap-1.5 rounded-sm border border-white/15 bg-white/[0.06] px-3 py-2">
+                      <span className="text-sm text-white/60">$</span>
+                      <input value={form.per_km_rate} onChange={(e) => set("per_km_rate")(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="global" className="w-full bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none" />
+                    </div>
+                    <span className="mt-1 block text-center text-[10px] uppercase tracking-wider text-white/45">Per km</span>
+                  </label>
+                  <label className="block">
+                    <div className="flex items-center gap-1.5 rounded-sm border border-white/15 bg-white/[0.06] px-3 py-2">
+                      <span className="text-sm text-white/60">$</span>
+                      <input value={form.min_fare} onChange={(e) => set("min_fare")(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="none" className="w-full bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none" />
+                    </div>
+                    <span className="mt-1 block text-center text-[10px] uppercase tracking-wider text-white/45">Min fare</span>
+                  </label>
+                  <label className="block">
+                    <div className="flex items-center gap-1.5 rounded-sm border border-white/15 bg-white/[0.06] px-3 py-2">
+                      <span className="text-sm text-white/60">×</span>
+                      <input value={form.tariff_multiplier} onChange={(e) => set("tariff_multiplier")(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="1.0" className="w-full bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none" />
+                    </div>
+                    <span className="mt-1 block text-center text-[10px] uppercase tracking-wider text-white/45">Tariff scale</span>
+                  </label>
+                  <label className="block">
                     <input value={form.capacity} onChange={(e) => set("capacity")(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className={`${inputDark} text-center`} />
                     <span className="mt-1 block text-center text-[10px] uppercase tracking-wider text-white/45">Seats</span>
                   </label>
@@ -395,6 +437,11 @@ function Fleet() {
                     <span className="mt-1 block text-center text-[10px] uppercase tracking-wider text-white/45">Bags</span>
                   </label>
                 </div>
+                <p className="mt-2 text-[11px] text-white/40">
+                  Per km blank → the global one-way rate from Admin → Rates. Min fare floors one-way and hourly quotes (never
+                  Pearson tariffs). Tariff scale multiplies the published Pearson tariff for this class — sedan 1.0, SUV 1.3,
+                  stretch 2.5.
+                </p>
               </div>
 
               {/* 4 — what's in the class */}

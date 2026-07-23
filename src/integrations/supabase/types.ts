@@ -456,7 +456,10 @@ export type Database = {
           image_url: string | null
           is_active: boolean
           luggage: number
+          min_fare: number | null
           name: string
+          per_km_rate: number | null
+          tariff_multiplier: number
           sort_order: number
           type: Database["public"]["Enums"]["vehicle_type"]
           updated_at: string
@@ -472,7 +475,10 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           luggage?: number
+          min_fare?: number | null
           name: string
+          per_km_rate?: number | null
+          tariff_multiplier?: number
           sort_order?: number
           type: Database["public"]["Enums"]["vehicle_type"]
           updated_at?: string
@@ -488,7 +494,10 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           luggage?: number
+          min_fare?: number | null
           name?: string
+          per_km_rate?: number | null
+          tariff_multiplier?: number
           sort_order?: number
           type?: Database["public"]["Enums"]["vehicle_type"]
           updated_at?: string

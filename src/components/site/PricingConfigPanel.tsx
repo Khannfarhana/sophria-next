@@ -8,6 +8,7 @@ import { publishPricingConfigAction } from "@/lib/pricing-actions";
 import { priceBreakdown } from "@/lib/pricing";
 import { rideMargin, type PricingConfig } from "@/lib/pricing-config";
 import { resolvePearsonTariff } from "@/lib/tariff";
+import { useTariffDestinations } from "@/hooks/use-tariff-destinations";
 import { useAuth } from "@/lib/use-auth";
 
 /**
@@ -42,7 +43,8 @@ const GROUPS: { title: string; blurb?: string; open: boolean; fields: Field[] }[
     blurb: "Your own retail rates — the everyday levers.",
     open: true,
     fields: [
-      { key: "retailPerKm", col: "retail_per_km", label: "One-way rate, per km", prefix: "$", unit: "/km", hint: "Your rate. Not the GTAA's." },
+      { key: "retailPerKm", col: "retail_per_km", label: "One-way rate, per km", prefix: "$", unit: "/km", hint: "The fleet-wide rate. A vehicle with its own per-km rate (Admin → Fleet) overrides this." },
+      { key: "onewayFreeKm", col: "oneway_free_km", label: "Included km on one-way", unit: "km", hint: "Kilometres the base fare covers before per-km billing starts. 0 bills from the first km." },
       { key: "hourlyMinHours", col: "hourly_min_hours", label: "Hourly minimum", unit: "hours" },
     ],
   },
@@ -62,6 +64,7 @@ const GROUPS: { title: string; blurb?: string; open: boolean; fields: Field[] }[
     fields: [
       { key: "yyzAirportFee", col: "yyz_airport_fee", label: "GTAA airport fee", prefix: "$", hint: "Passed through to the passenger and remitted to the airport — excluded from the driver's share." },
       { key: "airportMeetGreet", col: "airport_meet_greet", label: "Meet & greet", prefix: "$", hint: "Non-Pearson airports. Market charges $45–$80." },
+      { key: "airportFreeKm", col: "airport_free_km", label: "Airport free km", unit: "km", hint: "Non-Pearson formula only — km included before per-km billing." },
       { key: "tariffMarkupRate", col: "tariff_markup_rate", label: "Markup on Pearson tariffs", pct: true, unit: "%", hint: "Tariff fares only — never hourly or one-way." },
     ],
   },
@@ -73,6 +76,7 @@ const GROUPS: { title: string; blurb?: string; open: boolean; fields: Field[] }[
       { key: "tariffPerKm", col: "tariff_per_km", label: "Tariff per km (outside zone map)", prefix: "$", unit: "/km", hint: "Published GTAA rate: $2.01/km." },
       { key: "tariffInZoneBase", col: "tariff_in_zone_base", label: "In-zone base", prefix: "$" },
       { key: "tariffMin", col: "tariff_min", label: "Minimum tariff", prefix: "$" },
+      { key: "pearsonRadiusKm", col: "pearson_radius_km", label: "Pearson radius", unit: "km", hint: "How close to the terminals counts as “at the airport”." },
       { key: "extraPassengerSurcharge", col: "extra_passenger_surcharge", label: "Extra passenger / baggage surcharge", prefix: "$", hint: "Applied automatically: >4 passengers or bags over the vehicle's rating, once per trip." },
     ],
   },
@@ -116,6 +120,7 @@ export function PricingConfigPanel({ config }: { config: PricingConfig }) {
   const [reason, setReason] = useState("");
   const [pending, start] = useTransition();
   const qc = useQueryClient();
+  const tariffDestinations = useTariffDestinations();
 
   // The draft, resolved into a real config the fare engine can price with.
   const next = useMemo<PricingConfig>(() => {
@@ -138,11 +143,16 @@ export function PricingConfigPanel({ config }: { config: PricingConfig }) {
     ([["Sedan", SEDAN], ["SUV", SUV]] as const).map(([vn, v]) => {
       // Returns the SEDAN tariff — quote() applies the vehicle's class
       // multiplier, so this is resolved once per trip, not per vehicle.
-      const tariff = resolvePearsonTariff({
-        pickup: "Toronto Pearson International Airport Terminal 3",
-        dropoff: s.dropoff, pickupCoords: T3, dropoffCoords: s.coords,
-        distanceKm: s.km,
-      });
+      const tariff = resolvePearsonTariff(
+        {
+          pickup: "Toronto Pearson International Airport Terminal 3",
+          dropoff: s.dropoff, pickupCoords: T3, dropoffCoords: s.coords,
+          distanceKm: s.km,
+        },
+        // Priced with the DRAFT config so the tariff-machinery knobs move the
+        // preview too, and with the live destination table.
+        { cfg: next, destinations: tariffDestinations },
+      );
       const before = priceBreakdown("airport", v, { distanceKm: s.km, tariff }, config);
       const after = priceBreakdown("airport", v, { distanceKm: s.km, tariff }, next);
       const m = rideMargin({ total: after.total, hst: after.hst, airportFee: after.airportFee, driverRate: next.defaultDriverPayoutRate, config: next });

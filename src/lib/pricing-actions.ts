@@ -7,11 +7,11 @@ import { invalidatePricingConfig } from "@/lib/pricing-config.server";
 import { PRICING_CONFIG_COLUMNS } from "@/lib/pricing-config";
 
 /**
- * Publishing the rate card.
+ * Publishing the rate card, and managing the out-of-town tariff table.
  *
  * Every export of a "use server" module is a public POST endpoint, so this file
- * exports exactly one function and gates it on the admin role in code. The RLS
- * policy is the second layer, not the first.
+ * exports only the pricing mutations and gates each on the pricing role in
+ * code. The RLS policy is the second layer, not the first.
  */
 
 function svc() {
@@ -30,6 +30,7 @@ const NUMERIC_LIMITS: Record<string, [min: number, max: number]> = {
   airport_free_km: [0, 200],
   tariff_markup_rate: [0, 2],
   retail_per_km: [0, 50],
+  oneway_free_km: [0, 200],
   hourly_min_hours: [1, 24],
   tariff_per_km: [0, 50],
   tariff_in_zone_base: [0, 500],
@@ -144,4 +145,45 @@ export async function publishPricingConfigAction(input: PublishPricingInput) {
   revalidatePath("/refund-policy");
   revalidatePath("/pricing");
   return { success: true, id: inserted.id as string };
+}
+
+/* ------------------------- tariff destinations ------------------------- */
+
+async function requirePricingRole() {
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+  if (!session.user.roles?.includes("pricing")) {
+    throw new Error("Unauthorized: changing rates needs the pricing role.");
+  }
+  return session;
+}
+
+/**
+ * Add or reprice a named out-of-town destination. `name` is the primary key,
+ * so saving an existing name updates its tariff. Range mirrors the table's
+ * CHECK constraint. Values are TAX-INCLUSIVE, as the published card's are.
+ */
+export async function upsertTariffDestinationAction(name: string, tariff: number) {
+  const session = await requirePricingRole();
+  const clean = String(name ?? "").trim();
+  if (clean.length < 2 || clean.length > 80) throw new Error("Destination name must be 2–80 characters.");
+  const n = Number(tariff);
+  if (!Number.isFinite(n) || n < 0 || n > 5000) throw new Error("Tariff must be between $0 and $5,000.");
+
+  const { error } = await svc().from("tariff_destinations").upsert(
+    { name: clean, tariff: n, updated_at: new Date().toISOString(), updated_by: session.user.id },
+    { onConflict: "name" },
+  );
+  if (error) throw new Error(error.message);
+  return { success: true };
+}
+
+/** Remove a destination — trips there fall back to the in-zone distance model. */
+export async function deleteTariffDestinationAction(name: string) {
+  await requirePricingRole();
+  const clean = String(name ?? "").trim();
+  if (!clean) throw new Error("Destination name is required.");
+  const { error } = await svc().from("tariff_destinations").delete().eq("name", clean);
+  if (error) throw new Error(error.message);
+  return { success: true };
 }

@@ -53,7 +53,7 @@ function Dashboard() {
       // the detail dialog fetches it via getBookingOtpAction.
       const { data, error } = await supabase
         .from("bookings")
-        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, fare_estimate, base_fare, markup_amount, airport_fee, tax_amount, tip, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, stops, vehicles(name, type, base_rate, hourly_rate)")
+        .select("id, reference, customer_id, driver_id, vehicle_id, trip_type, pickup_location, dropoff_location, pickup_datetime, duration_hours, flight_number, fare_estimate, base_fare, markup_amount, airport_fee, tax_amount, tip, passenger_name, passenger_phone, special_requests, status, payment_status, rejection_reason, rejection_notes, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, stops, vehicles(name, type, base_rate, hourly_rate, per_km_rate, min_fare, tariff_multiplier)")
         // Filter by owner explicitly. This relied on RLS alone, but the
         // bookings policy also (correctly) grants a driver their ASSIGNED
         // rides — so anyone holding both roles saw their driver work listed
