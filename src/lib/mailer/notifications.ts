@@ -415,6 +415,16 @@ export function notifyPaymentCaptureFailed(bookingId: string) {
   );
 }
 
+/** A duplicate charge landed on an already-settled booking and was auto-refunded. */
+export function notifyDuplicatePaymentRefunded(bookingId: string, detail: string) {
+  return notifyAdminPaymentIssue(
+    bookingId,
+    "a duplicate payment was received and automatically refunded",
+    `${detail} The booking's recorded payment state is unchanged. Verify the refund landed in Stripe; ` +
+      "if the refund itself failed it is logged server-side and must be issued by hand.",
+  );
+}
+
 /** A hold released BEFORE the ride — the booking is no longer funded. */
 export function notifyPaymentHoldReleased(bookingId: string) {
   return notifyAdminPaymentIssue(

@@ -4,7 +4,7 @@ import type Stripe from "stripe";
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getStripe } from "@/lib/stripe";
-import { notifyPaymentReceived, notifyPaymentHoldReleased } from "@/lib/mailer/notifications";
+import { notifyPaymentReceived, notifyPaymentHoldReleased, notifyDuplicatePaymentRefunded } from "@/lib/mailer/notifications";
 
 function svc() {
   return createClient(
@@ -354,6 +354,73 @@ export async function markBookingPaid(opts: {
  * signature, verifyCheckoutSessionAction by retrieving the session from Stripe
  * and checking ownership.
  */
+/**
+ * A charge landed on a booking whose payment state was ALREADY settled by a
+ * different payment. Two ways this genuinely happens:
+ *
+ *   - two live sessions for one booking (e.g. a full-fare session opened, then
+ *     the deposit paid; the stale full session stays payable for up to 24h)
+ *   - the balance paid online in an open tab moments after the driver
+ *     collected it in cash and completed the ride
+ *
+ * The conditional mark* writes correctly refuse the second write — but the
+ * money HAS been charged, and refusing the write used to be the end of it: an
+ * unrecorded charge, invisible everywhere. Distinguish the benign case (the
+ * webhook and the success-redirect settling the SAME payment — its intent is
+ * in the ledger) from real duplicates, refund the duplicate outright, and tell
+ * an admin.
+ */
+async function reconcileOrphanCharge(bookingId: string, paymentIntentId: string, kind: string): Promise<void> {
+  try {
+    const admin = svc();
+    // Benign twin detection FIRST, and against the booking row rather than the
+    // ledger alone: the webhook and the success-redirect settle the same
+    // session near-simultaneously, and the winner's claim UPDATE (which
+    // records stripe_payment_id / balance_method atomically) lands before its
+    // ledger insert. Checking only the ledger in that gap would refund a
+    // legitimate payment.
+    const { data: bk } = await admin
+      .from("bookings")
+      .select("stripe_payment_id, balance_method")
+      .eq("id", bookingId)
+      .single();
+    if (bk?.stripe_payment_id === paymentIntentId) return; // same payment, settled twice
+    // Balance twin: the claim doesn't store the balance intent, but a cash
+    // double-collection — the case this exists for — always shows 'cash' here.
+    if (kind === "balance" && bk?.balance_method === "online") return;
+
+    const { data } = await admin.from("payments").select("id").eq("stripe_id", paymentIntentId).limit(1);
+    if (data && data.length > 0) return; // recorded in the ledger — nothing owed
+
+    let detail = `A second ${kind} payment (${paymentIntentId}) arrived after this booking was already settled.`;
+    if (paymentIntentId.startsWith("pi_")) {
+      await getStripe().refunds.create(
+        {
+          payment_intent: paymentIntentId,
+          reason: "duplicate",
+          metadata: { booking_id: bookingId, duplicate_of: kind },
+        },
+        { idempotencyKey: `orphan:${paymentIntentId}` },
+      );
+      detail += " It has been refunded in full.";
+      console.error(`[payments] duplicate ${kind} charge on booking ${bookingId} refunded (${paymentIntentId})`);
+    } else {
+      detail += " It could NOT be auto-refunded (no payment intent id) — refund it by hand.";
+      console.error(`[payments] duplicate ${kind} charge on booking ${bookingId} is not refundable automatically (${paymentIntentId})`);
+    }
+    after(() => notifyDuplicatePaymentRefunded(bookingId, detail));
+  } catch (err) {
+    // The refund failing must be loud: this exact charge is recorded nowhere.
+    console.error(`[payments] FAILED to refund duplicate ${kind} charge ${paymentIntentId} on booking ${bookingId}:`, err);
+    after(() =>
+      notifyDuplicatePaymentRefunded(
+        bookingId,
+        `A duplicate ${kind} payment (${paymentIntentId}) arrived after settlement and the automatic refund FAILED — refund it by hand.`,
+      ),
+    );
+  }
+}
+
 export async function settleCheckoutSession(
   checkout: Stripe.Checkout.Session,
 ): Promise<{ paid: boolean; held?: boolean }> {
@@ -371,21 +438,25 @@ export async function settleCheckoutSession(
   if (purpose === "deposit" || purpose === "balance") {
     if (checkout.payment_status !== "paid") return { paid: false };
     if (purpose === "deposit") {
-      await markBookingDepositPaid({
+      const r = await markBookingDepositPaid({
         bookingId,
         paymentIntentId: paymentIntentId ?? checkout.id,
         depositCents: Number(checkout.metadata?.deposit_cents ?? checkout.amount_total ?? 0),
         balanceCents: Number(checkout.metadata?.balance_cents ?? 0),
         currency: checkout.currency ?? "cad",
       });
+      if (r.alreadyPaid) await reconcileOrphanCharge(bookingId, paymentIntentId ?? checkout.id, "deposit");
     } else {
-      await markBookingBalancePaid({
+      const r = await markBookingBalancePaid({
         bookingId,
         paymentIntentId: paymentIntentId ?? checkout.id,
         amountCents: checkout.amount_total ?? 0,
         currency: checkout.currency ?? "cad",
         tipCents,
       });
+      // The classic race: balance paid online in an open tab right after the
+      // chauffeur collected it in cash — the customer must not pay twice.
+      if (r.alreadyPaid) await reconcileOrphanCharge(bookingId, paymentIntentId ?? checkout.id, "balance");
     }
     return { paid: true, held: false };
   }
@@ -393,20 +464,38 @@ export async function settleCheckoutSession(
   if (paymentIntentId) {
     const intent = await getStripe().paymentIntents.retrieve(paymentIntentId);
     if (intent.status === "requires_capture") {
-      await markBookingAuthorized({ bookingId, paymentIntentId, tipCents });
+      const r = await markBookingAuthorized({ bookingId, paymentIntentId, tipCents });
+      if (r.already) {
+        // Nothing was charged (it's a hold), but a DUPLICATE hold parks the
+        // customer's money for ~7 days. Same-intent double-settle is benign;
+        // a different intent means a second live session was paid — release it.
+        const admin = svc();
+        const { data: bk } = await admin.from("bookings").select("stripe_payment_id").eq("id", bookingId).single();
+        if (bk && bk.stripe_payment_id !== paymentIntentId) {
+          console.error(`[payments] duplicate hold on booking ${bookingId} — cancelling ${paymentIntentId}`);
+          await releaseBookingHold(bookingId, paymentIntentId);
+          after(() =>
+            notifyDuplicatePaymentRefunded(
+              bookingId,
+              `A second card hold (${paymentIntentId}) was placed after this booking was already funded; the duplicate hold has been released.`,
+            ),
+          );
+        }
+      }
       return { paid: true, held: true };
     }
   }
 
   // Immediate-capture path (booking beyond the hold window, or a legacy session).
   if (checkout.payment_status !== "paid") return { paid: false };
-  await markBookingPaid({
+  const r = await markBookingPaid({
     bookingId,
     paymentIntentId: paymentIntentId ?? checkout.id,
     amountCents: checkout.amount_total ?? 0,
     currency: checkout.currency ?? "cad",
     tipCents,
   });
+  if (r.alreadyPaid) await reconcileOrphanCharge(bookingId, paymentIntentId ?? checkout.id, "payment");
   return { paid: true, held: false };
 }
 

@@ -103,27 +103,30 @@ export async function mockAdminKpi() {
     todays: db.bookings.filter((b) => +new Date(b.created_at) >= +today).length,
     active: db.drivers.filter((d) => d.is_available && d.is_verified).length,
     revenue: db.bookings
-      .filter((b) => +new Date(b.created_at) >= +monthStart)
+      .filter((b) => +new Date(b.created_at) >= +monthStart && b.status !== "cancelled" && b.status !== "rejected")
       .reduce((s, b) => s + Number(b.fare_estimate ?? 0), 0),
     pending: db.drivers.filter((d) => !d.is_verified).length,
   };
 }
 
-export async function mockAdminWeekly() {
+/** Raw booking rows for the earnings dashboard — same shape the live query selects. */
+export async function mockEarningsRows(sinceIso: string) {
   const db = readDB();
-  const start = new Date();
-  start.setDate(start.getDate() - 30);
-  const buckets: Record<string, { week: string; bookings: number; revenue: number }> = {};
-  db.bookings
-    .filter((b) => +new Date(b.created_at) >= +start)
-    .forEach((b) => {
-      const d = new Date(b.created_at);
-      const wk = `W${Math.ceil(d.getDate() / 7)}`;
-      if (!buckets[wk]) buckets[wk] = { week: wk, bookings: 0, revenue: 0 };
-      buckets[wk].bookings += 1;
-      buckets[wk].revenue += Number(b.fare_estimate ?? 0);
-    });
-  return Object.values(buckets);
+  return db.bookings
+    .filter((b) => b.pickup_datetime >= sinceIso)
+    .map((b) => ({
+      pickup_datetime: b.pickup_datetime,
+      fare_estimate: b.fare_estimate,
+      airport_fee: b.airport_fee,
+      driver_payout: b.driver_payout,
+      tip: b.tip,
+      status: b.status,
+      payment_status: b.payment_status,
+      payment_mode: b.payment_mode,
+      balance_method: b.balance_method,
+      cancellation_penalty: b.cancellation_penalty,
+      driver_id: b.driver_id,
+    }));
 }
 
 /* ----------------------------- writes ---------------------------- */

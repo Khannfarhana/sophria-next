@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SophRia Limousine Services — Platform Overview & Operating Guide</title>
+<style>
+  /* ── Tokens: light is the baseline; dark + explicit toggles override ── */
+  :root {
+    --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+
+    --ground: #f6f2ea;
+    --surface: #fbf8f2;
+    --surface-2: #efe9dd;
+    --ink: #211f1a;
+    --ink-soft: #4f4a3c;
+    --ink-mute: #857c69;
+    --line: rgba(120, 95, 50, 0.20);
+    --line-soft: rgba(120, 95, 50, 0.11);
+    --gold: #9a7736;
+    --gold-bright: #b8924c;
+    --gold-wash: rgba(154, 119, 54, 0.08);
+    --sage: #5c7a48;
+    --amber: #b06f27;
+    --shadow: 0 1px 2px rgba(40, 30, 10, 0.05), 0 12px 34px -22px rgba(40, 30, 10, 0.30);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0f0f13;
+      --surface: #16161c;
+      --surface-2: #1e1e26;
+      --ink: #ece7dc;
+      --ink-soft: #b7afa0;
+      --ink-mute: #837b6d;
+      --line: rgba(201, 167, 106, 0.18);
+      --line-soft: rgba(201, 167, 106, 0.10);
+      --gold: #c9a76a;
+      --gold-bright: #e7d3a8;
+      --gold-wash: rgba(201, 167, 106, 0.07);
+      --sage: #93b07f;
+      --amber: #d99a4e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 44px -26px rgba(0, 0, 0, 0.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f0f13; --surface: #16161c; --surface-2: #1e1e26;
+    --ink: #ece7dc; --ink-soft: #b7afa0; --ink-mute: #837b6d;
+    --line: rgba(201, 167, 106, 0.18); --line-soft: rgba(201, 167, 106, 0.10);
+    --gold: #c9a76a; --gold-bright: #e7d3a8; --gold-wash: rgba(201, 167, 106, 0.07);
+    --sage: #93b07f; --amber: #d99a4e;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 18px 44px -26px rgba(0,0,0,0.8);
+  }
+  :root[data-theme="light"] {
+    --ground: #f6f2ea; --surface: #fbf8f2; --surface-2: #efe9dd;
+    --ink: #211f1a; --ink-soft: #4f4a3c; --ink-mute: #857c69;
+    --line: rgba(120,95,50,0.20); --line-soft: rgba(120,95,50,0.11);
+    --gold: #9a7736; --gold-bright: #b8924c; --gold-wash: rgba(154,119,54,0.08);
+    --sage: #5c7a48; --amber: #b06f27;
+    --shadow: 0 1px 2px rgba(40,30,10,0.05), 0 12px 34px -22px rgba(40,30,10,0.30);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16.5px;
+    line-height: 1.68;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 56px); }
+
+  /* ── Masthead ── */
+  .mast {
+    border-bottom: 1px solid var(--line);
+    padding: clamp(48px, 8vw, 104px) 0 clamp(34px, 5vw, 60px);
+    position: relative;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 22px;
+  }
+  .mast h1 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(38px, 7vw, 74px);
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 4px;
+  }
+  .mast h1 .svc { display: block; font-size: 0.42em; letter-spacing: 0.06em; color: var(--ink-soft); font-weight: 500; margin-top: 12px; }
+  .mast .lede {
+    font-size: clamp(17px, 2.4vw, 21px);
+    color: var(--ink-soft);
+    max-width: 46ch;
+    margin: 26px 0 0;
+    line-height: 1.5;
+  }
+  .mast .rule { height: 2px; width: 92px; background: linear-gradient(90deg, var(--gold), transparent); margin: 32px 0 0; }
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--ink-mute);
+    letter-spacing: 0.04em;
+    margin-top: 30px;
+    display: flex; flex-wrap: wrap; gap: 8px 22px;
+  }
+  .meta b { color: var(--ink-soft); font-weight: 600; }
+
+  .themer {
+    position: fixed; top: 16px; right: 16px; z-index: 50;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    background: var(--surface); color: var(--ink-soft);
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 8px 14px; cursor: pointer;
+  }
+  .themer:hover { color: var(--gold); border-color: var(--gold); }
+  .themer:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  /* ── Layout: content + sticky TOC ── */
+  .shell { display: grid; grid-template-columns: 1fr; gap: 0; padding: clamp(36px, 5vw, 64px) 0 96px; }
+  @media (min-width: 1000px) {
+    .shell { grid-template-columns: 232px 1fr; gap: clamp(40px, 5vw, 72px); align-items: start; }
+    .toc { position: sticky; top: 28px; }
+  }
+  .toc-title { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-mute); margin: 0 0 16px; }
+  .toc ol { list-style: none; margin: 0; padding: 0; counter-reset: toc; display: flex; flex-direction: column; gap: 2px; }
+  .toc a {
+    display: flex; gap: 10px; align-items: baseline;
+    text-decoration: none; color: var(--ink-soft);
+    font-size: 14px; line-height: 1.35; padding: 6px 10px; border-radius: 7px;
+    border-left: 2px solid transparent;
+  }
+  .toc a::before { counter-increment: toc; content: counter(toc, decimal-leading-zero); font-family: var(--font-mono); font-size: 11px; color: var(--gold); flex: none; }
+  .toc a:hover { background: var(--gold-wash); color: var(--ink); }
+  .toc a:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+  @media (max-width: 999px) {
+    .toc { border: 1px solid var(--line); border-radius: 14px; padding: 20px 18px; margin-bottom: 40px; background: var(--surface); }
+    .toc ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  }
+
+  /* ── Sections ── */
+  main { min-width: 0; }
+  section { padding: clamp(30px, 4vw, 46px) 0; border-top: 1px solid var(--line-soft); }
+  section:first-child { border-top: none; padding-top: 0; }
+  .sec-no { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.18em; color: var(--gold); text-transform: uppercase; display: block; margin-bottom: 10px; }
+  h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 4vw, 38px); line-height: 1.1; letter-spacing: -0.01em; text-wrap: balance; margin: 0 0 6px; }
+  h3 { font-family: var(--font-display); font-weight: 600; font-size: clamp(19px, 2.6vw, 24px); letter-spacing: -0.005em; margin: 40px 0 4px; }
+  h4 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); margin: 26px 0 10px; font-weight: 700; }
+  p { margin: 14px 0; max-width: 68ch; }
+  .intro { font-size: clamp(16.5px, 2vw, 18.5px); color: var(--ink-soft); max-width: 66ch; }
+  strong { color: var(--ink); font-weight: 650; }
+  a.inline { color: var(--gold); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line); }
+  code { font-family: var(--font-mono); font-size: 0.86em; background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color: var(--ink); }
+
+  /* ── Reusable pieces ── */
+  .cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 24px 0; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 24px; box-shadow: var(--shadow); }
+  .card .k { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); }
+  .card h5 { font-family: var(--font-display); font-size: 21px; font-weight: 600; margin: 10px 0 8px; }
+  .card p { margin: 0; font-size: 14.5px; color: var(--ink-soft); }
+
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--gold); background: var(--gold-wash); border-radius: 0 12px 12px 0; padding: 16px 20px; margin: 22px 0; }
+  .callout.decide { border-left-color: var(--amber); }
+  .callout .tag { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); display: block; margin-bottom: 6px; }
+  .callout.decide .tag { color: var(--amber); }
+  .callout p { margin: 0; font-size: 15px; }
+
+  .scroll { overflow-x: auto; margin: 22px 0; border: 1px solid var(--line); border-radius: 14px; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 460px; }
+  thead th { text-align: left; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mute); font-weight: 600; padding: 13px 18px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tbody td { padding: 13px 18px; border-bottom: 1px solid var(--line-soft); vertical-align: top; color: var(--ink-soft); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td strong { color: var(--ink); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+  .money { font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+
+  .pill { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; padding: 2px 9px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+  .pill.auto { color: var(--sage); border-color: color-mix(in srgb, var(--sage) 45%, transparent); background: color-mix(in srgb, var(--sage) 12%, transparent); }
+  .pill.ref { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); background: color-mix(in srgb, var(--amber) 12%, transparent); }
+  .pill.gold { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 45%, transparent); background: var(--gold-wash); }
+
+  /* ── Step lists (how-to guides) ── */
+  .steps { counter-reset: step; margin: 20px 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .steps > li { position: relative; padding: 14px 0 14px 52px; border-bottom: 1px solid var(--line-soft); }
+  .steps > li:last-child { border-bottom: none; }
+  .steps > li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: 12px;
+    width: 32px; height: 32px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+    color: var(--gold); border: 1px solid var(--line); background: var(--surface);
+  }
+  .steps b { display: block; color: var(--ink); font-weight: 650; margin-bottom: 2px; }
+  .steps span { color: var(--ink-soft); font-size: 15px; }
+
+  /* ── Flow diagram (hand-built, no JS) ── */
+  .flow { overflow-x: auto; margin: 26px 0; padding: 4px; }
+  .flow-track { display: flex; align-items: stretch; gap: 0; min-width: min-content; }
+  .node {
+    flex: none; min-width: 120px; max-width: 150px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 14px; text-align: center; box-shadow: var(--shadow);
+  }
+  .node .n-k { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); display: block; margin-bottom: 6px; }
+  .node .n-t { font-size: 13.5px; line-height: 1.3; color: var(--ink); }
+  .node .n-s { font-size: 11.5px; color: var(--ink-mute); margin-top: 5px; display: block; }
+  .arrow { flex: none; align-self: center; width: 30px; text-align: center; color: var(--gold); font-size: 18px; }
+  .node.accent { border-color: var(--gold); background: var(--gold-wash); }
+
+  /* ── Calc block ── */
+  .calc { font-family: var(--font-mono); font-size: 13.5px; line-height: 1.9; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; margin: 22px 0; overflow-x: auto; }
+  .calc .row { display: flex; justify-content: space-between; gap: 24px; white-space: nowrap; }
+  .calc .row .lbl { color: var(--ink-soft); }
+  .calc .row .val { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .calc .row.total { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; }
+  .calc .row.total .lbl, .calc .row.total .val { color: var(--gold-bright); font-weight: 600; }
+  .calc .row.total .val { color: var(--gold); }
+  .calc .minus .lbl::before { content: "– "; color: var(--ink-mute); }
+  .calc .note { color: var(--ink-mute); }
+
+  /* ── State grid (payment) ── */
+  .states { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); margin: 22px 0; }
+  .state { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; background: var(--surface); }
+  .state .s-name { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; color: var(--gold); text-transform: uppercase; }
+  .state p { margin: 8px 0 0; font-size: 14px; color: var(--ink-soft); }
+
+  hr.soft { border: none; border-top: 1px solid var(--line-soft); margin: 34px 0; }
+
+  footer { border-top: 1px solid var(--line); padding: 40px 0 64px; color: var(--ink-mute); font-size: 13.5px; }
+  footer .fr { height: 2px; width: 60px; background: linear-gradient(90deg, var(--gold), transparent); margin-bottom: 22px; }
+  footer p { max-width: 62ch; }
+
+  @media print {
+    .themer, .toc { display: none; }
+    body { font-size: 11pt; background: #fff; color: #000; }
+    section, .mast { break-inside: avoid-page; }
+    .shell { grid-template-columns: 1fr; }
+    .card, .node, .calc, .scroll, .callout { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<button class="themer" id="themer" aria-label="Switch light or dark theme">Theme</button>
+
+<header class="mast">
+  <div class="wrap">
+    <p class="eyebrow">Platform Overview &amp; Operating Guide</p>
+    <h1>SophRia<span class="svc">Limousine Services</span></h1>
+    <p class="lede">Your booking platform, how it works end&#8209;to&#8209;end, and how to run it day&#8209;to&#8209;day — for you, your dispatch team, your chauffeurs, and your customers.</p>
+    <div class="rule"></div>
+    <div class="meta">
+      <span><b>Prepared for</b> the SophRia team</span>
+      <span><b>Focus</b> Toronto Pearson (YYZ) transfers</span>
+      <span><b>Version</b> 1.0 · July 2026</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="shell">
+
+  <nav class="toc" aria-label="Contents">
+    <p class="toc-title">Contents</p>
+    <ol>
+      <li><a href="#glance">At a glance</a></li>
+      <li><a href="#journey">A booking, end to end</a></li>
+      <li><a href="#use-customer">Using the app · Customers</a></li>
+      <li><a href="#use-driver">Using the app · Chauffeurs</a></li>
+      <li><a href="#use-admin">Using the app · You &amp; dispatch</a></li>
+      <li><a href="#fares">How fares are calculated</a></li>
+      <li><a href="#payments">Payments &amp; the card hold</a></li>
+      <li><a href="#cancel">Cancellations &amp; refunds</a></li>
+      <li><a href="#rates">Managing your prices</a></li>
+      <li><a href="#margin">What you keep per ride</a></li>
+      <li><a href="#trust">Security &amp; reliability</a></li>
+      <li><a href="#decisions">Decisions we need from you</a></li>
+      <li><a href="#tech">Technical appendix</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- 1 -->
+    <section id="glance">
+      <span class="sec-no">01 · Overview</span>
+      <h2>What the platform is</h2>
+      <p class="intro">A single system that connects three groups of people — your customers, your chauffeurs, and your dispatch team — around one job: booking a luxury airport transfer, taking payment safely, and getting a driver to the door on time.</p>
+
+      <div class="cards">
+        <div class="card">
+          <span class="k">Customers</span>
+          <h5>Book &amp; ride</h5>
+          <p>Choose a trip and vehicle, get an instant quote, pay securely, track the booking, and hand the driver a one&#8209;time code to start the ride.</p>
+        </div>
+        <div class="card">
+          <span class="k">Chauffeurs</span>
+          <h5>Drive &amp; earn</h5>
+          <p>Apply with documents, get approved by you, accept assigned rides, start each ride with the passenger's code, complete it, and get paid automatically.</p>
+        </div>
+        <div class="card">
+          <span class="k">You &amp; dispatch</span>
+          <h5>Run the business</h5>
+          <p>Confirm bookings, assign drivers, adjust fares, review chauffeur applications, and manage your entire rate card from one screen.</p>
+        </div>
+      </div>
+
+      <p>The platform sits between the passenger and the chauffeur. It quotes every airport fare from the <strong>official Toronto Pearson (GTAA) tariff</strong>, holds the money on the customer's card when they book, dispatches a driver, and charges the card once the ride is complete. Roughly <strong>90% of the business is Pearson airport transfers</strong>, and the whole system is tuned around that.</p>
+    </section>
+
+    <!-- 2 -->
+    <section id="journey">
+      <span class="sec-no">02 · The flow</span>
+      <h2>A booking, from tap to payout</h2>
+      <p class="intro">Every ride moves through the same eight stages. Money is held early and only charged when the ride actually happens.</p>
+
+      <div class="flow" role="img" aria-label="Booking flow from Book through to Capture payment">
+        <div class="flow-track">
+          <div class="node"><span class="n-k">Customer</span><span class="n-t">Book</span><span class="n-s">quote + details</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="n-k">Dispatch</span><span class="n-t">Confirm</span><span class="n-s">pay link sent</span></div>
+          <div class="arrow">→</div>
+          <div class="node accent"><span class="n-k">Customer</span><span class="n-t">Pay</span><span class="n-s">card held</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="n-k">Dispatch</span><span class="n-t">Assign</span><span class="n-s">driver picked</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="n-k">Chauffeur</span><span class="n-t">Accept</span><span class="n-s">ride confirmed</span></div>
+          <div class="arrow">→</div>
+          <div class="node accent"><span class="n-k">At pickup</span><span class="n-t">Start</span><span class="n-s">passenger code</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="n-k">Chauffeur</span><span class="n-t">Complete</span><span class="n-s">ride done</span></div>
+          <div class="arrow">→</div>
+          <div class="node accent"><span class="n-k">System</span><span class="n-t">Charge</span><span class="n-s">card captured</span></div>
+        </div>
+      </div>
+
+      <p>Two moments are highlighted in gold: <strong>Pay</strong> (the card is <em>held</em>, not charged) and <strong>Charge</strong> (the held amount is captured after the ride). This "hold now, charge after" model means the customer's money is never taken for a ride that hasn't happened — and it's exactly what you asked for.</p>
+    </section>
+
+    <!-- 3 -->
+    <section id="use-customer">
+      <span class="sec-no">03 · Using the app</span>
+      <h2>For your customers</h2>
+      <p class="intro">The booking flow is six clear steps. A running price is shown the whole way, and the final fare is always recalculated on our servers — the customer can never alter what they're charged.</p>
+
+      <ol class="steps">
+        <li><b>Choose the trip</b><span>Airport, one&#8209;way, or by the hour. Enter pickup and drop&#8209;off — with up to <strong>five stops</strong> along the way. The map draws the exact route.</span></li>
+        <li><b>Pick date &amp; time</b><span>The picker only allows future times; a past time is rejected before they can continue.</span></li>
+        <li><b>Select a vehicle</b><span>Each vehicle shows its own live price for this trip. The SUV leads the list, per your direction.</span></li>
+        <li><b>Passenger details</b><span>Name, phone, number of passengers, and bags. If a party is larger than the vehicle seats, the app says so.</span></li>
+        <li><b>Review &amp; confirm</b><span>A full breakdown — fare, airport fee, HST, tip — before they commit. They receive a booking reference (e.g. <code>SR&#8209;A1B2C3</code>) and a 4&#8209;digit start code.</span></li>
+        <li><b>Pay when confirmed</b><span>Once your dispatch confirms, the customer gets a secure Stripe payment link. Paying <em>holds</em> the amount on their card.</span></li>
+      </ol>
+
+      <h4>After booking, the customer can</h4>
+      <p>Track the ride's status live, see their driver once assigned, <strong>hand the driver their 4&#8209;digit code</strong> to start the ride, view the full fare breakdown, and cancel — with the refund shown up front before they confirm the cancellation.</p>
+
+      <div class="callout">
+        <span class="tag">The start code</span>
+        <p>The passenger reads a 4&#8209;digit code on their screen and gives it to the chauffeur at pickup. The ride can't start without it — proof the right passenger is actually there. Drivers can't see the code themselves.</p>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section id="use-driver">
+      <span class="sec-no">03 · Using the app</span>
+      <h2>For your chauffeurs</h2>
+      <p class="intro">Chauffeurs are your own fleet <em>and</em> partner drivers who bring their own vehicles. Everyone applies, you approve, and only then can they drive.</p>
+
+      <h4>Getting approved</h4>
+      <ol class="steps">
+        <li><b>Apply</b><span>Full Ontario G licence, 3+ years' experience, and vehicle details — class, make, model, year, and limo plate.</span></li>
+        <li><b>Upload documents</b><span>Eleven required items: driver's licence, vehicle&#8209;for&#8209;hire licence, commercial insurance, vehicle safety &amp; ownership, right to work, background&#8209;check consent, and four photos of the vehicle with the plate visible.</span></li>
+        <li><b>Accept the chauffeur terms</b><span>Recorded with a timestamp and version, so there's a clear record of agreement.</span></li>
+        <li><b>Wait for your review</b><span>You see the full application and every document, and approve or decline. Approval grants driver access within about a minute.</span></li>
+      </ol>
+
+      <h4>Working a ride</h4>
+      <ol class="steps">
+        <li><b>Accept the assignment</b><span>When you assign them a ride, they see it in their portal and accept (or decline, which returns it to the pool).</span></li>
+        <li><b>Start with the code</b><span>At pickup, they enter the passenger's 4&#8209;digit code. The ride can only start close to the scheduled time.</span></li>
+        <li><b>Complete the ride</b><span>One tap marks it done. This is what triggers payment capture and their payout.</span></li>
+        <li><b>Get paid</b><span>Their share (default 75% of the fare) plus 100% of any tip is credited automatically. Earnings are tracked in their portal.</span></li>
+      </ol>
+    </section>
+
+    <!-- 5 -->
+    <section id="use-admin">
+      <span class="sec-no">03 · Using the app</span>
+      <h2>For you &amp; your dispatch team</h2>
+      <p class="intro">The admin console is where the business runs. Every action is one clear button with an immediate result.</p>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>What you do</th><th>Where / how</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Confirm a booking</strong></td><td>Bookings list → Confirm</td><td>Sends the customer a secure payment link.</td></tr>
+            <tr><td><strong>Reject a booking</strong></td><td>Bookings list → Reject (with reason)</td><td>Notifies the customer; no charge is made.</td></tr>
+            <tr><td><strong>Assign a chauffeur</strong></td><td>Confirmed booking → Assign</td><td>Only possible once payment is secured. Sends the driver the job.</td></tr>
+            <tr><td><strong>Adjust a fare</strong></td><td>Booking → Change fare (reason required)</td><td>Only before payment. Re&#8209;sends the payment request at the new amount.</td></tr>
+            <tr><td><strong>Set a driver's split</strong></td><td>Driver review → commission</td><td>Sets their share of the fare (default 75%).</td></tr>
+            <tr><td><strong>Review a chauffeur</strong></td><td>Drivers → open application</td><td>See every document; approve to grant driving access.</td></tr>
+            <tr><td><strong>Manage your rates</strong></td><td>Admin → Rates</td><td>Change any price with a live preview. <span class="pill gold">pricing role</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <span class="tag">Two kinds of admin</span>
+        <p>Running dispatch and setting prices are now separate permissions. Everyone on your team today can do both. But the next account you create — say a dispatcher who confirms bookings at 6am — can be given dispatch access <em>without</em> the ability to change what customers are charged.</p>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section id="fares">
+      <span class="sec-no">04 · Pricing</span>
+      <h2>How fares are calculated</h2>
+      <p class="intro">Every price is built the same way, from your rate card. Nothing is guessed, and the customer's device can never change the outcome — the final fare is always computed on our servers.</p>
+
+      <h4>Four kinds of trip</h4>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Trip type</th><th>Based on</th><th>How the base is found</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Pearson airport</strong></td><td>Official GTAA tariff</td><td>Published tariff × vehicle class, then markup + airport fee + HST.</td></tr>
+            <tr><td><strong>Other airport</strong></td><td>Vehicle base rate</td><td>Base + meet&#8209;&amp;&#8209;greet + distance beyond the free kilometres.</td></tr>
+            <tr><td><strong>One&#8209;way</strong></td><td>Vehicle base rate</td><td>Base + distance × your per&#8209;km rate.</td></tr>
+            <tr><td><strong>By the hour</strong></td><td>Vehicle hourly rate</td><td>Hourly rate × hours (2&#8209;hour minimum).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>The Pearson tariff, step by step</h4>
+      <p>For any trip touching Pearson, the system finds the correct published tariff:</p>
+      <div class="flow" role="img" aria-label="How the Pearson tariff is chosen">
+        <div class="flow-track">
+          <div class="node"><span class="n-k">Trip</span><span class="n-t">Touches Pearson?</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="n-k">Named town</span><span class="n-t">One of 136 destinations?</span><span class="n-s">e.g. Barrie $194</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="n-k">Otherwise</span><span class="n-t">Zone or per&#8209;km</span><span class="n-s">$2.01 / km</span></div>
+          <div class="arrow">→</div>
+          <div class="node accent"><span class="n-k">Result</span><span class="n-t">Sedan tariff</span><span class="n-s">scaled by vehicle</span></div>
+        </div>
+      </div>
+      <p>The 136 out&#8209;of&#8209;town tariffs are taken directly from the <strong>official GTAA rate card (February 2024)</strong> and match it exactly. Larger vehicles scale the sedan tariff by class: SUV and Business ×1.3, Stretch Limousine ×2.5, Sprinter ×3.0.</p>
+
+      <h4>How the final fare is assembled</h4>
+      <div class="flow" role="img" aria-label="Fare assembly pipeline">
+        <div class="flow-track">
+          <div class="node"><span class="n-k">Start</span><span class="n-t">Tariff</span><span class="n-s">tax&#8209;included</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="n-k">Step 1</span><span class="n-t">Remove built&#8209;in tax</span><span class="n-s">÷ 1.13</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="n-k">Step 2</span><span class="n-t">Add markup</span><span class="n-s">+30%</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="n-k">Step 3</span><span class="n-t">Add airport fee</span><span class="n-s">+$17.25</span></div>
+          <div class="arrow">→</div>
+          <div class="node accent"><span class="n-k">Step 4</span><span class="n-t">Add HST</span><span class="n-s">+13%</span></div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <span class="tag">An overcharge we corrected</span>
+        <p>The GTAA tariff already includes tax — its own rate card says so. The system had been adding your markup <em>and</em> 13% HST on top of a number that already contained tax, so customers were being <strong>overcharged by ~11%</strong> on airport trips. That's now fixed: tax is applied once. Prices came down and now sit in line with the market.</p>
+      </div>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Trip (Executive Sedan)</th><th class="num">Was</th><th class="num">Now</th></tr></thead>
+          <tbody>
+            <tr><td>Terminal 3 → 1 de Boers Drive</td><td class="num">$100.29</td><td class="num"><strong>$90.99</strong></td></tr>
+            <tr><td>Terminal 3 → Downtown Toronto</td><td class="num">$139.95</td><td class="num"><strong>$126.10</strong></td></tr>
+            <tr><td>Terminal 3 → Barrie</td><td class="num">$304.48</td><td class="num"><strong>$271.69</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Only Pearson tariff trips changed. Hourly and one&#8209;way fares — which already price from your own rate sheet — are untouched.</p>
+
+      <h4>Worked example · T3 → 1 de Boers Drive · Sedan</h4>
+      <div class="calc" aria-label="Sedan fare calculation">
+        <div class="row"><span class="lbl">GTAA sedan tariff (tax&#8209;included)</span><span class="val">$55.00</span></div>
+        <div class="row"><span class="lbl">remove built&#8209;in tax (÷ 1.13)</span><span class="val">$48.67</span></div>
+        <div class="row"><span class="lbl">+ 30% markup</span><span class="val">$14.60</span></div>
+        <div class="row"><span class="lbl">+ airport fee</span><span class="val">$17.25</span></div>
+        <div class="row"><span class="lbl">= subtotal</span><span class="val">$80.52</span></div>
+        <div class="row"><span class="lbl">+ 13% HST</span><span class="val">$10.47</span></div>
+        <div class="row total"><span class="lbl">Total the customer pays</span><span class="val">$90.99</span></div>
+      </div>
+
+      <h4>Extra charges from the tariff</h4>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Charge</th><th>Rule</th><th>Applied</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Extra passenger / baggage</strong></td><td>$15 once per trip — more than 4 passengers, or bags over the vehicle's rating</td><td><span class="pill auto">Automatic</span></td></tr>
+            <tr><td><strong>Extra drop&#8209;off</strong></td><td>$15 per passenger dropped along the way</td><td><span class="pill ref">Dispatch adds</span></td></tr>
+            <tr><td><strong>Requested stop / waiting</strong></td><td>$10 per 10 minutes</td><td><span class="pill ref">Dispatch adds</span></td></tr>
+            <tr><td><strong>Highway 407 tolls</strong></td><td>At cost</td><td><span class="pill ref">Dispatch adds</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The passenger/baggage surcharge is applied automatically and passes through at exactly $15. The others depend on things only known on the day (who got out where, how long a stop took), so dispatch adds them when adjusting the fare.</p>
+    </section>
+
+    <!-- 7 -->
+    <section id="payments">
+      <span class="sec-no">05 · Payments</span>
+      <h2>Hold now, charge after the ride</h2>
+      <p class="intro">When a customer pays, the amount is <em>held</em> on their card — secured but not taken. It's captured only when the ride is completed. Money is never charged for a ride that hasn't happened.</p>
+
+      <div class="states">
+        <div class="state"><span class="s-name">Held</span><p>Customer paid; the amount is reserved on their card. The booking is secured and a driver can be assigned.</p></div>
+        <div class="state"><span class="s-name">Charged</span><p>The ride completed. The held amount is captured and the chauffeur is paid.</p></div>
+        <div class="state"><span class="s-name">Released / refunded</span><p>Cancelled. The hold is released, or a refund is issued against the cancellation policy.</p></div>
+      </div>
+
+      <div class="callout">
+        <span class="tag">One real limit, handled honestly</span>
+        <p>A card hold only lasts about a week. For bookings far in the future — weddings, proms booked months ahead — the card is <strong>charged up front instead</strong>, and the checkout screen says which is happening. If a hold ever lapses before a ride, you're emailed so it can be settled by hand; the customer is never quietly given a free ride.</p>
+      </div>
+
+      <p>The system also protects against the awkward edges automatically: if a fare is changed, any old unpaid payment link is voided so the customer can't pay the previous, lower amount; and if a ride's payment can't be captured, you're alerted rather than the driver being told their completed ride didn't complete.</p>
+    </section>
+
+    <!-- 8 -->
+    <section id="cancel">
+      <span class="sec-no">06 · Cancellations</span>
+      <h2>Cancellations &amp; refunds</h2>
+      <p class="intro">The refund depends on how close to pickup the customer cancels. The tip is always returned in full, and the penalty is shown before they confirm.</p>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>When they cancel</th><th class="num">Fee kept</th><th class="num">Refunded</th></tr></thead>
+          <tbody>
+            <tr><td>More than 12 hours before</td><td class="num">0%</td><td class="num"><strong>100%</strong></td></tr>
+            <tr><td>12 to 6 hours before</td><td class="num">25%</td><td class="num">75%</td></tr>
+            <tr><td>6 hours to 15 minutes before</td><td class="num">50%</td><td class="num">50%</td></tr>
+            <tr><td>15 minutes to pickup</td><td class="num">75%</td><td class="num">25%</td></tr>
+            <tr><td>At or after pickup (no&#8209;show)</td><td class="num">100%</td><td class="num">0%</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>On a held booking, a cancellation fee is taken straight from the hold and the rest released instantly — the customer never waits days for a refund. When money was already charged, the balance is refunded.</p>
+
+      <div class="callout decide">
+        <span class="tag">Needs your decision</span>
+        <p>This ladder follows your <strong>14 July</strong> instruction. It differs from an earlier policy you approved on <strong>6 July</strong> (full refund beyond 24h, 50% at 12–24h, nothing inside 12h). At 8 hours before pickup, one refunds half and the other refunds nothing. We've used the newer one — please confirm which you want, and we'll lock it in.</p>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section id="rates">
+      <span class="sec-no">07 · Your tools</span>
+      <h2>Managing your prices</h2>
+      <p class="intro">Your entire rate card — 136 airport tariffs and every rate, fee, markup, and split — lives in one screen. You change a price, see exactly what it does, and publish.</p>
+
+      <ol class="steps">
+        <li><b>Change a rate</b><span>Edit any figure: markup, airport fee, meet&#8209;&amp;&#8209;greet, HST, the driver's share, per&#8209;km rates, surcharges.</span></li>
+        <li><b>See the effect instantly</b><span>A live preview shows what your change does to real fares — e.g. "Terminal 3 → Downtown: $139.95 → $126.10" — <em>and</em> what you'd keep per ride, before you commit.</span></li>
+        <li><b>Give a reason</b><span>Required, and kept forever against that version — so you always know who changed what, and why.</span></li>
+        <li><b>Publish</b><span>New bookings quote the new prices immediately. Your public pricing and terms pages update to match automatically.</span></li>
+      </ol>
+
+      <div class="callout">
+        <span class="tag">Safe by design</span>
+        <p>Publishing never overwrites — it saves a new version, so you can always look back or roll back. Impossible values are refused (a mistyped HST of 1300% can't be saved). And already&#8209;booked rides keep the price they were quoted; changing a rate today never rewrites what someone paid last week.</p>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="margin">
+      <span class="sec-no">08 · Economics</span>
+      <h2>What you actually keep per ride</h2>
+      <p class="intro">The rate screen shows your true margin next to every fare — after the driver's share, the taxes and fees you pass on, and the card processing cost that was previously invisible.</p>
+
+      <div class="calc" aria-label="Net margin on a sedan airport ride">
+        <div class="row"><span class="lbl">Customer pays</span><span class="val">$90.99</span></div>
+        <div class="row minus note"><span class="lbl">HST — remitted to the CRA</span><span class="val">$10.47</span></div>
+        <div class="row minus note"><span class="lbl">Airport fee — remitted to the GTAA</span><span class="val">$17.25</span></div>
+        <div class="row"><span class="lbl">= your fare base</span><span class="val">$63.27</span></div>
+        <div class="row minus"><span class="lbl">Chauffeur's share (75%)</span><span class="val">$47.45</span></div>
+        <div class="row"><span class="lbl">= gross</span><span class="val">$15.82</span></div>
+        <div class="row minus"><span class="lbl">Card processing (~2.9% + 30¢)</span><span class="val">$2.94</span></div>
+        <div class="row total"><span class="lbl">Your net, per ride</span><span class="val">$12.88</span></div>
+      </div>
+
+      <p>The HST and airport fee aren't your money — you collect and pass them on. The card fee takes about 18% of your gross and had never been accounted for anywhere. Seeing this <strong>net</strong> figure while you set prices means every pricing decision is made on what you truly keep, not on the headline fare.</p>
+    </section>
+
+    <!-- 11 -->
+    <section id="trust">
+      <span class="sec-no">09 · Trust</span>
+      <h2>Security &amp; reliability</h2>
+      <p class="intro">The platform is built so that customers see only their own information, prices can't be tampered with, and payments are handled by trusted providers.</p>
+
+      <div class="cards">
+        <div class="card">
+          <span class="k">Payments</span>
+          <h5>Handled by Stripe</h5>
+          <p>Card details never touch our servers. Every payment event is verified as genuinely from Stripe before it's acted on.</p>
+        </div>
+        <div class="card">
+          <span class="k">Fares</span>
+          <h5>Server&#8209;calculated</h5>
+          <p>The price is always recomputed on our side. A customer's browser can show a preview but can never change what they're charged.</p>
+        </div>
+        <div class="card">
+          <span class="k">Access</span>
+          <h5>Locked to the owner</h5>
+          <p>Customers see only their own bookings. Chauffeurs see only rides assigned to them. Only approved admins can confirm, assign, or reprice.</p>
+        </div>
+        <div class="card">
+          <span class="k">Ride start</span>
+          <h5>Protected by a code</h5>
+          <p>A ride can only begin with the passenger's one&#8209;time code — which drivers themselves cannot read — so rides start with the right person present.</p>
+        </div>
+      </div>
+
+      <p>Access to every piece of data is enforced at the database itself, not just in the app — so the protections hold even against direct attempts to reach the data. Chauffeur documents are stored privately with size and file&#8209;type limits, and every price change is recorded with who made it and why.</p>
+    </section>
+
+    <!-- 12 -->
+    <section id="decisions">
+      <span class="sec-no">10 · Over to you</span>
+      <h2>Decisions we need from you</h2>
+      <p class="intro">A short list of choices only you can make. None of these block the platform from running — they refine it.</p>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Decision</th><th>Where it stands</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Cancellation policy</strong></td><td>Two versions you've approved conflict (6 July vs 14 July). We're running the newer one — please confirm.</td></tr>
+            <tr><td><strong>The 30% airport markup</strong></td><td>Now fully in your control on the Rates screen. Keep it, raise it, or lower it — you'll see the effect live.</td></tr>
+            <tr><td><strong>Meet&#8209;&amp;&#8209;greet fee</strong></td><td>Currently $15; the market charges $45–$80. Worth revisiting.</td></tr>
+            <tr><td><strong>Company logo</strong></td><td>The space is ready in the design — we just need your logo file.</td></tr>
+            <tr><td><strong>Advance bookings (months out)</strong></td><td>Charged up front today. A "save the card, charge before pickup" option is a future addition if you want it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section id="tech">
+      <span class="sec-no">11 · Appendix</span>
+      <h2>For your technical team</h2>
+      <p class="intro">A brief reference for developers. Not needed to operate the platform.</p>
+
+      <h4>Built with</h4>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Layer</th><th>Technology</th></tr></thead>
+          <tbody>
+            <tr><td>Framework</td><td>Next.js 16 (App Router), React 19</td></tr>
+            <tr><td>Database</td><td>Supabase (PostgreSQL) with row&#8209;level security</td></tr>
+            <tr><td>Authentication</td><td>NextAuth 5 — Google &amp; email/password</td></tr>
+            <tr><td>Payments</td><td>Stripe Checkout (manual capture)</td></tr>
+            <tr><td>Maps &amp; routing</td><td>Mapbox (directions, geocoding)</td></tr>
+            <tr><td>Email</td><td>Resend (transactional)</td></tr>
+            <tr><td>Hosting</td><td>Vercel — live at limo.sophria.ca</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>How the pieces fit</h4>
+      <p>The fare engine (<code>lib/pricing</code>, <code>lib/tariff</code>) reads a live, versioned rate card and produces every quote; the same code runs on the server for the authoritative fare. Payments (<code>lib/payments</code>) manage the Stripe hold&#8209;and&#8209;capture lifecycle. Bookings and driver actions (<code>lib/actions</code>) are server&#8209;side and role&#8209;gated. Notifications (<code>lib/mailer</code>) are fire&#8209;and&#8209;forget so email never blocks an action.</p>
+
+      <h4>Operational notes</h4>
+      <p>Database changes are applied as ordered migration files. A dedicated staging environment is recommended before further production changes. A full engineering&#8209;level design document (data model, database functions, security policies) is maintained separately in the repository.</p>
+    </section>
+
+  </main>
+</div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="fr"></div>
+    <p><strong>SophRia Limousine Services</strong> — Platform Overview &amp; Operating Guide, v1.0. Figures shown reflect the live system as configured in July 2026 and match the running fare engine. Prices are examples for the routes named; your Rates screen is the single source of truth.</p>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themer');
+    function current() {
+      var set = document.documentElement.getAttribute('data-theme');
+      if (set) return set;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    btn.addEventListener('click', function () {
+      var next = current() === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      btn.textContent = next === 'dark' ? 'Light' : 'Dark';
+    });
+    btn.textContent = current() === 'dark' ? 'Light' : 'Dark';
+  })();
+</script>
+</body>
+</html>
