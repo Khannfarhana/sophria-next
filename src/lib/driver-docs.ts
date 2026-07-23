@@ -2,10 +2,17 @@
  * The documents a chauffeur applicant must provide, shared by the application
  * form, the server action that validates it, and the admin review dialog.
  *
- * Client instruction (14 Jul): the vehicle-for-hire licence, four-side vehicle
- * photos with the limo plate visible at the front, commercial insurance, proof
- * of the right to work in Canada, vehicle safety and vehicle ownership — and
- * "nothing is optional, this part is all mandatory".
+ * Client instruction (14 Jul), for applicants bringing their own car: the
+ * vehicle-for-hire licence, four-side vehicle photos with the limo plate
+ * visible at the front, commercial insurance, proof of the right to work in
+ * Canada, vehicle safety and vehicle ownership — and "nothing is optional,
+ * this part is all mandatory".
+ *
+ * There are now two application types (23 Jul). Owner-operators keep that full
+ * mandatory set. Fleet drivers apply to drive SophRia's own cars, so the
+ * vehicle-proving documents don't exist for them — only the person-proving
+ * ones. The split below is by WHAT THE DOCUMENT VOUCHES FOR: PERSON_DOCS
+ * vouch for the driver, VEHICLE_DOCS + VEHICLE_PHOTOS vouch for their car.
  *
  * Doc keys used to be invented at each call site: the form wrote
  * `license_doc`/`background` while the seed wrote `drivers_license`/`insurance`,
@@ -15,14 +22,16 @@
  * rewriting history.
  */
 
+export type ApplicationType = "owner_operator" | "fleet_driver";
+
 export interface DriverDoc {
   key: string;
   label: string;
   hint: string;
 }
 
-/** Paperwork. All required. */
-export const DRIVER_DOCS: DriverDoc[] = [
+/** Documents that vouch for the driver — required for BOTH application types. */
+export const PERSON_DOCS: DriverDoc[] = [
   {
     key: "drivers_license",
     label: "Driver's Licence",
@@ -33,6 +42,20 @@ export const DRIVER_DOCS: DriverDoc[] = [
     label: "Vehicle for Hire Licence",
     hint: "Your municipal licence to drive passengers for hire",
   },
+  {
+    key: "right_to_work",
+    label: "Right to Work in Canada",
+    hint: "Work permit, PR card, or Canadian passport",
+  },
+  {
+    key: "background_check",
+    label: "Background Check Consent",
+    hint: "Signed consent, plus a clean driver's abstract",
+  },
+];
+
+/** Documents that vouch for the applicant's own vehicle — owner-operators only. */
+export const VEHICLE_DOCS: DriverDoc[] = [
   {
     key: "commercial_insurance",
     label: "Commercial Insurance",
@@ -48,16 +71,6 @@ export const DRIVER_DOCS: DriverDoc[] = [
     label: "Vehicle Ownership",
     hint: "Ownership permit showing the vehicle is registered to you",
   },
-  {
-    key: "right_to_work",
-    label: "Right to Work in Canada",
-    hint: "Work permit, PR card, or Canadian passport",
-  },
-  {
-    key: "background_check",
-    label: "Background Check Consent",
-    hint: "Signed consent, plus a clean driver's abstract",
-  },
 ];
 
 /** The four vehicle angles. The front shot must show the limo plate. */
@@ -68,11 +81,23 @@ export const VEHICLE_PHOTOS: DriverDoc[] = [
   { key: "vehicle_photo_right", label: "Right side", hint: "Full passenger's side" },
 ];
 
-/** Every doc key an application must supply, in submission order. */
-export const REQUIRED_DOC_KEYS: string[] = [
-  ...DRIVER_DOCS.map((d) => d.key),
-  ...VEHICLE_PHOTOS.map((d) => d.key),
-];
+/** All paperwork rows (no photos), for label maps and legacy call sites. */
+export const DRIVER_DOCS: DriverDoc[] = [...PERSON_DOCS, ...VEHICLE_DOCS];
+
+/** The paperwork upload slots an application of this type must fill. */
+export function paperworkDocsFor(type: ApplicationType): DriverDoc[] {
+  return type === "owner_operator" ? [...PERSON_DOCS, ...VEHICLE_DOCS] : PERSON_DOCS;
+}
+
+/** The vehicle-photo slots for this type (none for fleet drivers). */
+export function vehiclePhotosFor(type: ApplicationType): DriverDoc[] {
+  return type === "owner_operator" ? VEHICLE_PHOTOS : [];
+}
+
+/** Every doc key an application of this type must supply, in submission order. */
+export function requiredDocKeysFor(type: ApplicationType): string[] {
+  return [...paperworkDocsFor(type), ...vehiclePhotosFor(type)].map((d) => d.key);
+}
 
 /** Keys written by earlier versions of the form and the seed data. */
 const LEGACY_DOC_LABELS: Record<string, string> = {

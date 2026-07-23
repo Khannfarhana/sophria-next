@@ -406,12 +406,89 @@ export const templates: Record<string, MailTemplateFn> = {
       <div class="eyebrow">Action Required</div>
       <h2>New chauffeur application</h2>
       <p>A new application has been submitted and is ready for review.</p>
-      ${detailsTable([["Applicant", d.applicantName || "—"], ["Email", d.applicantEmail || "—"]])}
+      ${detailsTable([
+        ["Applicant", d.applicantName || "—"],
+        ["Email", d.applicantEmail || "—"],
+        ...(d.applicationTypeLabel ? [["Vehicle", d.applicationTypeLabel] as [string, string]] : []),
+      ])}
       ${cta(d.ctaUrl || "", "Review in Admin")}
     `);
     const text = textWrap("New chauffeur application", [
-      `Applicant: ${d.applicantName}`, `Email: ${d.applicantEmail}`, "", "Review it in the admin dashboard.",
+      `Applicant: ${d.applicantName}`, `Email: ${d.applicantEmail}`,
+      d.applicationTypeLabel ? `Vehicle: ${d.applicationTypeLabel}` : "",
+      "", "Review it in the admin dashboard.",
     ].filter(Boolean));
+    return { html, text };
+  },
+
+  /** Applicant — application approved, driver access granted. */
+  "driver-approved": (d) => {
+    const html = emailWrapper("You're Approved — SophRia", `
+      <div class="eyebrow">Welcome Aboard</div>
+      <h2>You're a SophRia chauffeur</h2>
+      <p>Hello ${esc(d.applicantName || "there")},</p>
+      <p>Your application has been approved. You now have access to the driver portal, where you can set your availability and start accepting rides.</p>
+      <p class="note">Keep your licence, insurance and vehicle documents current — driver access depends on them staying valid.</p>
+      ${cta(d.ctaUrl || "", "Open Driver Portal")}
+    `);
+    const text = textWrap("You're approved", [
+      `Hello ${d.applicantName || "there"},`, "",
+      "Your application has been approved. You now have access to the driver portal, where you can set your availability and start accepting rides.",
+      "Keep your licence, insurance and vehicle documents current — driver access depends on them staying valid.",
+    ]);
+    return { html, text };
+  },
+
+  /** Applicant — application declined after review. */
+  "driver-application-declined": (d) => {
+    const html = emailWrapper("Application Update — SophRia", `
+      <div class="eyebrow">Application Update</div>
+      <h2>About your chauffeur application</h2>
+      <p>Hello ${esc(d.applicantName || "there")},</p>
+      <p>Thank you for your interest in driving with SophRia. After reviewing your application, we're unable to approve it at this time.</p>
+      <p>If your circumstances change — for example an updated licence, insurance, or vehicle — you're welcome to apply again.</p>
+      ${cta(d.ctaUrl || "", "Visit SophRia")}
+    `);
+    const text = textWrap("Application update", [
+      `Hello ${d.applicantName || "there"},`, "",
+      "Thank you for your interest in driving with SophRia. After reviewing your application, we're unable to approve it at this time.",
+      "If your circumstances change, you're welcome to apply again.",
+    ]);
+    return { html, text };
+  },
+
+  /** Driver — access revoked by an admin. */
+  "driver-access-revoked": (d) => {
+    const html = emailWrapper("Driver Access Update — SophRia", `
+      <div class="eyebrow">Access Update</div>
+      <h2>Your driver access has ended</h2>
+      <p>Hello ${esc(d.applicantName || "there")},</p>
+      <p>Your access to the SophRia driver portal has been revoked and you will no longer receive ride assignments.</p>
+      <p>If you believe this is a mistake, or you'd like to discuss reinstatement, please reply to this email and our team will follow up.</p>
+    `);
+    const text = textWrap("Driver access update", [
+      `Hello ${d.applicantName || "there"},`, "",
+      "Your access to the SophRia driver portal has been revoked and you will no longer receive ride assignments.",
+      "If you believe this is a mistake, or you'd like to discuss reinstatement, please reply to this email.",
+    ]);
+    return { html, text };
+  },
+
+  /** Applicant — reminder to finish an in-progress application (admin nudge). */
+  "driver-application-nudge": (d) => {
+    const html = emailWrapper("Finish Your Application — SophRia", `
+      <div class="eyebrow">Almost There</div>
+      <h2>Your chauffeur application is waiting</h2>
+      <p>Hello ${esc(d.applicantName || "there")},</p>
+      <p>You started an application to drive with SophRia but haven't submitted it yet${d.stageLabel ? ` — you left off at <strong>${esc(d.stageLabel)}</strong>` : ""}. Everything you've entered so far is saved, so you can pick up right where you stopped.</p>
+      <p class="note">Have your documents handy: licence, proof of right to work, and background-check consent${d.needsVehicleDocs === "yes" ? ", plus your vehicle's insurance, safety certificate, ownership and photos" : ""}.</p>
+      ${cta(d.ctaUrl || "", "Continue My Application")}
+    `);
+    const text = textWrap("Finish your application", [
+      `Hello ${d.applicantName || "there"},`, "",
+      `You started an application to drive with SophRia but haven't submitted it yet${d.stageLabel ? ` — you left off at ${d.stageLabel}` : ""}.`,
+      "Everything you've entered so far is saved, so you can pick up right where you stopped.",
+    ]);
     return { html, text };
   },
 

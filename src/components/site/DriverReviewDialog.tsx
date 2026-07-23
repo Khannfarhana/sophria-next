@@ -11,6 +11,7 @@ import { DOC_LABELS } from "@/lib/driver-docs";
 export interface ReviewDriver {
   id: string;
   user_id: string;
+  application_type: string | null;
   license_number: string;
   experience_years: number;
   is_available: boolean;
@@ -41,12 +42,15 @@ export function DriverReviewDialog({
   open,
   onClose,
   onDecision,
+  onDecline,
   onCommission,
 }: {
   driver: ReviewDriver | null;
   open: boolean;
   onClose: () => void;
   onDecision: (verified: boolean) => Promise<void>;
+  /** Decline a PENDING application — removes it and emails the applicant. */
+  onDecline?: () => Promise<void>;
   onCommission: (rate: number) => Promise<void>;
 }) {
   const supabase = useSupabase();
@@ -58,12 +62,14 @@ export function DriverReviewDialog({
   // in-flight edit for THIS driver (keying by id resets it per driver).
   const [rateEdit, setRateEdit] = useState<{ id: string; value: string } | null>(null);
   const [savingRate, setSavingRate] = useState(false);
+  // Declining deletes the application — first click arms, second confirms.
+  const [declineArmed, setDeclineArmed] = useState(false);
 
   const d = driver;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when the dialog closes
-    if (!open || !d) { setPhotoUrl(null); setDocs([]); return; }
+    if (!open || !d) { setPhotoUrl(null); setDocs([]); setDeclineArmed(false); return; }
     let cancelled = false;
     setLoading(true);
     (async () => {
@@ -91,7 +97,10 @@ export function DriverReviewDialog({
   if (!d) return null;
 
   const name = d.profile?.full_name ?? "Unnamed applicant";
+  // Legacy rows predate application_type; they all declared a vehicle.
+  const isFleetDriver = d.application_type === "fleet_driver";
   const rows: [string, string][] = [
+    ["Application type", isFleetDriver ? "Drives a SophRia vehicle" : "Brings own vehicle"],
     ["City", d.city_of_residence ?? "—"],
     ["Province", d.province ?? "—"],
     ["Work authorization", d.work_authorization ?? "—"],
@@ -100,11 +109,16 @@ export function DriverReviewDialog({
     ["Experience", `${d.experience_years} years`],
     ["Licence #", d.license_number],
     ["Licence class", d.licence_class ?? "—"],
-    // Applicants bring their own vehicle (migration 20260716150000) — the plate
-    // and class are what the approver is actually vetting.
-    ["Vehicle", [d.vehicle_year, d.vehicle_make, d.vehicle_model].filter(Boolean).join(" ") || "—"],
-    ["Vehicle class", d.vehicle_class ?? "—"],
-    ["Limo plate", d.limo_plate ?? "—"],
+    // Owner-operators bring their own vehicle (migration 20260716150000) — the
+    // plate and class are what the approver is vetting. Fleet drivers have no
+    // vehicle rows: blanks there are by design, not missing data.
+    ...((isFleetDriver
+      ? []
+      : [
+          ["Vehicle", [d.vehicle_year, d.vehicle_make, d.vehicle_model].filter(Boolean).join(" ") || "—"],
+          ["Vehicle class", d.vehicle_class ?? "—"],
+          ["Limo plate", d.limo_plate ?? "—"],
+        ]) as [string, string][]),
     ...(d.referral_name ? ([["Referral", d.referral_name]] as [string, string][]) : []),
     ["Applied", formatDate(d.created_at)],
     [
@@ -116,6 +130,15 @@ export function DriverReviewDialog({
   const decide = async (verified: boolean) => {
     setActing(true);
     try { await onDecision(verified); onClose(); }
+    finally { setActing(false); }
+  };
+
+  const decline = async () => {
+    if (!onDecline) return;
+    if (!declineArmed) { setDeclineArmed(true); return; }
+    setActing(true);
+    try { await onDecline(); onClose(); }
+    catch { setDeclineArmed(false); }
     finally { setActing(false); }
   };
 
@@ -245,16 +268,31 @@ export function DriverReviewDialog({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex gap-2 border-t border-white/10 px-6 py-4">
+        {/* Actions. Every decision emails the person: approve → welcome,
+            decline → application removed + decision mail, revoke → access-ended mail. */}
+        <div className="flex flex-wrap gap-2 border-t border-white/10 px-6 py-4">
           {d.is_verified ? (
             <button onClick={() => decide(false)} disabled={acting} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-sm border border-white/20 px-4 py-2.5 text-sm text-white transition hover:bg-white/10 disabled:opacity-60">
               {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} Revoke driver access
             </button>
           ) : (
-            <button onClick={() => decide(true)} disabled={acting} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-sm bg-gold-soft px-4 py-2.5 text-sm font-medium text-night transition hover:bg-[#f0e2c0] disabled:opacity-60">
-              {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Approve &amp; grant driver role
-            </button>
+            <>
+              <button onClick={() => decide(true)} disabled={acting} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-sm bg-gold-soft px-4 py-2.5 text-sm font-medium text-night transition hover:bg-[#f0e2c0] disabled:opacity-60">
+                {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Approve &amp; grant driver role
+              </button>
+              {onDecline && (
+                <button
+                  onClick={() => void decline()}
+                  disabled={acting}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-sm border px-4 py-2.5 text-sm transition disabled:opacity-60 ${
+                    declineArmed ? "border-red-400/60 bg-red-500/10 text-red-300 hover:bg-red-500/20" : "border-white/20 text-white/80 hover:bg-white/10"
+                  }`}
+                >
+                  {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                  {declineArmed ? "Confirm decline — emails applicant" : "Decline"}
+                </button>
+              )}
+            </>
           )}
           <button onClick={onClose} className="rounded-sm border border-white/15 px-4 py-2.5 text-sm text-white/80 hover:bg-white/5">Close</button>
         </div>

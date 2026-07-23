@@ -282,7 +282,7 @@ export function notifyBookingCancelled(bookingId: string) {
 }
 
 /** Chauffeur application → applicant + admin. */
-export function notifyDriverApplication(applicantName: string, applicantEmail: string) {
+export function notifyDriverApplication(applicantName: string, applicantEmail: string, applicationTypeLabel = "") {
   return safe(async () => {
     const sends: Promise<unknown>[] = [];
     if (applicantEmail) {
@@ -297,10 +297,73 @@ export function notifyDriverApplication(applicantName: string, applicantEmail: s
       sends.push(sendMail({
         to: adminEmail,
         subject: "New chauffeur application — SophRia",
-        template: { name: "driver-application-admin", data: { applicantName, applicantEmail, ctaUrl: url("/admin") } },
+        template: { name: "driver-application-admin", data: { applicantName, applicantEmail, applicationTypeLabel, ctaUrl: url("/admin") } },
       }));
     }
     await Promise.all(sends);
+  });
+}
+
+/**
+ * The three admin decisions on an application/driver, each with its own mail.
+ * Approve and revoke share a call site (verifyDriverAction) — which one the
+ * driver receives depends on the direction of the flip, resolved there.
+ */
+export function notifyDriverApproved(applicantName: string, applicantEmail: string) {
+  return safe(async () => {
+    if (!applicantEmail) return;
+    await sendMail({
+      to: applicantEmail,
+      subject: "You're approved — welcome to SophRia",
+      template: { name: "driver-approved", data: { applicantName, ctaUrl: url("/driver") } },
+    });
+  });
+}
+
+export function notifyDriverApplicationDeclined(applicantName: string, applicantEmail: string) {
+  return safe(async () => {
+    if (!applicantEmail) return;
+    await sendMail({
+      to: applicantEmail,
+      subject: "An update on your chauffeur application — SophRia",
+      template: { name: "driver-application-declined", data: { applicantName, ctaUrl: url("/") } },
+    });
+  });
+}
+
+export function notifyDriverAccessRevoked(applicantName: string, applicantEmail: string) {
+  return safe(async () => {
+    if (!applicantEmail) return;
+    await sendMail({
+      to: applicantEmail,
+      subject: "Your driver access has changed — SophRia",
+      template: { name: "driver-access-revoked", data: { applicantName } },
+    });
+  });
+}
+
+/** Admin-triggered reminder to finish an in-progress application. */
+export function notifyDriverApplicationNudge(
+  applicantName: string,
+  applicantEmail: string,
+  stageLabel: string,
+  needsVehicleDocs: boolean,
+) {
+  return safe(async () => {
+    if (!applicantEmail) return;
+    await sendMail({
+      to: applicantEmail,
+      subject: "Finish your chauffeur application — SophRia",
+      template: {
+        name: "driver-application-nudge",
+        data: {
+          applicantName,
+          stageLabel,
+          needsVehicleDocs: needsVehicleDocs ? "yes" : "",
+          ctaUrl: url("/become-chauffeur"),
+        },
+      },
+    });
   });
 }
 
