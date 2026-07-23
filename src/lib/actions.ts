@@ -31,6 +31,10 @@ import {
   notifyRideCompleted,
   notifyBookingCancelled,
   notifyDriverApplication,
+  notifyDriverApproved,
+  notifyDriverApplicationDeclined,
+  notifyDriverAccessRevoked,
+  notifyDriverApplicationNudge,
   notifyPaymentCaptureFailed,
 } from "@/lib/mailer/notifications";
 import {
@@ -40,7 +44,13 @@ import {
   releaseBookingHold,
 } from "@/lib/payments";
 import { refundQuote } from "@/lib/cancellation";
-import { driverApplicationSchema, missingDocKeys, CHAUFFEUR_TERMS_VERSION } from "@/lib/driver-application";
+import {
+  driverApplicationSchema,
+  missingDocKeys,
+  CHAUFFEUR_TERMS_VERSION,
+  STAGE_LABELS,
+  type ApplicationStage,
+} from "@/lib/driver-application";
 import { DOC_LABELS, isKnownDocType } from "@/lib/driver-docs";
 import { parseStops, routableStops, type BookingStop } from "@/lib/stops";
 
@@ -593,6 +603,14 @@ export async function verifyDriverAction(driverId: string, verified: boolean) {
   // successful /become-chauffeur application only creates a pending record.
   const admin = getServiceClient();
 
+  // The mail depends on the DIRECTION of the flip: pending→approved is a
+  // welcome, verified→revoked is an access notice. Same flag, different letter.
+  const { data: before } = await admin
+    .from("drivers")
+    .select("is_verified")
+    .eq("id", driverId)
+    .maybeSingle();
+
   const { data: driver, error } = await admin
     .from("drivers")
     .update({ is_verified: verified, is_available: verified })
@@ -610,10 +628,103 @@ export async function verifyDriverAction(driverId: string, verified: boolean) {
     } else {
       await admin.from("user_roles").delete().eq("user_id", driver.user_id).eq("role", "driver");
     }
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", driver.user_id)
+      .maybeSingle();
+    const name = profile?.full_name || "there";
+    const email = profile?.email || "";
+    if (verified && !before?.is_verified) {
+      after(() => notifyDriverApproved(name, email));
+    } else if (!verified && before?.is_verified) {
+      after(() => notifyDriverAccessRevoked(name, email));
+    }
   }
 
   revalidatePath("/admin");
   return { success: true };
+}
+
+/**
+ * Decline a PENDING application. Before this existed an application could only
+ * be approved or ignored forever. Declining removes the application (drivers
+ * row + document rows) so the applicant sees the form again and can re-apply
+ * if their circumstances change, and emails them the decision. Uploaded files
+ * stay in storage — re-applying replaces them, same as before.
+ */
+export async function declineDriverApplicationAction(driverId: string) {
+  await requireSession("admin");
+  const admin = getServiceClient();
+
+  const { data: driver } = await admin
+    .from("drivers")
+    .select("id, user_id, is_verified")
+    .eq("id", driverId)
+    .maybeSingle();
+  if (!driver) throw new Error("Application not found.");
+  // A verified driver is not an application any more — that path is "revoke",
+  // which keeps the record. Declining must never delete an active driver.
+  if (driver.is_verified) throw new Error("This driver is already approved — revoke access instead.");
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("full_name, email")
+    .eq("id", driver.user_id)
+    .maybeSingle();
+
+  await admin.from("driver_documents").delete().eq("driver_id", driver.id);
+  const { error } = await admin.from("drivers").delete().eq("id", driver.id);
+  if (error) throw new Error(error.message);
+
+  after(() => notifyDriverApplicationDeclined(profile?.full_name || "there", profile?.email || ""));
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+/**
+ * Email a stalled applicant a reminder to finish their in-progress
+ * application. Rate-limited to one nudge per 24h per applicant (nudged_at,
+ * service-role written) so two admin tabs can't double-send.
+ */
+export async function nudgeDriverApplicantAction(applicantUserId: string) {
+  await requireSession("admin");
+  const admin = getServiceClient();
+
+  const { data: draft } = await admin
+    .from("driver_application_drafts")
+    .select("user_id, application_type, stage, form, nudged_at")
+    .eq("user_id", applicantUserId)
+    .maybeSingle();
+  if (!draft) throw new Error("No in-progress application for this person.");
+
+  if (draft.nudged_at && Date.now() - new Date(draft.nudged_at).getTime() < 24 * 60 * 60 * 1000) {
+    throw new Error("Already nudged in the last 24 hours.");
+  }
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("full_name, email")
+    .eq("id", applicantUserId)
+    .maybeSingle();
+  const form = (draft.form ?? {}) as Record<string, string>;
+  const email = profile?.email || form.email || "";
+  if (!email) throw new Error("This applicant has no email on file.");
+  const name = profile?.full_name || form.fullName || "there";
+
+  // Stamp BEFORE sending: a stamp without a mail costs one wasted day of
+  // cooldown; a mail without a stamp allows spam. The former is the safe miss.
+  const { error } = await admin
+    .from("driver_application_drafts")
+    .update({ nudged_at: new Date().toISOString() })
+    .eq("user_id", applicantUserId);
+  if (error) throw new Error(error.message);
+
+  const stageLabel = STAGE_LABELS[draft.stage as ApplicationStage] ?? "";
+  after(() => notifyDriverApplicationNudge(name, email, stageLabel, draft.application_type === "owner_operator"));
+  revalidatePath("/admin");
+  return { success: true, nudgedAt: new Date().toISOString() };
 }
 
 /**
@@ -662,9 +773,10 @@ export async function submitDriverApplicationAction(data: {
   }
 
   // "Nothing is optional, this part is all mandatory" — enforce it server-side
-  // too, not just in the form.
+  // too, not just in the form. Which documents are mandatory depends on the
+  // application type: fleet drivers have no vehicle to document.
   const provided = data.docs.filter((d) => d.path).map((d) => d.docType);
-  const missing = missingDocKeys(provided);
+  const missing = missingDocKeys(provided, app.applicationType);
   if (missing.length > 0) {
     const names = missing.map((k) => DOC_LABELS[k] ?? k);
     throw new Error(`Missing required document${missing.length > 1 ? "s" : ""}: ${names.join(", ")}.`);
@@ -686,10 +798,14 @@ export async function submitDriverApplicationAction(data: {
     throw new Error("You're already an approved chauffeur.");
   }
 
+  // Fleet drivers apply without a vehicle — the vehicle columns stay null and
+  // the admin dialog reads application_type to know that's by design, not a gap.
+  const isOwner = app.applicationType === "owner_operator";
   const { data: driver, error } = await admin
     .from("drivers")
     .upsert({
       user_id: userId,
+      application_type: app.applicationType,
       license_number: app.license,
       licence_class: app.licenceClass,
       experience_years: app.experience,
@@ -700,11 +816,11 @@ export async function submitDriverApplicationAction(data: {
       time_availability: app.availability,
       referral_name: app.referral || null,
       photo_url: data.photoPath,
-      vehicle_class: app.vehicleClass,
-      vehicle_make: app.vehicleMake,
-      vehicle_model: app.vehicleModel,
-      vehicle_year: app.vehicleYear,
-      limo_plate: app.limoPlate,
+      vehicle_class: isOwner ? app.vehicleClass : null,
+      vehicle_make: isOwner ? app.vehicleMake : null,
+      vehicle_model: isOwner ? app.vehicleModel : null,
+      vehicle_year: isOwner ? app.vehicleYear : null,
+      limo_plate: isOwner ? app.limoPlate : null,
       // Stamped server-side from the server's clock — a client-supplied
       // acceptance timestamp would be worth nothing as a legal record.
       terms_accepted_at: new Date().toISOString(),
@@ -718,6 +834,10 @@ export async function submitDriverApplicationAction(data: {
 
   await admin.from("profiles").update({ full_name: app.fullName, phone: app.phone }).eq("id", userId);
 
+  // The application is in — clear the autosaved draft so the funnel view stops
+  // counting this person as "in progress".
+  await admin.from("driver_application_drafts").delete().eq("user_id", userId);
+
   // Re-applying replaces the previous document set rather than stacking a
   // second copy of every file under the same driver.
   await admin.from("driver_documents").delete().eq("driver_id", driver.id);
@@ -727,7 +847,11 @@ export async function submitDriverApplicationAction(data: {
     if (docErr) throw new Error(docErr.message);
   }
 
-  after(() => notifyDriverApplication(app.fullName || "there", session.user.email ?? ""));
+  after(() => notifyDriverApplication(
+    app.fullName || "there",
+    session.user.email ?? "",
+    isOwner ? "Brings own vehicle" : "Drives a SophRia vehicle",
+  ));
   revalidatePath("/admin");
   return { success: true };
 }

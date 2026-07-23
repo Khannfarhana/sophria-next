@@ -7,10 +7,20 @@
  * object and upserted it. Anyone signed in could POST a 5,000-character
  * `languages`, an experience of 9999, or a null photo and have it persisted.
  * The same schema now runs on both sides.
+ *
+ * Two application types (23 Jul):
+ *   owner_operator — brings their own vehicle. The client's 14 Jul "nothing is
+ *     optional" instruction applies in full: vehicle details and every vehicle
+ *     document stay mandatory.
+ *   fleet_driver — applies to drive a SophRia fleet car. No vehicle to declare
+ *     or document, so the vehicle step and vehicle paperwork don't exist for
+ *     them. Person-proving requirements are identical for both.
  */
 
 import { z } from "zod";
-import { REQUIRED_DOC_KEYS } from "@/lib/driver-docs";
+import { requiredDocKeysFor, type ApplicationType } from "@/lib/driver-docs";
+
+export type { ApplicationType };
 
 /**
  * Bump when the chauffeur terms text changes materially, so a later revision
@@ -20,6 +30,25 @@ export const CHAUFFEUR_TERMS_VERSION = "2026-07-16";
 
 /** Client requirement (13 Jul): "minimum of 3 years experience". */
 export const MIN_EXPERIENCE_YEARS = 3;
+
+export const APPLICATION_TYPES: {
+  value: ApplicationType;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "fleet_driver",
+    label: "Drive a SophRia vehicle",
+    description:
+      "You're a professional chauffeur without your own car. Drive one of our fleet vehicles — no vehicle paperwork needed.",
+  },
+  {
+    value: "owner_operator",
+    label: "Bring your own vehicle",
+    description:
+      "You own a luxury sedan or SUV on a limousine plate and want to onboard it with you. Vehicle documents required.",
+  },
+];
 
 export const PROVINCES = [
   "Ontario", "Quebec", "British Columbia", "Alberta", "Manitoba", "Saskatchewan",
@@ -37,7 +66,8 @@ export const VEHICLE_CLASSES = [
 
 const CURRENT_YEAR = 2026;
 
-export const driverApplicationSchema = z.object({
+/** Fields that vouch for the person — identical for both application types. */
+const personFields = {
   // Personal
   fullName: z.string().trim().min(1, "Full name is required").max(100),
   email: z.string().trim().email("Enter a valid email").max(255),
@@ -64,7 +94,11 @@ export const driverApplicationSchema = z.object({
     .min(MIN_EXPERIENCE_YEARS, `At least ${MIN_EXPERIENCE_YEARS} years of driving experience is required.`)
     .max(60, "Enter a realistic number of years"),
 
-  // Vehicle — drivers bring their own; see migration 20260716150000.
+  termsAccepted: z.literal(true, { message: "You must accept the chauffeur terms to apply." }),
+};
+
+/** Fields that describe the applicant's own car — owner-operators only. */
+const vehicleFields = {
   vehicleClass: z
     .string()
     .trim()
@@ -79,31 +113,92 @@ export const driverApplicationSchema = z.object({
     .min(1980, "Enter a valid vehicle year")
     .max(CURRENT_YEAR + 1, "Enter a valid vehicle year"),
   limoPlate: z.string().trim().min(2, "Limousine plate is required").max(20),
+};
 
-  termsAccepted: z.literal(true, { message: "You must accept the chauffeur terms to apply." }),
+const fleetDriverSchema = z.object({
+  applicationType: z.literal("fleet_driver"),
+  ...personFields,
 });
+
+const ownerOperatorSchema = z.object({
+  applicationType: z.literal("owner_operator"),
+  ...personFields,
+  ...vehicleFields,
+});
+
+export const driverApplicationSchema = z.discriminatedUnion("applicationType", [
+  ownerOperatorSchema,
+  fleetDriverSchema,
+]);
 
 export type DriverApplicationInput = z.infer<typeof driverApplicationSchema>;
 
-/** Per-step slices, so each step validates only what it shows. */
-export const stepSchemas = [
-  driverApplicationSchema.pick({
-    fullName: true, email: true, phone: true, city: true,
-    province: true, workAuthorization: true, languages: true, availability: true,
-  }),
-  driverApplicationSchema.pick({ license: true, licenceClass: true, experience: true }),
-  driverApplicationSchema.pick({
-    vehicleClass: true, vehicleMake: true, vehicleModel: true, vehicleYear: true, limoPlate: true,
-  }),
-];
+/**
+ * Wizard stages. Keys are persisted in driver_application_drafts.stage (and
+ * filtered on by the admin funnel), so treat them as a stable vocabulary.
+ */
+export type ApplicationStage = "personal" | "professional" | "vehicle" | "documents";
 
-export const FORM_STEPS = ["Personal", "Professional", "Vehicle", "Photo & Docs"];
+export const STAGE_LABELS: Record<ApplicationStage, string> = {
+  personal: "Personal details",
+  professional: "Professional details",
+  vehicle: "Vehicle",
+  documents: "Photo & documents",
+};
+
+export interface WizardStep {
+  key: ApplicationStage;
+  title: string;
+  /** Validates just the fields this step shows; the last step has none (docs are checked separately). */
+  schema: z.ZodType | null;
+}
+
+const personalStep: WizardStep = {
+  key: "personal",
+  title: "Personal",
+  schema: z.object({
+    fullName: personFields.fullName,
+    email: personFields.email,
+    phone: personFields.phone,
+    city: personFields.city,
+    province: personFields.province,
+    workAuthorization: personFields.workAuthorization,
+    languages: personFields.languages,
+    availability: personFields.availability,
+  }),
+};
+
+const professionalStep: WizardStep = {
+  key: "professional",
+  title: "Professional",
+  schema: z.object({
+    license: personFields.license,
+    licenceClass: personFields.licenceClass,
+    experience: personFields.experience,
+  }),
+};
+
+const vehicleStep: WizardStep = {
+  key: "vehicle",
+  title: "Vehicle",
+  schema: z.object(vehicleFields),
+};
+
+const documentsStep: WizardStep = { key: "documents", title: "Photo & Docs", schema: null };
+
+/** The steps an application of this type walks through, in order. */
+export function wizardStepsFor(type: ApplicationType): WizardStep[] {
+  return type === "owner_operator"
+    ? [personalStep, professionalStep, vehicleStep, documentsStep]
+    : [personalStep, professionalStep, documentsStep];
+}
 
 /**
- * Every document is mandatory, per the client. Returns the labels of anything
- * missing so the UI can name them rather than saying "something's missing".
+ * Every document required FOR THE GIVEN TYPE is mandatory. Returns the keys of
+ * anything missing so the UI can name them rather than saying "something's
+ * missing".
  */
-export function missingDocKeys(provided: string[]): string[] {
+export function missingDocKeys(provided: string[], type: ApplicationType): string[] {
   const have = new Set(provided);
-  return REQUIRED_DOC_KEYS.filter((k) => !have.has(k));
+  return requiredDocKeysFor(type).filter((k) => !have.has(k));
 }

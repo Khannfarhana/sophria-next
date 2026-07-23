@@ -188,6 +188,42 @@ export type Database = {
           },
         ]
       }
+      driver_application_drafts: {
+        Row: {
+          application_type: string
+          created_at: string
+          doc_paths: Json
+          form: Json
+          nudged_at: string | null
+          photo_path: string | null
+          stage: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          application_type?: string
+          created_at?: string
+          doc_paths?: Json
+          form?: Json
+          nudged_at?: string | null
+          photo_path?: string | null
+          stage?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          application_type?: string
+          created_at?: string
+          doc_paths?: Json
+          form?: Json
+          nudged_at?: string | null
+          photo_path?: string | null
+          stage?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       driver_documents: {
         Row: {
           created_at: string
@@ -231,6 +267,7 @@ export type Database = {
       }
       drivers: {
         Row: {
+          application_type: string | null
           city_of_residence: string | null
           commission_rate: number
           created_at: string
@@ -259,6 +296,7 @@ export type Database = {
           work_authorization: string | null
         }
         Insert: {
+          application_type?: string | null
           city_of_residence?: string | null
           commission_rate?: number
           created_at?: string
@@ -287,6 +325,7 @@ export type Database = {
           work_authorization?: string | null
         }
         Update: {
+          application_type?: string | null
           city_of_residence?: string | null
           commission_rate?: number
           created_at?: string
