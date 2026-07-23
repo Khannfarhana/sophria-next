@@ -73,8 +73,49 @@ export const OUT_OF_TOWN: Record<string, number> = {
   "Windsor": 751, "Woodstock": 265,
 };
 
+/**
+ * The knobs the tariff model reads, and where they come from at runtime.
+ *
+ * These numbers became pricing_config columns in 20260717150000 and the
+ * destination table became tariff_destinations rows — but this module kept
+ * reading its own constants, so publishing a change in the admin rate card (or
+ * adding a destination) silently did nothing to quotes. Callers now pass the
+ * live values; every field defaults to the constant it replaced, so a caller
+ * that passes nothing prices exactly as before.
+ */
+export interface TariffContext {
+  /** Live rate-card values. Defaults to the built-in card constants. */
+  cfg?: {
+    pearsonRadiusKm?: number;
+    tariffPerKm?: number;
+    tariffInZoneBase?: number;
+    tariffMin?: number;
+  } | null;
+  /**
+   * Out-of-town table from tariff_destinations (name → published tariff).
+   * null/undefined falls back to the built-in OUT_OF_TOWN map.
+   */
+  destinations?: Record<string, number> | null;
+}
+
 /** Destination names sorted longest-first so "Caledon East" beats "Caledon". */
 const OUT_OF_TOWN_NAMES = Object.keys(OUT_OF_TOWN).sort((a, b) => b.length - a.length);
+
+/**
+ * Longest-first name lists are cached per table object: the DB-backed table
+ * arrives as a fresh-but-identical object on every React Query read, and
+ * re-sorting ~200 names on each keystroke of the booking form is waste.
+ */
+const namesCache = new WeakMap<Record<string, number>, string[]>();
+function namesFor(table: Record<string, number>): string[] {
+  if (table === OUT_OF_TOWN) return OUT_OF_TOWN_NAMES;
+  let names = namesCache.get(table);
+  if (!names) {
+    names = Object.keys(table).sort((a, b) => b.length - a.length);
+    namesCache.set(table, names);
+  }
+  return names;
+}
 
 const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -88,32 +129,39 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-export function isPearson(text?: string | null, coords?: Coords): boolean {
-  if (coords && haversineKm(coords, PEARSON) <= PEARSON_RADIUS_KM) return true;
+export function isPearson(text?: string | null, coords?: Coords, radiusKm: number = PEARSON_RADIUS_KM): boolean {
+  if (coords && haversineKm(coords, PEARSON) <= radiusKm) return true;
   if (text && /pearson|\byyz\b/i.test(text)) return true;
   return false;
 }
 
 /** Which endpoint is Pearson — null when neither (or nonsensically both). */
-export function pearsonEndpoint(opts: {
-  pickup?: string | null;
-  dropoff?: string | null;
-  pickupCoords?: Coords;
-  dropoffCoords?: Coords;
-}): "pickup" | "dropoff" | null {
-  const p = isPearson(opts.pickup, opts.pickupCoords);
-  const d = isPearson(opts.dropoff, opts.dropoffCoords);
+export function pearsonEndpoint(
+  opts: {
+    pickup?: string | null;
+    dropoff?: string | null;
+    pickupCoords?: Coords;
+    dropoffCoords?: Coords;
+  },
+  radiusKm: number = PEARSON_RADIUS_KM,
+): "pickup" | "dropoff" | null {
+  const p = isPearson(opts.pickup, opts.pickupCoords, radiusKm);
+  const d = isPearson(opts.dropoff, opts.dropoffCoords, radiusKm);
   if (p && !d) return "pickup";
   if (d && !p) return "dropoff";
   return null;
 }
 
 /** Match the non-Pearson endpoint's address against the out-of-town table. */
-export function matchOutOfTown(address?: string | null): number | null {
+export function matchOutOfTown(
+  address?: string | null,
+  destinations?: Record<string, number> | null,
+): number | null {
   if (!address) return null;
+  const table = destinations && Object.keys(destinations).length > 0 ? destinations : OUT_OF_TOWN;
   const addr = ` ${normalize(address)} `;
-  for (const name of OUT_OF_TOWN_NAMES) {
-    if (addr.includes(` ${normalize(name)} `)) return OUT_OF_TOWN[name];
+  for (const name of namesFor(table)) {
+    if (addr.includes(` ${normalize(name)} `)) return table[name];
   }
   return null;
 }
@@ -122,23 +170,33 @@ export function matchOutOfTown(address?: string | null): number | null {
  * Resolve the published (sedan) tariff for a Pearson airport trip, or null
  * when this trip isn't tariff-priced (not a Pearson trip, or nothing to go
  * on) — callers then fall back to the standard airport formula.
+ *
+ * `ctx` carries the live rate card + destination table; omitted, the built-in
+ * February 2024 card prices exactly as it always has.
  */
-export function resolvePearsonTariff(opts: {
-  pickup?: string | null;
-  dropoff?: string | null;
-  pickupCoords?: Coords;
-  dropoffCoords?: Coords;
-  distanceKm?: number | null;
-}): number | null {
-  const endpoint = pearsonEndpoint(opts);
+export function resolvePearsonTariff(
+  opts: {
+    pickup?: string | null;
+    dropoff?: string | null;
+    pickupCoords?: Coords;
+    dropoffCoords?: Coords;
+    distanceKm?: number | null;
+  },
+  ctx: TariffContext = {},
+): number | null {
+  const cfg = ctx.cfg ?? null;
+  const endpoint = pearsonEndpoint(opts, cfg?.pearsonRadiusKm ?? PEARSON_RADIUS_KM);
   if (!endpoint) return null;
 
   const destination = endpoint === "pickup" ? opts.dropoff : opts.pickup;
-  const table = matchOutOfTown(destination);
+  const table = matchOutOfTown(destination, ctx.destinations);
   if (table != null) return table;
 
   if (opts.distanceKm != null && opts.distanceKm > 0) {
-    return Math.max(MIN_TARIFF, Math.round(IN_ZONE_BASE + PER_KM * opts.distanceKm));
+    return Math.max(
+      cfg?.tariffMin ?? MIN_TARIFF,
+      Math.round((cfg?.tariffInZoneBase ?? IN_ZONE_BASE) + (cfg?.tariffPerKm ?? PER_KM) * opts.distanceKm),
+    );
   }
   return null;
 }

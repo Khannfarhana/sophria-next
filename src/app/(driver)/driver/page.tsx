@@ -52,6 +52,10 @@ interface DriverRide {
   status: string;
   driver_payout: number | null;
   tip: number | null;
+  /** 'deposit' rides: the customer pays your share directly unless it was paid online. */
+  payment_mode?: string | null;
+  balance_due?: number | null;
+  balance_paid_at?: string | null;
   passenger_name: string | null;
   passenger_phone: string | null;
   special_requests: string | null;
@@ -102,7 +106,7 @@ function DriverPortal() {
         .from("bookings")
         // Explicit columns — never expose start_otp OR the customer fare to
         // the driver's client; drivers see their payout (driver_payout) only.
-        .select("id, reference, customer_id, driver_id, vehicle_id, pickup_location, dropoff_location, pickup_datetime, status, driver_payout, tip, passenger_name, passenger_phone, special_requests, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, stops, vehicles(name)")
+        .select("id, reference, customer_id, driver_id, vehicle_id, pickup_location, dropoff_location, pickup_datetime, status, driver_payout, tip, payment_mode, balance_due, balance_paid_at, passenger_name, passenger_phone, special_requests, created_at, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, stops, vehicles(name)")
         .eq("driver_id", driver!.id)
         .order("pickup_datetime");
       if (error) throw error;
@@ -424,6 +428,20 @@ function RideDetail({ ride, onStart, onComplete }: { ride: DriverRide; onStart: 
             )}
           </div>
         </div>
+        {/* Deposit ride: the customer settles the chauffeur's share directly
+            unless they've since paid it online — check before setting off. */}
+        {ride.payment_mode === "deposit" && (
+          ride.balance_paid_at ? (
+            <div className="rounded-md border border-emerald-400/25 bg-emerald-400/10 p-3 text-xs text-emerald-200">
+              Balance paid online — nothing to collect from the passenger.
+            </div>
+          ) : (
+            <div className="rounded-md border border-gold/30 bg-gold/10 p-3 text-xs text-gold-soft">
+              <span className="font-medium">Collect ${Number(ride.balance_due ?? 0).toFixed(2)} from the passenger</span>
+              {" "}— cash or their card at the ride. This is your share; the deposit already covers SophRia&apos;s.
+            </div>
+          )
+        )}
         <div className="text-sm text-white">
           <div className="flex gap-2"><MapPin className="h-4 w-4" /><span>{ride.pickup_location}</span></div>
           <div className="ml-6 my-1 h-3 border-l border-dashed border-white/10" />

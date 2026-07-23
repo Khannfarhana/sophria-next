@@ -18,6 +18,7 @@ import { RideMap } from "@/components/site/RideMap";
 import { getDirections, type Place } from "@/lib/mapbox";
 import { formatDateTime, isFuturePickup, minPickupLocalValue } from "@/lib/datetime";
 import { usePricingConfig } from "@/hooks/use-pricing-config";
+import { useTariffDestinations } from "@/hooks/use-tariff-destinations";
 import { priceBreakdown, tripTypeLabel, HOURLY_MIN_HOURS, type TripType } from "@/lib/pricing";
 import { MAX_STOPS, isFilledStop, routableStops, type BookingStop } from "@/lib/stops";
 import { resolvePearsonTariff } from "@/lib/tariff";
@@ -86,6 +87,7 @@ function BookFlow() {
   // The live rate card. Drives the PREVIEW only — the server recomputes the
   // fare from its own read and ignores whatever this quotes.
   const pricingConfig = usePricingConfig();
+  const tariffDestinations = useTariffDestinations();
   const [step, setStep] = useState(1);
   const [reference, setReference] = useState<string | null>(null);
   const [otp, setOtp] = useState<string | null>(null);
@@ -247,13 +249,16 @@ function BookFlow() {
   // shown estimate matches the server's authoritative fare.
   const pearsonTariff =
     s.tripType === "airport"
-      ? resolvePearsonTariff({
-          pickup: s.pickup,
-          dropoff: s.dropoff,
-          pickupCoords: s.pickupCoords ?? undefined,
-          dropoffCoords: s.dropoffCoords ?? undefined,
-          distanceKm: s.distanceKm,
-        })
+      ? resolvePearsonTariff(
+          {
+            pickup: s.pickup,
+            dropoff: s.dropoff,
+            pickupCoords: s.pickupCoords ?? undefined,
+            dropoffCoords: s.dropoffCoords ?? undefined,
+            distanceKm: s.distanceKm,
+          },
+          { cfg: pricingConfig, destinations: tariffDestinations },
+        )
       : null;
   // Mirrors the server's authoritative breakdown (actions.ts:computeServerFare).
   // `fare` stays the pre-tax subtotal — the server ignores the client's number

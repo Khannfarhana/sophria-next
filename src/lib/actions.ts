@@ -20,7 +20,7 @@ import {
 import { resolvePearsonTariff } from "@/lib/tariff";
 import { getDirections } from "@/lib/mapbox";
 import { toStorageIso, isFuturePickup } from "@/lib/datetime";
-import { loadPricingConfig } from "@/lib/pricing-config.server";
+import { loadPricingConfig, loadTariffDestinations } from "@/lib/pricing-config.server";
 import {
   notifyBookingCreated,
   notifyBookingConfirmed,
@@ -89,9 +89,10 @@ async function computeServerFare(
   // The authoritative fare — this is what the customer is charged, so both the
   // vehicle rates AND the rate card are read server-side from the database.
   // Never from the client, and never from a constant the client also holds.
-  const [{ data: vehicle }, config] = await Promise.all([
-    admin.from("vehicles").select("base_rate, hourly_rate, type, tariff_multiplier, luggage").eq("id", opts.vehicleId).single(),
+  const [{ data: vehicle }, config, tariffDestinations] = await Promise.all([
+    admin.from("vehicles").select("base_rate, hourly_rate, type, tariff_multiplier, luggage, per_km_rate, min_fare").eq("id", opts.vehicleId).single(),
     loadPricingConfig(),
+    loadTariffDestinations(),
   ]);
   if (!vehicle) throw new Error("Vehicle not found");
 
@@ -102,16 +103,21 @@ async function computeServerFare(
     if (dir) { distanceKm = dir.distanceKm; durationMin = dir.durationMin; }
   }
 
-  // Pearson airport trips are priced by the official GTAA tariff.
+  // Pearson airport trips are priced by the official GTAA tariff — resolved
+  // against the LIVE rate card and destination table, falling back to the
+  // built-in February 2024 card when either is unavailable.
   const tariff =
     opts.tripType === "airport"
-      ? resolvePearsonTariff({
-          pickup: opts.pickupText,
-          dropoff: opts.dropoffText,
-          pickupCoords: opts.pickup ?? undefined,
-          dropoffCoords: opts.dropoff ?? undefined,
-          distanceKm,
-        })
+      ? resolvePearsonTariff(
+          {
+            pickup: opts.pickupText,
+            dropoff: opts.dropoffText,
+            pickupCoords: opts.pickup ?? undefined,
+            dropoffCoords: opts.dropoff ?? undefined,
+            distanceKm,
+          },
+          { cfg: config, destinations: tariffDestinations },
+        )
       : null;
 
   const breakdown = priceBreakdown(
@@ -460,7 +466,9 @@ export async function cancelBookingAction(bookingId: string) {
 
   const { data: booking } = await admin
     .from("bookings")
-    .select("id, customer_id, status, payment_status, pickup_datetime, fare_estimate, tax_amount, tip, stripe_payment_id")
+    .select(
+      "id, customer_id, status, payment_status, pickup_datetime, fare_estimate, tax_amount, tip, stripe_payment_id, payment_mode, deposit_amount, balance_due, balance_paid_at, balance_method",
+    )
     .eq("id", bookingId)
     .single();
   if (!booking || booking.customer_id !== session.user.id) throw new Error("Unauthorized");
@@ -471,13 +479,26 @@ export async function cancelBookingAction(bookingId: string) {
   const wasHeld = booking.payment_status === "authorized";
   const hadFunds = wasPaid || wasHeld;
 
+  // Deposit bookings: the penalty ladder still prices off the taxed fare, but
+  // what we actually HOLD is only the deposit (plus the balance, if it was
+  // paid online pre-ride). The recorded penalty is capped at what was
+  // collected — a fee larger than the money in hand is a fiction.
+  const isDeposit = booking.payment_mode === "deposit";
+  const depositHeld = isDeposit ? Math.max(0, Number(booking.deposit_amount ?? 0)) : 0;
+  const balanceHeldOnline =
+    isDeposit && booking.balance_paid_at && booking.balance_method === "online"
+      ? Math.max(0, Number(booking.balance_due ?? 0)) + Math.max(0, Number(booking.tip ?? 0))
+      : 0;
+  const depositCollected = round2(depositHeld + balanceHeldOnline);
+  const effectivePenalty = isDeposit ? Math.min(quote.penalty, depositCollected) : quote.penalty;
+
   const { data: claimed, error } = await admin
     .from("bookings")
     .update({
       status: "cancelled" as const,
       cancelled_at: new Date(now).toISOString(),
       cancellation_penalty_rate: quote.rate,
-      cancellation_penalty: hadFunds ? quote.penalty : 0,
+      cancellation_penalty: hadFunds ? effectivePenalty : 0,
       refund_amount: 0,
     })
     .eq("id", bookingId)
@@ -523,6 +544,28 @@ export async function cancelBookingAction(bookingId: string) {
       } else {
         await releaseBookingHold(bookingId, booking.stripe_payment_id);
       }
+    } else if (wasPaid && isDeposit) {
+      // Refund what was collected minus the penalty. stripe_payment_id is the
+      // DEPOSIT intent, so a refund through it is capped at the deposit; the
+      // rare remainder (balance paid online, then a nearly-free cancellation)
+      // lives on a different intent and goes to an admin to refund by hand.
+      const refundTotal = Math.max(0, round2(depositCollected - effectivePenalty));
+      const refundNow = Math.min(refundTotal, depositHeld);
+      if (refundNow > 0) {
+        await refundBookingPayment({
+          bookingId,
+          paymentIntentId: booking.stripe_payment_id,
+          amountCents: Math.round(refundNow * 100),
+          penalty: effectivePenalty,
+        });
+        refunded = refundNow;
+      }
+      if (refundTotal > refundNow) {
+        console.error(
+          `[actions] booking ${bookingId}: $${(refundTotal - refundNow).toFixed(2)} of the online balance payment must be refunded manually (separate intent).`,
+        );
+        after(() => notifyPaymentCaptureFailed(bookingId));
+      }
     } else if (wasPaid && quote.refund > 0) {
       await refundBookingPayment({
         bookingId,
@@ -554,7 +597,7 @@ export async function cancelBookingAction(bookingId: string) {
   revalidatePath("/admin");
   return {
     success: true,
-    penalty: hadFunds && !settlementFailed ? quote.penalty : 0,
+    penalty: hadFunds && !settlementFailed ? effectivePenalty : 0,
     refund: refunded,
     /** True when the balance was released from a hold rather than refunded. */
     released: wasHeld && !settlementFailed,
@@ -1001,16 +1044,24 @@ export async function assignDriverAction(
 
     const { data: bk, error: bkErr } = await supabase
       .from("bookings")
-      .select("fare_estimate, airport_fee")
+      .select("fare_estimate, airport_fee, payment_mode, balance_due")
       .eq("id", bookingId)
       .single();
     if (bkErr || !bk) throw new Error("Booking not found");
 
-    // The airport fee is excluded: it is the GTAA's money, not SophRia's
-    // revenue, so no share of it is the driver's. See driverPayoutBase.
-    payout = round2(
-      driverPayoutBase(bk.fare_estimate, bk.airport_fee) * Number(drv.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE),
-    );
+    if (bk.payment_mode === "deposit" && bk.balance_due != null) {
+      // Deposit bookings: the payout defaults to the balance the customer was
+      // QUOTED at deposit time. On a cash ride the driver keeps exactly what
+      // they collect — a payout computed from this driver's own rate could
+      // differ from that frozen figure and leave someone owing someone.
+      payout = round2(Number(bk.balance_due));
+    } else {
+      // The airport fee is excluded: it is the GTAA's money, not SophRia's
+      // revenue, so no share of it is the driver's. See driverPayoutBase.
+      payout = round2(
+        driverPayoutBase(bk.fare_estimate, bk.airport_fee) * Number(drv.commission_rate ?? DEFAULT_DRIVER_PAYOUT_RATE),
+      );
+    }
   }
 
   // Payment wall: a driver can be assigned (or reassigned, pre-ride) only once
@@ -1178,7 +1229,7 @@ export async function completeRideAction(rideId: string) {
     .eq("id", rideId)
     .eq("driver_id", driver.id)
     .eq("status", "in_progress")
-    .select("id, fare_estimate, airport_fee, driver_payout, tip, payment_status, stripe_payment_id");
+    .select("id, fare_estimate, airport_fee, driver_payout, tip, payment_status, stripe_payment_id, payment_mode, balance_due, balance_paid_at");
 
   if (bookingErr) {
     throw new Error(bookingErr.message);
@@ -1220,6 +1271,19 @@ export async function completeRideAction(rideId: string) {
       if (flagErr) console.error(`[actions] could not flag ${rideId} as failed:`, flagErr.message);
       after(() => notifyPaymentCaptureFailed(rideId));
     }
+  }
+
+  // Deposit booking whose balance was never paid online: the chauffeur
+  // collects it in cash at the ride — completing IS the collection. The
+  // balance_paid_at-null gate keeps a last-minute online payment from being
+  // double-recorded; whichever settles first wins.
+  if (updated[0].payment_mode === "deposit" && !updated[0].balance_paid_at) {
+    const { error: cashErr } = await getServiceClient()
+      .from("bookings")
+      .update({ balance_paid_at: new Date().toISOString(), balance_method: "cash" })
+      .eq("id", rideId)
+      .is("balance_paid_at", null);
+    if (cashErr) console.error(`[actions] could not record cash balance on ${rideId}:`, cashErr.message);
   }
 
   // Credit the payout snapshot taken at assignment (fare × commission rate at
@@ -1265,6 +1329,12 @@ export interface VehiclePatch {
   name?: string;
   base_rate?: number;
   hourly_rate?: number | null;
+  /** One-way $/km for this vehicle. Null = use the global retail rate. */
+  per_km_rate?: number | null;
+  /** Floor for retail quotes. Null = no minimum. */
+  min_fare?: number | null;
+  /** Pearson tariff scale for this class (sedan 1.0, SUV 1.3 …). */
+  tariff_multiplier?: number;
   capacity?: number;
   luggage?: number;
   description?: string | null;
@@ -1283,6 +1353,16 @@ function validateVehicleNumbers(patch: VehiclePatch) {
   }
   if (patch.hourly_rate !== undefined && patch.hourly_rate !== null && (!Number.isFinite(patch.hourly_rate) || patch.hourly_rate <= 0)) {
     throw new Error("Hourly rate must be a positive amount (or empty).");
+  }
+  // Ranges mirror the DB check constraints (20260723190000 / 20260717150000).
+  if (patch.per_km_rate !== undefined && patch.per_km_rate !== null && (!Number.isFinite(patch.per_km_rate) || patch.per_km_rate <= 0 || patch.per_km_rate > 50)) {
+    throw new Error("Per-km rate must be between $0 and $50 (or empty to use the global rate).");
+  }
+  if (patch.min_fare !== undefined && patch.min_fare !== null && (!Number.isFinite(patch.min_fare) || patch.min_fare < 0 || patch.min_fare > 10000)) {
+    throw new Error("Minimum fare must be between $0 and $10,000 (or empty for none).");
+  }
+  if (patch.tariff_multiplier !== undefined && (!Number.isFinite(patch.tariff_multiplier) || patch.tariff_multiplier <= 0 || patch.tariff_multiplier > 10)) {
+    throw new Error("Tariff multiplier must be between 0 and 10.");
   }
   if (patch.capacity !== undefined && (!Number.isInteger(patch.capacity) || patch.capacity < 1 || patch.capacity > 60)) {
     throw new Error("Capacity must be between 1 and 60.");
@@ -1310,7 +1390,7 @@ export async function updateVehicleAction(vehicleId: string, patch: VehiclePatch
   // Whitelist — never spread a client object into an update. `type` is
   // deliberately absent: it is fixed after creation.
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  for (const key of ["name", "base_rate", "hourly_rate", "capacity", "luggage", "description", "is_active", "features"] as const) {
+  for (const key of ["name", "base_rate", "hourly_rate", "per_km_rate", "min_fare", "tariff_multiplier", "capacity", "luggage", "description", "is_active", "features"] as const) {
     if (patch[key] !== undefined) update[key] = patch[key];
   }
   const { error } = await getServiceClient()
@@ -1329,6 +1409,9 @@ export async function createVehicleAction(input: {
   type: Database["public"]["Enums"]["vehicle_type"];
   base_rate: number;
   hourly_rate: number | null;
+  per_km_rate?: number | null;
+  min_fare?: number | null;
+  tariff_multiplier?: number;
   capacity: number;
   luggage: number;
   description: string | null;

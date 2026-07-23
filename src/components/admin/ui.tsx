@@ -100,7 +100,22 @@ export function isPaymentSecured(paymentStatus: string) {
 }
 
 /** Payment state chip: green paid / green held / gold awaiting. */
-export function PaymentChip({ b }: { b: { status: string; payment_status: string } }) {
+export function PaymentChip({ b }: { b: { status: string; payment_status: string; payment_mode?: string | null; balance_due?: number | null; balance_paid_at?: string | null; balance_method?: string | null } }) {
+  if (b.payment_status === "paid" && b.payment_mode === "deposit") {
+    // Deposit secured; the chauffeur's share may still be outstanding.
+    if (!b.balance_paid_at) {
+      return (
+        <span className="rounded-full bg-gold/15 px-2.5 py-0.5 text-[11px] font-medium text-gold-soft">
+          Deposit · ${Number(b.balance_due ?? 0).toFixed(0)} due
+        </span>
+      );
+    }
+    return (
+      <span className="rounded-full bg-emerald-400/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
+        Deposit · balance {b.balance_method === "cash" ? "cash" : "online"}
+      </span>
+    );
+  }
   if (b.payment_status === "paid") {
     return <span className="rounded-full bg-emerald-400/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">Paid</span>;
   }
