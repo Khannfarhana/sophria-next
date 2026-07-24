@@ -65,7 +65,7 @@ export default async function FleetPage() {
                     {/* Spotlight + floor shadow */}
                     <div
                       aria-hidden
-                      className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_55%_at_50%_62%,rgba(201,167,106,0.16),transparent_70%)]"
+                      className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_55%_at_50%_62%,rgba(201,167,106,0.09),transparent_65%)]"
                     />
                     <div
                       aria-hidden
@@ -75,7 +75,7 @@ export default async function FleetPage() {
                       src={VEHICLE_CUTOUTS[v.type] ?? VEHICLE_CUTOUTS.sedan}
                       alt={`${v.name} — ${modelLine}`}
                       sizes="(max-width: 768px) 100vw, 720px"
-                      className="relative mx-auto w-full max-w-2xl object-contain drop-shadow-[0_40px_35px_rgba(0,0,0,0.6)] transition-transform duration-700 ease-out hover:scale-[1.02]"
+                      className="relative mx-auto w-full max-w-2xl object-contain brightness-[.84] contrast-[1.06] saturate-[.88] drop-shadow-[0_40px_35px_rgba(0,0,0,0.6)] transition-transform duration-700 ease-out hover:scale-[1.02]"
                     />
                   </div>
 

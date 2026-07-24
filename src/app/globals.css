@@ -164,6 +164,14 @@
     color: var(--foreground);
     border-color: oklch(0.88 0 0); /* #E0E0E0 */
   }
+  /* Chrome autofill paints inputs pale blue with dark text, which glows
+     harshly on dark surfaces; the near-infinite transition keeps the
+     author-styled background and text colors instead. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    transition: background-color 9999999s ease-in-out 0s, color 9999999s ease-in-out 0s;
+  }
   input:focus, textarea:focus, select:focus {
     border-color: var(--foreground);
     outline: none;

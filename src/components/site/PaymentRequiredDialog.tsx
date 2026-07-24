@@ -155,31 +155,54 @@ export function PaymentRequiredDialog({
         {depositAvailable && (
           <div className="border-b border-white/10 px-6 py-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">How would you like to pay?</div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="mt-3 space-y-2" role="radiogroup" aria-label="Payment mode">
               <button
                 onClick={() => setMode("full")}
                 disabled={pending}
-                className={`cursor-pointer rounded-sm border p-3.5 text-left transition ${
+                role="radio"
+                aria-checked={!isDeposit}
+                className={`flex w-full cursor-pointer items-start gap-3 rounded-sm border p-3.5 text-left transition ${
                   !isDeposit ? "border-gold bg-gold/10" : "border-white/15 hover:border-white/35"
                 }`}
               >
-                <div className="text-sm font-medium text-white">Pay in full</div>
-                <p className="mt-1 text-xs leading-relaxed text-white/55">
-                  {willHold ? "Held on your card now, charged after the ride." : "Charged now."} Nothing to settle later.
-                </p>
+                <span
+                  className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition ${
+                    !isDeposit ? "border-gold" : "border-white/30"
+                  }`}
+                >
+                  {!isDeposit && <span className="h-2 w-2 rounded-full bg-gold" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-white">Pay in full</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-white/55">
+                    {willHold ? "Held on your card now, charged after the ride." : "Charged now."} Nothing to settle
+                    later.
+                  </span>
+                </span>
               </button>
               <button
                 onClick={() => setMode("deposit")}
                 disabled={pending}
-                className={`cursor-pointer rounded-sm border p-3.5 text-left transition ${
+                role="radio"
+                aria-checked={isDeposit}
+                className={`flex w-full cursor-pointer items-start gap-3 rounded-sm border p-3.5 text-left transition ${
                   isDeposit ? "border-gold bg-gold/10" : "border-white/15 hover:border-white/35"
                 }`}
               >
-                <div className="text-sm font-medium text-white">Reserve with a deposit</div>
-                <p className="mt-1 text-xs leading-relaxed text-white/55">
-                  ${split.deposit.toFixed(2)} now · ${split.balance.toFixed(2)} to your chauffeur later — cash at the
-                  ride, or online any time.
-                </p>
+                <span
+                  className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition ${
+                    isDeposit ? "border-gold" : "border-white/30"
+                  }`}
+                >
+                  {isDeposit && <span className="h-2 w-2 rounded-full bg-gold" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-white">Reserve with a deposit</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-white/55">
+                    ${split.deposit.toFixed(2)} now · ${split.balance.toFixed(2)} to your chauffeur later — cash at
+                    the ride, or online any time.
+                  </span>
+                </span>
               </button>
             </div>
           </div>

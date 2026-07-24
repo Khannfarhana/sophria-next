@@ -116,7 +116,7 @@ function AuthForm() {
   const inputCls = "w-full rounded-sm border border-white/15 bg-white/[0.07] px-4 py-3 text-sm text-white placeholder:text-white/40 transition focus:border-gold";
 
   return (
-    <div className="relative min-h-screen bg-night px-6 py-10 flex flex-col">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-night px-6 py-10">
       {/* Ambient gold glow */}
       <div className="pointer-events-none absolute left-1/2 top-0 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-gold/[0.06] blur-3xl" />
 

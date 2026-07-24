@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { BookingWidget } from "@/components/site/BookingWidget";
-import { ShieldCheck, Clock, Sparkles, ArrowRight, Star } from "lucide-react";
+import { ArrowRight, Star } from "lucide-react";
 import heroImgDesktop from "@/assets/hero.jpg";
 import heroImgMobile from "@/assets/hero.webp";
 import { VEHICLE_CUTOUTS } from "@/lib/vehicles";
@@ -98,38 +98,9 @@ export default function Home() {
       </section>
 
       {/* Booking widget — gradient lands exactly on the next section's colour */}
-      <section className="relative -mt-16 md:-mt-12 bg-gradient-to-b from-night to-night-panel px-6 pb-16">
+      <section className="relative -mt-16 md:-mt-12 bg-night px-6 pb-16">
         <div className="mx-auto max-w-6xl animate-rise delay-500">
           <BookingWidget />
-        </div>
-      </section>
-
-      {/* Why SophRia */}
-      <section className="relative overflow-hidden bg-night-panel px-6 py-20 text-white md:py-32">
-        <div className="mx-auto max-w-7xl">
-          <div className="relative mb-12 max-w-2xl md:mb-16">
-            <Eyebrow dark>Why SophRia</Eyebrow>
-            <h2 className="text-4xl md:text-5xl">An uncompromising standard.</h2>
-          </div>
-          <div className="relative grid gap-px bg-white/10 md:grid-cols-3">
-            {[
-              { Icon: ShieldCheck, title: "Professional Chauffeurs", body: "Vetted, licensed, and trained to the highest standard. Discretion is non-negotiable." },
-              { Icon: Sparkles, title: "Luxury Fleet", body: "Late-model Mercedes, BMW, and Cadillac vehicles — meticulously maintained inside and out." },
-              { Icon: Clock, title: "On-Time Guarantee", body: "Live flight tracking and 24/7 dispatch. We arrive before you do, every time." },
-            ].map(({ Icon, title, body }) => (
-              <div
-                key={title}
-                className="group relative bg-night-card p-8 transition-colors duration-500 hover:bg-night-hover md:p-10"
-              >
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-sm border border-white/20 transition-colors duration-500 group-hover:border-gold">
-                  <Icon className="h-5 w-5 text-white transition-colors duration-500 group-hover:text-gold-soft" />
-                </div>
-                <h3 className="mt-8 text-2xl">{title}</h3>
-                <p className="mt-3 text-sm text-white/70">{body}</p>
-                <div className="absolute bottom-0 left-0 h-px w-0 bg-gold transition-all duration-700 group-hover:w-full" />
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
@@ -157,13 +128,13 @@ export default function Home() {
                   <div className="relative flex aspect-[16/10] items-center justify-center p-6">
                     <div
                       aria-hidden
-                      className="pointer-events-none absolute inset-0 bg-[radial-gradient(65%_55%_at_50%_60%,rgba(201,167,106,0.13),transparent_70%)]"
+                      className="pointer-events-none absolute inset-0 bg-[radial-gradient(65%_55%_at_50%_60%,rgba(201,167,106,0.07),transparent_65%)]"
                     />
                     <Image
                       src={VEHICLE_CUTOUTS[v.key]}
                       alt={v.name}
                       sizes="(max-width: 768px) 100vw, 33vw"
-                      className="relative max-h-full w-auto object-contain drop-shadow-[0_25px_20px_rgba(0,0,0,0.55)] transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+                      className="relative max-h-full w-auto object-contain brightness-[.84] contrast-[1.06] saturate-[.88] drop-shadow-[0_25px_20px_rgba(0,0,0,0.55)] transition-transform duration-700 ease-out group-hover:scale-[1.03]"
                     />
                   </div>
                   <div className="p-6 pt-2">
@@ -196,11 +167,13 @@ export default function Home() {
             <Eyebrow dark center>Client Notes</Eyebrow>
             <h2 className="text-4xl md:text-5xl">Quietly exceptional.</h2>
           </div>
-          <div className="grid gap-6 md:grid-cols-3">
+          {/* Mobile: horizontal snap carousel (stacked cards ate the whole
+              viewport); desktop keeps the three-up grid. */}
+          <div className="-mx-6 flex snap-x snap-mandatory gap-4 overflow-x-auto px-6 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mx-0 md:grid md:grid-cols-3 md:gap-6 md:overflow-visible md:px-0 md:pb-0">
             {testimonials.slice(0, 3).map((t) => (
               <figure
                 key={t.id}
-                className="flex flex-col justify-between rounded-sm bg-night-card p-8"
+                className="flex w-[85vw] max-w-sm shrink-0 snap-center flex-col justify-between rounded-sm bg-night-card p-8 md:w-auto md:max-w-none"
               >
                 <div>
                   <div className="flex gap-1" role="img" aria-label={`${t.rating} out of 5 stars`}>
