@@ -245,7 +245,13 @@ export function useAdminKpi() {
       const [todays, active, monthly, pending] = await Promise.all([
         supabase.from("bookings").select("id", { count: "exact", head: true }).gte("created_at", today.toISOString()),
         supabase.from("drivers").select("id", { count: "exact", head: true }).eq("is_available", true).eq("is_verified", true),
-        supabase.from("bookings").select("fare_estimate").gte("created_at", new Date(new Date().setDate(1)).toISOString()),
+        // A cancelled or rejected booking's fare is not revenue — the only
+        // money kept from a cancellation is the penalty, which is not a fare.
+        supabase
+          .from("bookings")
+          .select("fare_estimate")
+          .gte("created_at", new Date(new Date().setDate(1)).toISOString())
+          .not("status", "in", "(cancelled,rejected)"),
         supabase.from("drivers").select("id", { count: "exact", head: true }).eq("is_verified", false),
       ]);
       const revenue = (monthly.data ?? []).reduce((sum: number, b) => sum + Number(b.fare_estimate ?? 0), 0);

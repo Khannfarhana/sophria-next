@@ -996,17 +996,31 @@ export async function rejectBookingAction(bookingId: string, reason: string, not
   const session = await requireSession("admin");
   const supabase = getSupabaseServerClient(session);
 
-  const { error } = await supabase
+  // Guarded like confirm — but on MONEY, not just status. Rejection is the
+  // "we never took this job" exit and has no refund path, so it must only be
+  // reachable while nothing has been charged or held. Unguarded, rejecting a
+  // paid/deposited/assigned booking stranded the customer's money in a state
+  // no code path ever refunds. Once funds are secured the off-ramp is the
+  // cancellation flow, which settles the money properly.
+  const { data, error } = await supabase
     .from("bookings")
     .update({
       status: "rejected" as BookingStatus,
       rejection_reason: reason,
       rejection_notes: notes || null,
     })
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .in("status", ["pending", "confirmed"])
+    .eq("payment_status", "pending")
+    .select("id");
 
   if (error) {
     throw new Error(error.message);
+  }
+  if (!data || data.length === 0) {
+    throw new Error(
+      "Only an unpaid booking can be rejected. This one has funds secured — cancel it instead so the customer is refunded.",
+    );
   }
 
   after(() => notifyBookingRejected(bookingId));
